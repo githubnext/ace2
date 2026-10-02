@@ -14,6 +14,13 @@ _Avoid_: org, workspace
 One machine running Ace's host process. It owns and runs its channels.
 _Avoid_: server, node, VM
 
+**Hosted channel**:
+A channel that lives in a cell instead of on a host. Its tools run on its workspace.
+
+**Workspace**:
+The host that runs a hosted channel's tools, from lanes on its own disk. It connects out to the
+channel. Not a project or a checkout.
+
 **Project**:
 A named set of one or more repositories or local folders that a team works on. Many hosts can
 hold checkouts of the same project. Today a project is a single repository or folder.
@@ -31,7 +38,7 @@ _Avoid_: lobby channel, lobby session
 
 **Cell**:
 A named Durable Object (isolated code with private SQLite) run by Cloudflare or celld. Cells hold
-shared objects such as the directory and lobbies, not channels.
+shared objects such as the directory and lobbies, and hosted channels.
 
 ## Channels
 
