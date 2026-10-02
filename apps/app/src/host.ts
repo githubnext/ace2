@@ -26,3 +26,14 @@ export const host = new GatewayClient(
 	import.meta.env.VITE_ACE_HOST || `${scheme}//${location.host}/ws`,
 	token,
 );
+
+const opens = new Set<() => void>();
+host.onOpen = () => {
+	for (const open of opens) open();
+};
+
+/** Runs after every host connect, so each view can re-establish its own watches. */
+export function onOpen(listener: () => void) {
+	opens.add(listener);
+	return () => void opens.delete(listener);
+}

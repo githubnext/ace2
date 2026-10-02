@@ -622,7 +622,13 @@ function useComposer({
 	let [modeState, setModeState] = useState(mode ?? modes[0]!.id);
 	let [modelState, setModelState] = useState(model ?? models?.[0]?.id);
 	let [agentState, setAgentState] = useState(agent ?? agents?.[0]?.id);
-	let { current: curAttach, ref: attachRef, add: addFiles, remove: removeAttach } = useAttachments(
+	let {
+		current: curAttach,
+		ref: attachRef,
+		add: addFiles,
+		remove: removeAttach,
+		reset: resetAttach,
+	} = useAttachments(
 		attachments,
 		onAttachmentsChange,
 	);
@@ -954,7 +960,10 @@ function useComposer({
 			agent: agentRef.current,
 		});
 		history.push(v, sentMode);
-		if (clearOnSend) clear();
+		if (clearOnSend) {
+			clear();
+			resetAttach();
+		}
 		v.focus();
 	}
 

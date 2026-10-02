@@ -92,6 +92,23 @@ export type HostRequest =
 	 * events until `release`.
 	 */
 	| { op: "channel"; channel: string; request: Request }
+	/**
+	 * Open a terminal in a chat's working directory, or reattach to `terminal` and replay its recent
+	 * output. Only for channels whose workspace is this host. Output arrives as terminal frames; a
+	 * terminal outlives its clients until closed, its shell exits, or it sits unattached too long.
+	 */
+	| {
+		op: "terminal";
+		channel: string;
+		chat?: number;
+		terminal?: string;
+		cols: number;
+		rows: number;
+	}
+	/** Keystrokes and pasted text, as UTF-8. */
+	| { op: "terminal-input"; terminal: string; data: string }
+	| { op: "terminal-resize"; terminal: string; cols: number; rows: number }
+	| { op: "terminal-close"; terminal: string }
 	/** Drop this client's connection to a channel, ending its watches. */
 	| { op: "release"; channel: string };
 
@@ -110,6 +127,12 @@ export type HostFrame =
 	 * Pushed when any reachable host's catalog changes. A local client sees every reachable host's
 	 * channels; a tailnet peer sees only this host's.
 	 */
-	| { channels: Listing[] };
+	| { channels: Listing[] }
+	| TerminalFrame;
+
+/** Terminal output as base64, since a chunk can split a UTF-8 sequence; then its exit code. */
+export type TerminalFrame = { terminal: string; data: string } | { terminal: string; exit: number };
+
+export type TerminalOpened = { terminal: string; cwd: string };
 
 export type { ChannelInfo, Event, ModelRef, Request };

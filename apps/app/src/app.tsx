@@ -19,7 +19,7 @@ import {
 import { IconHash, IconPlus } from "@ace/ui/icons";
 import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 
-import { Conversation } from "./conversation";
+import { Channel } from "./channel";
 import { Dashboard } from "./dashboard";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
@@ -291,7 +291,7 @@ export function App() {
 							)
 							: channel
 							? (
-								<Conversation
+								<Channel
 									key={channel.id}
 									channel={channel}
 									user={hello.user}

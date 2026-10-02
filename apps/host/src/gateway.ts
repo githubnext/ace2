@@ -27,6 +27,7 @@ import {
 import { self, whois } from "./tailnet";
 import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
 import { resume, shutdown } from "./shutdown";
+import * as terminals from "./terminals";
 import * as workspace from "./workspace";
 
 type Client = {
@@ -37,6 +38,8 @@ type Client = {
 	channels: Map<string, Promise<Connection>>;
 	/** This client's connections to peer hosts, opened when it first uses one of their channels. */
 	remotes: Map<string, GatewayClient>;
+	/** Detaches this client from the terminals it opened; the shells keep running. */
+	terminals: Map<string, () => void>;
 };
 
 let name = hostname();
@@ -137,6 +140,11 @@ const localOps = new Set<HostRequest["op"]>([
 	"preferences",
 	"update-prepare",
 	"update-cancel",
+	// A terminal is a shell as this host's user, so only its owner opens one.
+	"terminal",
+	"terminal-input",
+	"terminal-resize",
+	"terminal-close",
 ]);
 
 async function handle(
@@ -167,6 +175,7 @@ async function handle(
 			updating = true;
 			// handle() starts before this request enters pending, so it cannot await itself.
 			await Promise.allSettled(pending);
+			terminals.closeAll();
 			await Promise.all([workspace.close(), shutdown()]);
 			return { ready: true };
 		}
@@ -215,15 +224,35 @@ async function handle(
 			return record;
 		}
 		case "archive":
+			if (request.archived) terminals.closeChannel(request.channel);
 			await archive(request.channel, request.archived);
 			return broadcast();
 		case "delete":
+			terminals.closeChannel(request.channel);
 			await remove(request.channel);
 			return broadcast();
+		case "terminal": {
+			if (!catalog.owns(request.channel)) throw new Error("Terminals open on the channel's host");
+			const { opened, attach } = await terminals.open(request);
+			client.terminals.get(opened.terminal)?.();
+			// After the reply, which is sent once this returns and its microtasks settle.
+			setTimeout(() => {
+				if (socket.readyState === 1) client.terminals.set(opened.terminal, attach(send));
+			});
+			return opened;
+		}
+		case "terminal-input":
+			return terminals.input(request.terminal, request.data);
+		case "terminal-resize":
+			return terminals.resize(request.terminal, request.cols, request.rows);
+		case "terminal-close":
+			client.terminals.delete(request.terminal);
+			return terminals.close(request.terminal);
 		case "channel": {
 			if (catalog.owns(request.channel)) {
-				if (request.request.op === "kill" && client.user !== catalog.user) {
-					throw new Error("Only the channel's owner can kill it");
+				if (request.request.op === "kill") {
+					if (client.user !== catalog.user) throw new Error("Only the channel's owner can kill it");
+					terminals.closeChannel(request.channel);
 				}
 				const forwarded = "author" in request.request
 					? { ...request.request, author: client.user }
@@ -292,7 +321,8 @@ function websocket(): Bun.WebSocketHandler<Client> {
 			// Listing and watching repeat constantly; everything else is a deliberate action.
 			const quiet = request.op === "channels" || request.op === "projects"
 				|| request.op === "hello" || request.op === "models"
-				|| request.op === "release"
+				|| request.op === "release" || request.op === "terminal-input"
+				|| request.op === "terminal-resize"
 				|| (request.op === "channel" && ["watch", "info", "models"].includes(request.request.op));
 			const handling = handle(socket, request, send, id, trace);
 			pending.add(handling);
@@ -314,12 +344,13 @@ function websocket(): Bun.WebSocketHandler<Client> {
 				open.then((connection) => connection.close(), () => {});
 			}
 			for (const remote of socket.data.remotes.values()) remote.close();
+			for (const detach of socket.data.terminals.values()) detach();
 		},
 	};
 }
 
 function client(user: string, peer: boolean): Client {
-	return { user, peer, channels: new Map(), remotes: new Map() };
+	return { user, peer, channels: new Map(), remotes: new Map(), terminals: new Map() };
 }
 
 /** The owner's listener: loopback only, serving the app. */
@@ -424,6 +455,7 @@ export async function serve(port: number): Promise<never> {
 		closing = true;
 		log("info", "host.stop", { pending: pending.size });
 		for (const close of cleanup) close();
+		terminals.closeAll();
 		await Promise.allSettled(servers.map((server) => server.stop(true)));
 		await Promise.allSettled(pending);
 		const results = await Promise.allSettled([workspace.close(), shutdown()]);

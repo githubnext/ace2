@@ -43,6 +43,10 @@ export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
 				sender: { kind: "user", value: item.author, display: item.author.split("@")[0]! },
 				content: [
 					text(item.invoked && !/(^|\s)@ace\b/i.test(item.text) ? `@ace ${item.text}` : item.text),
+					...(item.images || []).map((image) => ({
+						type: "image" as const,
+						image: `data:${image.mimeType};base64,${image.data}`,
+					})),
 				],
 			} as Event;
 		}

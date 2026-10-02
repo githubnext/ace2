@@ -26,19 +26,49 @@ export type Chat = {
 	lane?: string;
 };
 
+/** A file the chat's work changed, relative to `Changes.cwd`. */
+export type Change = { file: string; from?: string; binary: boolean; adds: number; dels: number };
+
+/**
+ * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus
+ * uncommitted and untracked files. A chat without a lane shows the checkout against HEAD.
+ */
+export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
+
+/** An image as base64. Clients downscale before sending; see `MAX_IMAGES` in room.ts. */
+export type Image = { mimeType: string; data: string };
+
 export type Request =
 	| { op: "info" }
 	| { op: "models" }
 	/** Post to the chat without invoking its agent. */
-	| { op: "say"; chat?: ChatId; author: string; text: string; requestId?: string }
+	| {
+		op: "say";
+		chat?: ChatId;
+		author: string;
+		text: string;
+		images?: Image[];
+		requestId?: string;
+	}
 	/** Post to the chat and invoke its agent; a busy chat takes the message as steering. */
-	| { op: "ask"; chat?: ChatId; author: string; text: string; model?: ModelRef; requestId?: string }
+	| {
+		op: "ask";
+		chat?: ChatId;
+		author: string;
+		text: string;
+		images?: Image[];
+		model?: ModelRef;
+		requestId?: string;
+	}
 	| { op: "chat"; author: string; model?: ModelRef }
 	| { op: "stop"; chat?: ChatId }
 	| { op: "kill" }
 	| { op: "share"; author: string; shared: boolean }
 	/** Resolve once the answer to a submission is placed: "done", or "unanswered" when stopped or killed. */
 	| { op: "wait"; submission: number }
+	| { op: "changes"; chat?: ChatId }
+	/** One file's unified diff, against the same base as `changes`. */
+	| { op: "patch"; chat?: ChatId; file: string }
 	/** Replay the chat's transcript, then stream its events until the connection closes. */
 	| { op: "watch"; chat?: ChatId };
 
@@ -51,6 +81,7 @@ export type Event =
 		at: number;
 		author: string;
 		text: string;
+		images?: Image[];
 		invoked: boolean;
 	}
 	/** `error` when the provider failed the response; `stopped` when someone stopped it. */

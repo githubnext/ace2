@@ -23,6 +23,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import { type Directory, messaging, Subagent } from "./agents";
 import { instructions } from "./context";
+import { changes, patch } from "./changes";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
 import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request } from "./protocol";
@@ -137,6 +138,14 @@ export class Channel {
 				return this.#share(request);
 			case "watch":
 				return this.#watch(request.chat, send);
+			case "changes": {
+				const { cwd, lane } = await this.#place(request.chat);
+				return changes(this.#options.env(cwd), cwd, this.#options.project, lane, context);
+			}
+			case "patch": {
+				const { cwd } = await this.#place(request.chat);
+				return patch(this.#options.env(cwd), cwd, this.#options.project, request.file, context);
+			}
 			case "wait": {
 				const submission = await this.#harness.submission(
 					request.submission as SubmissionId,
@@ -197,6 +206,15 @@ export class Channel {
 		return this.#harness.close(context);
 	}
 
+	/** Where a chat works: its current lane's worktree, or the project checkout before it has one. */
+	async #place(chat: ChatId | undefined): Promise<{ cwd: string; lane?: string }> {
+		const { id } = await this.#conversation(chat);
+		const cwd = (await this.#harness.snapshot(AgentDoc, id, context))?.cwd || this.#options.project;
+		const lanes = (await this.#harness.snapshot(LanesDoc, context))?.lanes || {};
+		const lane = Object.entries(lanes).find(([, value]) => value.path === cwd)?.[0];
+		return lane ? { cwd, lane } : { cwd };
+	}
+
 	async #conversation(chat: ChatId | undefined): Promise<Conversation> {
 		const conversation = await this.#harness.conversation(
 			(chat ?? ROOT_CONVERSATION_ID) as ConversationId,
@@ -213,7 +231,8 @@ export class Channel {
 	async #say(request: Extract<Request, { op: "say" }>) {
 		this.#author(request.author);
 		const conversation = await this.#conversation(request.chat);
-		const entry = room.draft(request.author, request.text, Date.now());
+		room.checkImages(request.images);
+		const entry = room.draft(request.author, request.text, Date.now(), request.images);
 		const submission = await conversation.submit({
 			type: "write",
 			entry,
@@ -224,6 +243,7 @@ export class Channel {
 
 	async #ask(request: Extract<Request, { op: "ask" }>) {
 		this.#author(request.author);
+		room.checkImages(request.images);
 		const settings = await this.#harness.snapshot(SettingsDoc, context);
 		const isOwner = request.author === this.#options.owner;
 		if (!isOwner && settings?.shared === false) {
@@ -233,7 +253,7 @@ export class Channel {
 		if (request.model) await this.#select(conversation, request.model);
 		const submission = await conversation.submit({
 			type: "input",
-			content: room.content(request.author, request.text),
+			content: room.content(request.author, request.text, request.images),
 			whenBusy: "steer",
 			...(request.requestId ? { requestId: request.requestId } : {}),
 		}, context);

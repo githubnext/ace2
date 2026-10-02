@@ -1,4 +1,3 @@
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Type } from "@earendil-works/pi-ai";
 import {
 	configure,
@@ -9,6 +8,8 @@ import {
 	type Extension,
 	LiveDoc,
 } from "@earendil-works/pi-durable";
+
+import { git, quote } from "./git";
 
 /** Which chat last took each lane. Only that chat may write to it while it is busy. */
 export const LanesDoc = defineDoc<
@@ -24,20 +25,6 @@ const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
 /** Lane branches are prefixed with the channel name so channels sharing a project don't collide. */
 export type Place = { name: string; project: string; lanes: string };
-
-function quote(value: string): string {
-	return `'${value.replaceAll("'", `'\\''`)}'`;
-}
-
-async function git(env: ExecutionEnv, args: string, context: Parameters<ExecutionEnv["exec"]>[2]) {
-	let output = "";
-	const result = await env.exec(`git ${args}`, { onOutput: (chunk) => (output += chunk) }, context);
-	if (!result.ok) throw result.error;
-	if (result.value.exitCode !== 0) {
-		throw new Error(output.trim() || `git exited ${result.value.exitCode}`);
-	}
-	return output;
-}
 
 export function lanes(place: Place): Extension {
 	return defineExtension({

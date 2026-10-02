@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 
+import type { Image } from "@ace/channel/protocol";
 import type { ChannelInfo, Event } from "@ace/host/protocol";
 
-import { host } from "./host";
+import { host, onOpen } from "./host";
 
 export type Tool = {
 	call: string;
@@ -12,7 +13,15 @@ export type Tool = {
 };
 
 export type Item =
-	| { kind: "message"; key: string; at: number; author: string; text: string; invoked: boolean }
+	| {
+		kind: "message";
+		key: string;
+		at: number;
+		author: string;
+		text: string;
+		images?: Image[];
+		invoked: boolean;
+	}
 	| {
 		kind: "reply";
 		key: string;
@@ -106,7 +115,8 @@ export function apply(state: Transcript, event: Event): Transcript {
 }
 
 function pick(event: Extract<Event, { kind: "message" }>) {
-	return { at: event.at, author: event.author, text: event.text, invoked: event.invoked };
+	const { at, author, text, images, invoked } = event;
+	return { at, author, text, ...(images ? { images } : {}), invoked };
 }
 
 /** Watches one chat of a channel, re-watching after the host reconnects. */
@@ -130,11 +140,10 @@ export function useTranscript(channel: string | undefined, chat?: number) {
 			});
 		};
 		start();
-		const previous = host.onOpen;
-		host.onOpen = start;
+		const off = onOpen(start);
 		return () => {
 			active = false;
-			host.onOpen = previous;
+			off();
 			host.request({ op: "release", channel }).catch(() => {});
 		};
 	}, [channel, chat]);

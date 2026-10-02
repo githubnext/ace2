@@ -61,5 +61,9 @@ export function useAttachments(
 		update(ref.current.filter(item => item.id !== id));
 	}
 
-	return { current, ref, add, remove };
+	function reset() {
+		if (ref.current.length) update([]);
+	}
+
+	return { current, ref, add, remove, reset };
 }

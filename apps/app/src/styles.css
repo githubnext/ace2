@@ -19,3 +19,85 @@ body {
 	block-size: 100%;
 	inline-size: 100%;
 }
+
+.layout-grip {
+	&::before,
+	&::after {
+		content: "";
+		position: absolute;
+	}
+
+	&::before {
+		background: var(--border);
+	}
+
+	&::after {
+		background: linear-gradient(var(--axis), transparent 20%, var(--primary) 50%, transparent 80%);
+		opacity: 0;
+		transition: opacity 200ms ease;
+	}
+
+	&:hover::after,
+	&:focus-visible::after,
+	&:active::after {
+		opacity: 1;
+	}
+
+	&[data-axis="col"] {
+		--axis: to bottom;
+		&::before,
+		&::after {
+			inset-block: 0;
+			inline-size: 1px;
+			inset-inline-start: 50%;
+			translate: -50% 0;
+		}
+	}
+
+	&[data-axis="row"] {
+		--axis: to right;
+		&::before,
+		&::after {
+			inset-inline: 0;
+			block-size: 1px;
+			inset-block-start: 50%;
+			translate: 0 -50%;
+		}
+	}
+}
+
+/* Hold the resize cursor everywhere while a grip is dragged, showing which way it can still move. */
+:root[data-layout-resize="col"],
+:root[data-layout-resize="col"] * {
+	cursor: col-resize !important;
+}
+
+:root[data-layout-resize="row"],
+:root[data-layout-resize="row"] * {
+	cursor: row-resize !important;
+}
+
+:root[data-layout-resize="east"],
+:root[data-layout-resize="east"] * {
+	cursor: e-resize !important;
+}
+
+:root[data-layout-resize="west"],
+:root[data-layout-resize="west"] * {
+	cursor: w-resize !important;
+}
+
+:root[data-layout-resize="south"],
+:root[data-layout-resize="south"] * {
+	cursor: s-resize !important;
+}
+
+:root[data-layout-resize="north"],
+:root[data-layout-resize="north"] * {
+	cursor: n-resize !important;
+}
+
+:root[data-layout-resize="none"],
+:root[data-layout-resize="none"] * {
+	cursor: not-allowed !important;
+}
