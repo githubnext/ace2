@@ -17,7 +17,7 @@ export function submitState(
 		? "plan"
 		: "send";
 	let label = mode === "loading"
-		? "Starting session"
+		? "Starting channel"
 		: mode === "mic"
 		? "Record"
 		: mode === "stop"

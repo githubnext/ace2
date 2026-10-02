@@ -34,7 +34,7 @@ export function useLocalStorage<T>(
 	key: string,
 	fallback: T,
 ): [T, (value: T | ((prev: T) => T)) => void] {
-	let ref = useRef(fallback);
+	let cache = useRef<{ key: string; raw: string | null; value: T } | undefined>(undefined);
 
 	let subscribe = useCallback((listener: Listener) => {
 		let unsub = sub(key, listener);
@@ -49,11 +49,20 @@ export function useLocalStorage<T>(
 	}, [key]);
 
 	let snapshot = useCallback((): T => {
+		let raw: string | null = null;
 		try {
-			let raw = localStorage.getItem(key);
-			if (raw !== null) return (ref.current = JSON.parse(raw));
+			raw = localStorage.getItem(key);
 		} catch {}
-		return (ref.current = fallback);
+		// useSyncExternalStore needs the same object until its persisted JSON changes.
+		if (cache.current?.key === key && cache.current.raw === raw) return cache.current.value;
+		let value = fallback;
+		if (raw !== null) {
+			try {
+				value = JSON.parse(raw);
+			} catch {}
+		}
+		cache.current = { key, raw, value };
+		return value;
 	}, [key, fallback]);
 
 	let value = useSyncExternalStore(subscribe, snapshot, () => fallback);
@@ -65,7 +74,6 @@ export function useLocalStorage<T>(
 			: next;
 		try {
 			localStorage.setItem(key, JSON.stringify(resolved));
-			ref.current = resolved;
 		} catch {}
 		emit(key);
 	}, [key, snapshot]);

@@ -9,11 +9,12 @@ Dogfooding means everyone who works on Ace does all Ace development in Ace. If A
 surface (channels, diffs, terminals), use Ace's. When something forces another tool, the PR says
 so (see [the PR template](.github/pull_request_template.md)) and the gap goes here.
 
-- **Ace Helper, settings, and onboarding** (`feat/desktop` lane): the host keeps running when the
-  window closes; keys are set and visible in the app.
 - **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.
   Rebuilding and reinstalling it must not lose channels or runs in progress; check an update
   during a run.
+- **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
+  developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
+  cannot inspect or operate native UI yet.
 - **Diff tab** for the selected chat's lane.
 - **Images in the composer.** pi accepts image content; the app doesn't send it.
 - **Terminals** per channel, opened in a chat's lane.

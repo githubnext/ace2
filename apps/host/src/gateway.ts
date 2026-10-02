@@ -15,6 +15,7 @@ import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
 import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
+import * as projects from "./projects";
 import {
 	HOST_PROTOCOL,
 	type HostEnvelope,
@@ -85,6 +86,11 @@ function broadcast() {
 	}
 }
 
+function projectsChanged(): void {
+	const frame = JSON.stringify({ projects: projects.list() } satisfies HostFrame);
+	for (const socket of sockets) if (!socket.data.peer) socket.send(frame);
+}
+
 function settingsChanged(): void {
 	for (const socket of sockets) {
 		if (!socket.data.peer) socket.send(JSON.stringify({ settings: true } satisfies HostFrame));
@@ -119,7 +125,9 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 }
 
 const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
-const settingsOps = new Set<HostRequest["op"]>([
+const localOps = new Set<HostRequest["op"]>([
+	"projects",
+	"project-open",
 	"settings",
 	"diagnostics",
 	"key-set",
@@ -137,8 +145,8 @@ async function handle(
 ): Promise<unknown> {
 	if (closing) throw new Error("Ace Helper is shutting down");
 	const client = socket.data;
-	if (settingsOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
-		throw new Error("Settings can only be changed from this host's local app");
+	if (localOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
+		throw new Error("This action is only available from this host's local app");
 	}
 	// A channel runs where it was created, so even its owner creates from that machine.
 	if (client.peer && request.op === "create") {
@@ -152,6 +160,13 @@ async function handle(
 			return { user: client.user, host: name };
 		case "channels":
 			return listings(client);
+		case "projects":
+			return projects.list();
+		case "project-open": {
+			const project = projects.open(request.path);
+			projectsChanged();
+			return project;
+		}
 		case "settings":
 			return settings();
 		case "diagnostics":
@@ -234,6 +249,9 @@ function websocket(): Bun.WebSocketHandler<Client> {
 		open(socket) {
 			sockets.add(socket);
 			log("info", "gateway.open", { user: socket.data.user, peer: socket.data.peer });
+			if (!socket.data.peer) {
+				socket.send(JSON.stringify({ projects: projects.list() } satisfies HostFrame));
+			}
 		},
 		async message(socket, raw) {
 			const { id, trace: given, ...request } = JSON.parse(String(raw)) as HostEnvelope;
@@ -251,7 +269,8 @@ function websocket(): Bun.WebSocketHandler<Client> {
 				...(request.op === "channel" ? { request: request.request.op } : {}),
 			};
 			// Listing and watching repeat constantly; everything else is a deliberate action.
-			const quiet = request.op === "channels" || request.op === "hello" || request.op === "models"
+			const quiet = request.op === "channels" || request.op === "projects"
+				|| request.op === "hello" || request.op === "models"
 				|| request.op === "release"
 				|| (request.op === "channel" && ["watch", "info", "models"].includes(request.request.op));
 			const handling = handle(socket, request, send, id, trace);
@@ -416,6 +435,7 @@ export async function serve(port: number): Promise<never> {
 		if (closing) return;
 		if (file?.endsWith("channel.sock") || file?.endsWith("channel.json")) broadcast();
 		if (file?.endsWith("channel.json")) {
+			projectsChanged();
 			workspace.sync();
 			void publish.sync();
 		}

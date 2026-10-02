@@ -30,6 +30,8 @@ to change.
 - Use tabs, double quotes, and strict TypeScript.
 - Use `workspace:*` for internal dependencies and root catalogs for shared versions.
 - Comments record reasons and constraints, never narration.
+- Preserve Ace's project-first desktop flow and shared UI components. Opening a folder with
+  Cmd+O adds a project; creating a channel inside that project is a separate action.
 
 ## Tracking and PRs
 

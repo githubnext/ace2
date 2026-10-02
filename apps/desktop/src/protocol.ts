@@ -11,6 +11,8 @@ export type DesktopRPC = {
 	bun: {
 		requests: {
 			project: { params: { token: string }; response: string | null };
+			lights: { params: { token: string; expanded: boolean }; response: null };
+			zoom: { params: { token: string }; response: null };
 			helper: { params: { token: string; action: HelperAction }; response: HelperState };
 		};
 		messages: {};

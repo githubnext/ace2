@@ -53,6 +53,11 @@ directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clien
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
 
+Opening a folder adds a project to the host's `projects.json`, independently of channel creation
+or model credentials. This is a list of local folders, not channel history. Existing catalog
+channels also contribute their project paths. Only local owner connections can read or change
+the opened-project list; teammates see the project information already present in channel listings.
+
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
 for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment and anyone admitted to
 a channel can invoke its agent, so processes that run tools first move credential-like variables

@@ -4,6 +4,18 @@ Ship one `Ace.app` with a desktop client and an independent background host name
 The app carries its runtimes; opening it from Finder requires neither a source checkout nor an
 `.env` file. Channel workers and pi's durable storage keep their existing ownership.
 
+## Project and navigation contract
+
+Keep the existing Ace shell and shared UI components. The left navigation has Dashboard and
+Channels; native window controls have their own space above it. Cmd+O opens a native folder
+picker and adds the chosen folder as a project. Opening a project needs no provider key, creates
+no channel, and remains available after a restart. Repository import is a later feature.
+
+Dashboard and Channels share the project picker. A dashboard request or New channel creates a
+channel in the selected project. Switching projects restores each project's selected channel.
+Settings live in the account menu and Cmd+comma. Cmd+B toggles navigation; Cmd+Shift+B toggles the
+channel sidebar. Project paths are scoped to their host until repository-based identity lands.
+
 ## Process and installation contract
 
 - The desktop connects to Ace Helper. Closing or quitting the desktop leaves hosting available.
@@ -84,9 +96,11 @@ and Ace's grouped permission in macOS background-item settings.
   selector, Settings shortcut, window reopening, and native background-settings link. Kept the UI
   on Electrobun's bundled Bun to preserve native callback compatibility; the helper independently
   carries Bun 1.4 for SQLite. Confirmed macOS groups the background item under the app's name.
-- Replacing the helper inside the installed ad-hoc test bundle triggered a macOS launch
-  constraint rejection. Use a fresh identity for development smoke installs; signing and the
-  signed upgrade path still need validation. Startup dialogs include the full failure message.
+- Replacing the helper in place inside an installed ad-hoc test bundle triggered a macOS launch
+  constraint rejection. A later smoke check verified unregistering the old helper and replacing
+  the whole bundle with fresh files at the same path: the existing app and service identity,
+  projects, and channels survived. Signing and the signed upgrade path still need validation.
+  Startup dialogs include the full failure message.
 - The final fresh install under `/Applications` passed authenticated startup and native Settings,
   ignored the unrelated `.env`, and kept the helper available after the UI exited. Removed the
   temporary apps, service registrations, Keychain entries, and channel data.
@@ -111,9 +125,18 @@ and Ace's grouped permission in macOS background-item settings.
   and commas, missing-key and invalid-project feedback, a compiled-worker Anthropic/tool run using
   Keychain, native Settings, Stop/Start/Restart, and transcript recovery. Quit now ends both the UI
   runtime and desktop launcher while Ace Helper stays running.
-- Remaining: distribution signing, notarization, upgrades, and clean-account login/sleep/wake
-  checks. Team directory configuration and providers beyond Anthropic/OpenAI still use the CLI;
-  directory status in Settings is read-only.
+- Restored the existing Ace navigation and native appearance, window-control placement,
+  vibrancy, minimum window size, and title-bar zoom. Replaced the channel-first setup form with
+  Cmd+O project opening, a project dashboard, and project-scoped channel selection.
+- Project metadata persists independently of channels and credentials. Real source checks
+  verified canonical paths, duplicate opening, restart recovery, no implicit channel creation,
+  and rejection of project operations and project broadcasts over a real tailnet connection.
+- Packaged UI checks covered native Cmd+O, opening projects before provider setup, channel
+  creation, project switching, and a real Anthropic shell-tool reply. Fixed a render loop by
+  caching object snapshots in the shared local-storage hook.
+- Distribution and dogfooding follow-up work is tracked in [TODO.md](../TODO.md). Team directory
+  configuration and providers beyond Anthropic/OpenAI still use the CLI; directory status in
+  Settings is read-only.
 
 ## UI testing
 
@@ -122,11 +145,19 @@ Use the development `Ace-dev.app` from `apps/desktop/dist/dev-macos-arm64`, copi
 plus `~/Library/Application Support/Ace-dev` for preferences. Build it with `bun run stage` then
 `ACE_BUILD_CHANNEL=dev bunx electrobun build --env=dev` from `apps/desktop`.
 
-On first launch, enable Ace Helper, add a provider key in Settings, and choose a Git project.
-Check key validation and replacement, picker cancellation, invalid paths, and starting a channel.
+On first launch, enable Ace Helper, then press Cmd+O to open a project folder. Verify that the
+dashboard opens with no provider key and that opening a folder creates no channel. Add a provider
+key in Settings before starting an agent. Check the Dashboard and Channels navigation, project
+switching, key validation and replacement, picker cancellation, and starting a channel.
 In Settings → This Mac, try restarting the helper, then stopping and starting it. Finally quit
 and reopen the app; its channel history should remain available. No `.env` or source checkout is
 required to run the installed bundle. This build is signed locally, not notarized for distribution.
+
+When replacing a development install, stop Ace Helper in Settings → This Mac and quit Ace first.
+Move the old bundle aside and copy the new bundle into `/Applications` as a complete directory;
+do not overwrite executables inside the installed bundle. Start Ace and enable Ace Helper again.
+Keep the `ace-dev` data, preferences, and Keychain service. A changed ad-hoc signature may require
+approving Keychain access again. Signed updates still need their own distribution validation.
 
 ## Browser development
 

@@ -62,7 +62,7 @@ function resolveIcon(data: SidebarRow) {
 		return (
 			<Archive
 				className="size-3.5 text-muted-foreground group-data-[status=active]/row:text-current/80"
-				aria-label="Archived session"
+				aria-label="Archived channel"
 			/>
 		);
 	}
@@ -98,8 +98,8 @@ function resolveIcon(data: SidebarRow) {
 			/>
 		);
 	}
-	if (data.private) return <IconLock aria-label="Private session" />;
-	return <IconHash aria-label="Session" />;
+	if (data.private) return <IconLock aria-label="Private channel" />;
+	return <IconHash aria-label="Channel" />;
 }
 
 function working(data: SidebarRow) {

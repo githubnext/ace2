@@ -1,7 +1,7 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 3;
+export const HOST_PROTOCOL = 4;
 
 export type HostInfo = {
 	app: "ace";
@@ -43,6 +43,9 @@ export type Listing = {
 
 export type Hello = { user: string; host: string };
 
+/** A folder opened on this host, independent of its channels and provider setup. */
+export type Project = { path: string; name: string };
+
 export type ProviderId = "anthropic" | "openai";
 
 export type CredentialStatus = {
@@ -65,6 +68,8 @@ export type Settings = {
 export type HostRequest =
 	| { op: "hello" }
 	| { op: "channels" }
+	| { op: "projects" }
+	| { op: "project-open"; path: string }
 	/** These settings belong to the local owner and are never forwarded to peers. */
 	| { op: "settings" }
 	| { op: "diagnostics" }
@@ -96,6 +101,8 @@ export type HostFrame =
 	| { id: number; event: Event }
 	/** Local settings changed; clients reload model availability without receiving secrets. */
 	| { settings: true }
+	/** Opened projects belong to the local owner and are never sent to tailnet peers. */
+	| { projects: Project[] }
 	/**
 	 * Pushed when any reachable host's catalog changes. A local client sees every reachable host's
 	 * channels; a tailnet peer sees only this host's.

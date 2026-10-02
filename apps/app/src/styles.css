@@ -4,6 +4,7 @@
 html,
 body {
 	block-size: 100%;
+	background: transparent;
 	overscroll-behavior: none;
 	overflow: hidden;
 }

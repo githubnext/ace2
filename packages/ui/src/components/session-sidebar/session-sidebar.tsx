@@ -243,7 +243,7 @@ export function ProjectPicker(
 	let orgGroups = useMemo(() => byOrg(repos), [repos]);
 
 	if (!selected) {
-		return <div className="truncate text-sm font-medium">{projectName ?? "Sessions"}</div>;
+		return <div className="truncate text-sm font-medium">{projectName ?? "Projects"}</div>;
 	}
 	let name = selected.org ? `${selected.org}/${selected.name}` : selected.name;
 
@@ -254,7 +254,7 @@ export function ProjectPicker(
 					<Button
 						variant="ghost"
 						className="-ml-1 h-7 w-[calc(100%+6px)] min-w-0 max-w-none justify-start gap-1.5 py-0 pr-2 pl-1.5 text-sidebar-foreground hover:bg-background/50 aria-expanded:bg-background/50"
-						aria-label={`Select repository, currently ${name}`}
+						aria-label={`Select project, currently ${name}`}
 					/>
 				)}
 			>
@@ -278,7 +278,7 @@ export function ProjectPicker(
 					<>
 						<DropdownMenuItem className="mt-0 mb-1" onClick={onAddRepo}>
 							<IconPlus className="size-3.5 text-muted-foreground" />
-							<span className="min-w-0 flex-1 truncate">Add repository</span>
+							<span className="min-w-0 flex-1 truncate">Open folder…</span>
 						</DropdownMenuItem>
 						{orgGroups.length > 0 && <DropdownMenuSeparator className="my-0.5" />}
 					</>
@@ -290,7 +290,7 @@ export function ProjectPicker(
 					>
 						{index > 0 && <DropdownMenuSeparator className="my-1.5" />}
 						<DropdownMenuLabel className="py-1 pr-2 pl-2">
-							<span className="truncate">{org || "Local projects"}</span>
+							<span className="truncate">{org || "Projects"}</span>
 						</DropdownMenuLabel>
 						{list.map((repo) => (
 							<RepoRow
@@ -560,14 +560,14 @@ function Group({
 											size="icon-sm"
 											variant="ghost"
 											className={actionButtonClassName}
-											aria-label="New session"
+											aria-label="New channel"
 											onClick={create}
 										>
 											<IconPlus className="size-3.5" />
 										</Button>
 									}
 								/>
-								<TooltipContent side="right">New session</TooltipContent>
+								<TooltipContent side="right">New channel</TooltipContent>
 							</Tooltip>
 							<SessionOptions
 								className={actionButtonClassName}
@@ -602,7 +602,7 @@ function Group({
 
 function LoadingRows() {
 	return (
-		<div aria-label="Loading sessions" aria-busy="true" className="flex flex-col gap-2">
+		<div aria-label="Loading channels" aria-busy="true" className="flex flex-col gap-2">
 			<LoadingGroup rows={2} labelWidth="w-12" />
 			<LoadingGroup rows={3} labelWidth="w-24" />
 			<LoadingGroup rows={2} labelWidth="w-20" />
@@ -643,8 +643,8 @@ function LoadingGroup({ rows, labelWidth }: { rows: number; labelWidth: string }
 function DefaultEmpty({ onNewSession }: Pick<SessionSidebarProps, "onNewSession">) {
 	return (
 		<div className="flex h-full min-h-40 flex-col items-center justify-center gap-3 px-6 pb-16 text-center">
-			<div className="text-sm font-medium text-sidebar-foreground">No sessions yet</div>
-			<Button size="sm" onClick={onNewSession}>Start a session</Button>
+			<div className="text-sm font-medium text-sidebar-foreground">No channels yet</div>
+			<Button size="sm" onClick={onNewSession}>New channel</Button>
 		</div>
 	);
 }
@@ -653,7 +653,7 @@ function ArchiveButton({ onClick }: { onClick: () => void }) {
 	return (
 		<button
 			type="button"
-			aria-label="Show archived sessions"
+			aria-label="Show archived channels"
 			onClick={onClick}
 			className="group/archive mx-[5px] flex h-7 w-[calc(100%-8px)] items-center gap-2 rounded-lg squircle px-2 text-left text-xs font-medium text-muted-foreground outline-2 outline-offset-0 outline-transparent transition-[background-color,color,scale] duration-150 ease-out hover:bg-background/50 hover:text-sidebar-foreground focus-visible:outline-ring/50 active:scale-[0.96]"
 		>
@@ -673,7 +673,7 @@ function ArchivedHeader({ onBack }: { onBack: () => void }) {
 		<div className="flex shrink-0 flex-col border-b border-border/60 dark:border-border/50">
 			<button
 				type="button"
-				aria-label="Back to active sessions"
+				aria-label="Back to active channels"
 				onClick={onBack}
 				className="group/back mx-[5px] flex h-7 w-[calc(100%-8px)] min-w-0 items-center gap-1.5 rounded-lg squircle px-2 text-xs font-medium text-muted-foreground outline-2 outline-offset-0 outline-transparent transition-[background-color,color,scale] duration-150 ease-out hover:bg-background/50 hover:text-sidebar-foreground focus-visible:outline-ring/50 active:scale-[0.96]"
 			>

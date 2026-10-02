@@ -1,4 +1,4 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
 	Button,
@@ -6,6 +6,7 @@ import {
 	Main,
 	SessionSidebar,
 	type SessionSidebarGroup,
+	type SessionSidebarGroupId,
 	type SessionSidebarRepo,
 	Sidebar,
 	type SidebarRow,
@@ -15,17 +16,17 @@ import {
 	TooltipProvider,
 	useLocalStorage,
 } from "@ace/ui";
-import type { Hello, Listing } from "@ace/host/protocol";
+import { IconHash, IconPlus } from "@ace/ui/icons";
+import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 
 import { Conversation } from "./conversation";
-import { desktop } from "./desktop";
+import { Dashboard } from "./dashboard";
+import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
-import { NewChannel } from "./new-channel";
+import { Navigation, type Page, WindowControls } from "./navigation";
+import { EmptyProjects, OpenProject } from "./open-project";
+import { projectId, projects } from "./projects";
 import { Settings } from "./settings";
-
-function basename(path: string) {
-	return path.replace(/\/+$/, "").split("/").pop() || path;
-}
 
 function row(channel: Listing, user: string): SidebarRow {
 	return {
@@ -52,110 +53,208 @@ function row(channel: Listing, user: string): SidebarRow {
 
 export function App() {
 	const channels = useSyncExternalStore(host.subscribe, () => host.channels);
+	const opened = useSyncExternalStore(host.subscribe, () => host.projects);
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
 	const [hello, setHello] = useState<Hello>({ user: "", host: "" });
-	const user = hello.user;
-	const [selected, setSelected] = useLocalStorage<string | undefined>("ace:channel", undefined);
-	const [project, setProject] = useLocalStorage<string | undefined>("ace:project", undefined);
+	const [page, setPage] = useLocalStorage<Page>("ace:page", "dashboard");
+	const [project, setProject] = useLocalStorage<string | undefined>("ace:project-id", undefined);
+	const [selected, setSelected] = useLocalStorage<Record<string, string>>(
+		"ace:project-channels",
+		{},
+	);
 	const [adding, setAdding] = useState(false);
-	const [settings, setSettings] = useState(location.hash === "#settings");
+	const [settings, setSettings] = useState(false);
 	const [left, setLeft] = useLocalStorage("panel:left", true);
-	const [width, setWidth] = useLocalStorage("panel:left:width", 220);
+	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
+	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
+		pinned: false,
+		mine: false,
+		team: false,
+		archived: true,
+	});
+	const picking = useRef(false);
+	const creating = useRef(false);
 
 	useEffect(() => {
 		if (status !== "open") return;
 		host.request<Hello>({ op: "hello" }).then(setHello, () => {});
 	}, [status]);
 
-	useEffect(() => {
-		const open = () => setSettings(true);
-		window.addEventListener("ace:settings", open);
-		return () => window.removeEventListener("ace:settings", open);
-	}, []);
-
-	const projects = [...new Set(channels.map((channel) => channel.project))];
-	const current = project && projects.includes(project) ? project : projects[0];
-	const visible = channels.filter((channel) => channel.project === current);
-	const channel = channels.find((value) => value.id === selected);
-	const repos: SessionSidebarRepo[] = projects.map((path) => ({
-		id: path,
-		name: basename(path),
-		org: "Local",
+	const available = useMemo(() => projects(opened, channels, hello.host), [
+		opened,
+		channels,
+		hello.host,
+	]);
+	const current = available.find((value) => value.id === project) || available[0];
+	const visible = channels.filter((channel) =>
+		channel.host === current?.host && channel.project === current.path
+	);
+	const channel = current ? visible.find((value) => value.id === selected[current.id]) : undefined;
+	const connected = status === "open" && !!hello.host;
+	const local = current?.host === hello.host;
+	const repos: SessionSidebarRepo[] = available.map((value) => ({
+		id: value.id,
+		name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
+		org: "",
 	}));
 	const groups: SessionSidebarGroup[] = [
 		{
 			id: "mine",
 			label: "Channels",
-			rows: visible.filter((value) => value.state !== "archived" && value.owner === user)
-				.map((value) => row(value, user)),
+			rows: visible.filter((value) => value.state !== "archived" && value.owner === hello.user).map(
+				(value) => row(value, hello.user),
+			),
+			collapsed: collapsed.mine,
 		},
 		{
 			id: "team",
 			label: "Team",
-			rows: visible.filter((value) => value.state !== "archived" && value.owner !== user)
-				.map((value) => row(value, user)),
+			rows: visible.filter((value) => value.state !== "archived" && value.owner !== hello.user).map(
+				(value) => row(value, hello.user),
+			),
+			collapsed: collapsed.team,
 		},
 		{
 			id: "archived",
 			label: "Archived",
-			rows: visible.filter((value) => value.state === "archived").map((value) => row(value, user)),
-			collapsed: true,
+			rows: visible.filter((value) => value.state === "archived").map((value) =>
+				row(value, hello.user)
+			),
+			collapsed: collapsed.archived,
 		},
 	];
 
-	async function create(path: string) {
-		const created = await host.request<Listing>({ op: "create", project: path });
-		setProject(created.project);
-		setSelected(created.id);
+	function select(value: Pick<Listing, "id" | "host" | "project">) {
+		const id = projectId(value.host, value.project);
+		setProject(id);
+		setSelected((previous) => ({ ...previous, [id]: value.id }));
+		setPage("channels");
+	}
+
+	async function open(path: string) {
+		const value = await host.request<Project>({ op: "project-open", path });
+		setProject(projectId(hello.host, value.path));
+	}
+
+	async function choose() {
+		if (!connected || picking.current) return;
+		if (!desktop) return setAdding(true);
+		picking.current = true;
+		try {
+			const path = await desktop.project();
+			if (path) await open(path);
+		} catch (error) {
+			toast.error("Could not open project", { description: (error as Error).message });
+		} finally {
+			picking.current = false;
+		}
+	}
+
+	async function create(text?: string, onCreated?: () => void): Promise<void> {
+		if (!current || !local || !connected || creating.current) return;
+		creating.current = true;
+		try {
+			const value = await host.request<Pick<Listing, "id" | "project">>({
+				op: "create",
+				project: current.path,
+			});
+			try {
+				if (text) await host.channel(value.id, { op: "ask", author: hello.user, text });
+				onCreated?.();
+			} finally {
+				select({ ...value, host: hello.host });
+			}
+		} catch (error) {
+			toast.error("Could not start channel", {
+				description: (error as Error).message,
+				action: { label: "Settings", onClick: () => setSettings(true) },
+			});
+		} finally {
+			creating.current = false;
+		}
+	}
+
+	async function change(request: HostRequest) {
+		try {
+			await host.request(request);
+		} catch (error) {
+			toast.error("Could not update channel", { description: (error as Error).message });
+		}
 	}
 
 	return (
 		<ThemeProvider storageKey="ace-theme">
 			<TooltipProvider>
 				<Layout
-					appearance="web"
+					appearance={desktop ? "native" : "web"}
 					defaultNavOpen={false}
 					leftOpen={left}
 					onLeftChange={setLeft}
 					leftWidth={width}
 					onLeftWidthChange={setWidth}
-					loading={status !== "open"}
-				>
-					<Sidebar side="left">
-						<SessionSidebar
-							className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
-							projectName={current ? basename(current) : "Projects"}
-							repos={repos}
-							selectedRepoId={current}
-							groups={groups}
-							selectedUid={channel?.id}
-							loading={status !== "open" && !channels.length}
-							onRepoChange={(repo) => setProject(repo.id)}
-							onAddRepo={() => setAdding(true)}
-							onSelect={(item) => setSelected(item.uid)}
-							onNewSession={current
-								? () =>
-									void create(current).catch((error) =>
-										toast.error("Could not create channel", {
-											description: (error as Error).message,
-										})
-									)
-								: () => setAdding(true)}
-							onArchive={(item) =>
-								void host.request({ op: "archive", channel: item.uid, archived: true })}
-							onDelete={(item) => void host.request({ op: "delete", channel: item.uid })}
+					loading={status === "connecting"}
+					onDoubleClick={titlebar}
+					nav={
+						<Navigation
+							page={page}
+							user={hello.user}
+							onPage={setPage}
+							onSettings={() => setSettings(true)}
 						/>
-						<div className="border-t p-2">
-							<Button
-								variant="ghost"
-								className="w-full justify-start"
-								onClick={() => setSettings(true)}
-							>
-								Settings
-							</Button>
-						</div>
-					</Sidebar>
-					<Main className="overflow-hidden">
+					}
+				>
+					<WindowControls
+						onOpen={() => void choose()}
+						onSettings={() => setSettings(true)}
+						onPage={setPage}
+						connected={connected}
+					/>
+					{page === "channels" && current && (
+						<Sidebar
+							side="left"
+							className="-my-2 h-[calc(100%+1rem)]"
+							innerClassName="h-full min-h-0"
+						>
+							<SessionSidebar
+								className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
+								projectName={current.name}
+								repos={repos}
+								selectedRepoId={current.id}
+								groups={groups}
+								selectedUid={channel?.id}
+								loading={status === "connecting" && !channels.length}
+								onRepoChange={(repo) => setProject(repo.id)}
+								onAddRepo={connected ? () => void choose() : undefined}
+								onSelect={(item) => {
+									const value = visible.find((value) => value.id === item.uid);
+									if (value) select(value);
+								}}
+								onNewSession={local && connected ? () => void create() : undefined}
+								onToggleGroup={(id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
+								onArchive={local && connected
+									? (item) =>
+										void change({
+											op: "archive",
+											channel: item.uid,
+											archived: item.lifecycle !== "archived",
+										})
+									: undefined}
+								onDelete={local && connected
+									? (item) => void change({ op: "delete", channel: item.uid })
+									: undefined}
+								empty={
+									<p className="px-4 py-6 text-xs text-muted-foreground">
+										No channels in this project yet.
+									</p>
+								}
+							/>
+						</Sidebar>
+					)}
+					<Main
+						className={page === "channels" && channel
+							? "overflow-hidden bg-background"
+							: "overflow-y-auto bg-background"}
+					>
 						{status === "closed" && (
 							<p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
 								{desktop
@@ -163,35 +262,49 @@ export function App() {
 									: "Disconnected from Ace Helper. Open the Ace desktop app or use ace open to reconnect."}
 							</p>
 						)}
-						{channel
+						{!current
+							? <EmptyProjects onOpen={() => void choose()} disabled={!connected} />
+							: page === "dashboard"
+							? (
+								<Dashboard
+									key={current.id}
+									project={current}
+									repos={repos}
+									channels={visible}
+									local={local}
+									connected={connected}
+									onProject={setProject}
+									onOpen={() => void choose()}
+									onChannel={select}
+									onCreate={create}
+								/>
+							)
+							: channel
 							? (
 								<Conversation
 									key={channel.id}
 									channel={channel}
-									user={user}
-									remote={channel.host !== hello.host}
+									user={hello.user}
+									remote={!local}
 								/>
 							)
 							: (
-								<NewChannel
-									onCreate={create}
-									disabled={status !== "open"}
-									onSettings={() => setSettings(true)}
-								/>
+								<div className="flex min-h-full flex-col items-center justify-center gap-4 px-5 py-10 text-center">
+									<IconHash className="size-6 text-muted-foreground" aria-hidden />
+									<h1 className="text-base font-medium">Choose a channel in {current.name}</h1>
+									{local && (
+										<Button
+											disabled={!connected}
+											onClick={() => void create()}
+										>
+											<IconPlus aria-hidden />New channel
+										</Button>
+									)}
+								</div>
 							)}
 					</Main>
 				</Layout>
-				<NewChannel
-					dialog
-					open={adding}
-					onOpenChange={setAdding}
-					onCreate={create}
-					disabled={status !== "open"}
-					onSettings={() => {
-						setAdding(false);
-						setSettings(true);
-					}}
-				/>
+				{adding && <OpenProject onOpen={open} onClose={() => setAdding(false)} />}
 				{settings && <Settings onClose={() => setSettings(false)} />}
 				<Toaster />
 			</TooltipProvider>

@@ -1,6 +1,15 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import { aceAvatar, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
+import {
+	aceAvatar,
+	Button,
+	ChatComposer,
+	serialize,
+	Timeline,
+	toast,
+	useLayoutLeft,
+} from "@ace/ui";
+import { IconSidebar } from "@ace/ui/icons";
 import type { Listing, ModelRef } from "@ace/host/protocol";
 
 import { host } from "./host";
@@ -20,6 +29,7 @@ type Props = { channel: Listing; user: string; remote: boolean };
 
 /** One channel's chat: the original timeline and composer over the channel's transcript. */
 export function Conversation({ channel, user, remote }: Props) {
+	const left = useLayoutLeft();
 	const transcript = useTranscript(channel.id);
 	// Runs use the credentials of the host that runs the channel, so offer that host's models.
 	const [models, setModels] = useState<ModelRef[]>([]);
@@ -69,13 +79,24 @@ export function Conversation({ channel, user, remote }: Props) {
 
 	return (
 		<>
-			<header className="flex h-11 shrink-0 items-center gap-2 px-4 text-sm electrobun-webkit-app-region-drag">
-				<span className="font-medium">#{channel.name}</span>
-				<span className="truncate text-muted-foreground">
-					{remote ? `${channel.host}:` : ""}
-					{channel.project}
+			<header className="flex h-8 shrink-0 items-center gap-2 border-b pr-3 text-xs electrobun-webkit-app-region-drag">
+				<Button
+					variant="ghost"
+					size="icon-sm"
+					className="h-8 w-8 shrink-0 rounded-none electrobun-webkit-app-region-no-drag"
+					aria-label="Toggle channels sidebar"
+					aria-expanded={left.open}
+					onClick={() => left.setOpen((value) => !value)}
+				>
+					<IconSidebar className="size-4" />
+				</Button>
+				<span className="min-w-0 truncate font-medium" title={channel.project}>
+					#{channel.name}
 				</span>
-				{chat?.lane && <span className="text-muted-foreground">· lane {chat.lane}</span>}
+				{remote && <span className="truncate text-muted-foreground">{channel.host}</span>}
+				{chat?.lane && (
+					<span className="ml-auto truncate text-muted-foreground">lane {chat.lane}</span>
+				)}
 			</header>
 			<div className="relative min-h-0 flex-1">
 				<Timeline

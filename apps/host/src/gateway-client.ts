@@ -1,5 +1,5 @@
 /** A client of a host gateway, shared by the app and by hosts reaching their tailnet peers. */
-import type { Event, HostFrame, HostRequest, Listing, Request } from "./protocol";
+import type { Event, HostFrame, HostRequest, Listing, Project, Request } from "./protocol";
 
 type Pending = {
 	resolve(value: unknown): void;
@@ -18,6 +18,7 @@ export class GatewayClient {
 	#closed = false;
 	status: Status = "connecting";
 	channels: Listing[] = [];
+	projects: Project[] = [];
 	settingsVersion = 0;
 	/** Called after every connect so watches can be re-established. */
 	onOpen?: () => void;
@@ -60,6 +61,10 @@ export class GatewayClient {
 	}
 
 	#receive(frame: HostFrame) {
+		if ("projects" in frame) {
+			this.projects = frame.projects;
+			return this.#emit();
+		}
 		if ("settings" in frame) {
 			this.settingsVersion++;
 			return this.#emit();

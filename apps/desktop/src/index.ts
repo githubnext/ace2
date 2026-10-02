@@ -8,6 +8,7 @@ import { desktop } from "@ace/host/config";
 
 import { helper as control } from "./helper";
 import type { DesktopRPC } from "./protocol";
+import { windowStyle } from "./window";
 
 const resources = join(dirname(process.execPath), "..", "Resources");
 const { channel, identifier } = await Bun.file(join(resources, "version.json")).json() as {
@@ -28,6 +29,16 @@ function authorize(value: string): void {
 const rpc = BrowserView.defineRPC<DesktopRPC>({
 	handlers: {
 		requests: {
+			lights: ({ token, expanded }) => {
+				authorize(token);
+				if (window) windowStyle.lights(window.ptr, expanded);
+				return null;
+			},
+			zoom: ({ token }) => {
+				authorize(token);
+				if (window) windowStyle.zoom(window.ptr);
+				return null;
+			},
 			project: async ({ token }) => {
 				authorize(token);
 				const paths = await Utils.openFileDialog({
@@ -48,20 +59,23 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
 	},
 });
 
-function show(settings = false): void {
+function show(action?: string): void {
 	if (!ready) return;
 	if (window) {
 		window.focus();
-		if (settings) {
-			window.webview.executeJavascript("window.dispatchEvent(new Event('ace:settings'))");
+		if (action) {
+			window.webview.executeJavascript(
+				`window.dispatchEvent(new Event(${JSON.stringify(`ace:${action}`)}))`,
+			);
 		}
 		return;
 	}
 	const target = new URL(url);
-	if (settings) target.hash = "settings";
+	if (action) target.hash = action;
 	window = new BrowserWindow({
 		title: "Ace",
 		titleBarStyle: "hiddenInset",
+		transparent: true,
 		url: target.href,
 		navigationRules: JSON.stringify(["^*", `${url.origin}/*`]),
 		rpc,
@@ -73,6 +87,9 @@ function show(settings = false): void {
 		}`,
 		frame: { width: 1100, height: 760, x: 160, y: 120 },
 	});
+	windowStyle.setup(window.ptr);
+	window.setWindowButtonPosition(17, 13);
+	windowStyle.lights(window.ptr, false);
 	window.on("close", () => window = undefined);
 }
 
@@ -92,6 +109,12 @@ ApplicationMenu.setApplicationMenu([
 		],
 	},
 	{
+		label: "File",
+		submenu: [
+			{ label: "Open Folder…", action: "project-open", accelerator: "CmdOrCtrl+o" },
+		],
+	},
+	{
 		label: "Edit",
 		submenu: [
 			{ role: "undo" },
@@ -103,6 +126,20 @@ ApplicationMenu.setApplicationMenu([
 			{ role: "selectAll" },
 		],
 	},
+	{
+		label: "View",
+		submenu: [
+			{ label: "Dashboard", action: "dashboard", accelerator: "CmdOrCtrl+1" },
+			{ label: "Channels", action: "channels", accelerator: "CmdOrCtrl+2" },
+			{ type: "divider" },
+			{ label: "Toggle Navigation", action: "nav-toggle", accelerator: "CmdOrCtrl+b" },
+			{
+				label: "Toggle Channels Sidebar",
+				action: "channels-toggle",
+				accelerator: "CmdOrCtrl+Shift+b",
+			},
+		],
+	},
 ]);
 
 Electrobun.events.on("reopen", () => show());
@@ -112,8 +149,15 @@ function errorMessage(error: unknown): string {
 
 Electrobun.events.on("application-menu-clicked", ({ data }) => {
 	if (data.action === "show") return show();
-	if (data.action === "settings") return show(true);
+	if (
+		["settings", "project-open", "dashboard", "channels", "nav-toggle", "channels-toggle"].includes(
+			data.action,
+		)
+	) {
+		return show(data.action);
+	}
 	if (data.action === "quit") return Utils.quit();
+	if (!data.action.startsWith("helper-")) return;
 	const action = data.action.slice("helper-".length);
 	if (action !== "start" && action !== "restart" && action !== "settings" && action !== "log") {
 		return;

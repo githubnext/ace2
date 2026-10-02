@@ -114,12 +114,12 @@ export function SessionActions(
 	return (
 		<span className={SESSION_ACTIONS}>
 			{canPin && (
-				<ActionButton label={pinned ? "Unpin session" : "Pin session"} onClick={pin}>
+				<ActionButton label={pinned ? "Unpin channel" : "Pin channel"} onClick={pin}>
 					{pinned ? <PinSlash className="size-3.5" /> : <Pin className="size-3.5" />}
 				</ActionButton>
 			)}
 			{onArchive && (
-				<ActionButton label="Archive session" onClick={archive}>
+				<ActionButton label="Archive channel" onClick={archive}>
 					<ArchiveContent2 className="size-3.5" />
 				</ActionButton>
 			)}
@@ -205,20 +205,20 @@ export function RowMenu(
 								<>
 									<ContextMenu.Item className={MENU_ITEM} disabled={!onRename} onClick={rename}>
 										<Pencil className="size-3.5" />
-										Rename session
+										Rename channel
 									</ContextMenu.Item>
 									<ContextMenu.Item className={MENU_ITEM} disabled={!onFork} onClick={fork}>
 										<Fork className="size-3.5" />
-										Fork session
+										Fork channel
 									</ContextMenu.Item>
 									<ContextMenu.Item className={MENU_ITEM} disabled={!onInfo} onClick={info}>
 										<Info className="size-3.5" />
-										Session info
+										Channel info
 									</ContextMenu.Item>
 									{data.member && (
 										<ContextMenu.Item className={MENU_ITEM} disabled={!leave} onClick={exit}>
 											<Leave className="size-3.5" />
-											Leave session
+											Leave channel
 										</ContextMenu.Item>
 									)}
 									<ContextMenu.Item
@@ -227,7 +227,7 @@ export function RowMenu(
 										onClick={archive}
 									>
 										<ArchiveContent2 className="size-3.5" />
-										Archive session
+										Archive channel
 									</ContextMenu.Item>
 								</>
 							)}
@@ -238,7 +238,7 @@ export function RowMenu(
 									onClick={del}
 								>
 									<Trash className="size-3.5" />
-									Delete session
+									Delete channel
 								</ContextMenu.Item>
 							)}
 							{lobby && (

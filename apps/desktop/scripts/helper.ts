@@ -55,6 +55,21 @@ run([
 	join(bin, "ace-service.dylib"),
 ]);
 
+run([
+	"xcrun",
+	"clang",
+	"-dynamiclib",
+	"-fobjc-arc",
+	"-mmacosx-version-min=14.0",
+	"-framework",
+	"Cocoa",
+	"-framework",
+	"QuartzCore",
+	join(native, "window.m"),
+	"-o",
+	join(bin, "ace-window.dylib"),
+]);
+
 const agents = join(contents, "Library", "LaunchAgents");
 mkdirSync(agents, { recursive: true });
 writeFileSync(
