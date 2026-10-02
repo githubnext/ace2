@@ -31,6 +31,14 @@ to change.
 - Use `workspace:*` for internal dependencies and root catalogs for shared versions.
 - Comments record reasons and constraints, never narration.
 
+## Tracking and PRs
+
+- [TODO.md](TODO.md) is the only tracker; don't open GitHub issues. Update it in the same commit
+  as the work.
+- PR bodies follow [the template](.github/pull_request_template.md), including when created with
+  `gh pr create --body`. Always fill in **Built in Ace**: if anything outside Ace was used, name it,
+  say why Ace couldn't do it, and add the gap to TODO.md.
+
 ## Commands
 
 ```sh
