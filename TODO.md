@@ -16,9 +16,6 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
-- **Diff tab** for the selected chat's lane.
-- **Images in the composer.** pi accepts image content; the app doesn't send it.
-- **Terminals** per channel, opened in a chat's lane.
 - **Durable data.** Settle where channel data lives, add backup or export, and from the first
   dogfood channel on, never break existing channels without a migration.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
@@ -29,6 +26,13 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 Driven by what the team hits. Known so far:
 
 - **Steer a busy agent**: send while a run is active.
+- **Loading states**: opening a dormant channel shows an empty timeline while its worker starts.
+- **Run summaries**: a stopped run shows its aborted tool call but no "Stopped" line, and the
+  timeline overstated a 3-second run as "Worked for 1 minute".
+- **Diff freshness**: a patch reloads only when a file's line counts change; an edit that keeps
+  them shows the old patch until reopened. Add a per-file version to `changes`.
+- **Teammates' terminals**: terminals are owner-only and don't reach peers' or hosted channels'
+  workspaces through the gateway.
 - **Notify when an agent finishes.**
 - **Token and cost display.**
 - **Hosted channels**: create them from the app; let them message other channels; let browsers

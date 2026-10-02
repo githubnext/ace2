@@ -211,9 +211,12 @@ async function handle(
 			return broadcast();
 		case "terminal": {
 			if (!catalog.owns(request.channel)) throw new Error("Terminals open on the channel's host");
-			const { opened, detach } = await terminals.open(request, send);
+			const { opened, attach } = await terminals.open(request);
 			client.terminals.get(opened.terminal)?.();
-			client.terminals.set(opened.terminal, detach);
+			// After the reply, which is sent once this returns and its microtasks settle.
+			setTimeout(() => {
+				if (socket.readyState === 1) client.terminals.set(opened.terminal, attach(send));
+			});
 			return opened;
 		}
 		case "terminal-input":

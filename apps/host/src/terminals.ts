@@ -45,24 +45,33 @@ function release(terminal: Terminal, listener: Listener) {
 	terminal.orphaned = setTimeout(() => close(terminal.id), ORPHANED);
 }
 
+/**
+ * Open a terminal, or reattach to `request.terminal` while it still runs. Clients learn the id from
+ * the reply, so `attach` is called after it is sent and replays the scrollback up to that point.
+ */
 export async function open(
 	request: { channel: string; chat?: number; terminal?: string; cols: number; rows: number },
-	listener: Listener,
-): Promise<{ opened: TerminalOpened; detach(): void }> {
+): Promise<{ opened: TerminalOpened; attach(listener: Listener): () => void }> {
 	const existing = request.terminal && terminals.get(request.terminal);
-	if (existing) {
-		clearTimeout(existing.orphaned);
-		existing.orphaned = undefined;
-		existing.listeners.add(listener);
-		existing.pty.resize(request.cols, request.rows);
-		for (const chunk of existing.chunks) {
-			listener({ terminal: existing.id, data: Buffer.from(chunk).toString("base64") });
-		}
-		return {
-			opened: { terminal: existing.id, cwd: existing.cwd },
-			detach: () => release(existing, listener),
-		};
-	}
+	const terminal = existing || await spawn(request);
+	clearTimeout(terminal.orphaned);
+	terminal.orphaned = undefined;
+	if (existing) existing.pty.resize(request.cols, request.rows);
+	return {
+		opened: { terminal: terminal.id, cwd: terminal.cwd },
+		attach(listener) {
+			for (const chunk of terminal.chunks) {
+				listener({ terminal: terminal.id, data: Buffer.from(chunk).toString("base64") });
+			}
+			terminal.listeners.add(listener);
+			return () => release(terminal, listener);
+		},
+	};
+}
+
+async function spawn(
+	request: { channel: string; chat?: number; cols: number; rows: number },
+): Promise<Terminal> {
 	const id = crypto.randomUUID();
 	const dir = await cwd(request.channel, request.chat);
 	const shell = process.env.SHELL || "/bin/zsh";
@@ -92,7 +101,7 @@ export async function open(
 		pty: child.terminal!,
 		chunks: [],
 		size: 0,
-		listeners: new Set([listener]),
+		listeners: new Set(),
 	};
 	terminals.set(id, terminal);
 	log("info", "terminal.open", {
@@ -107,7 +116,7 @@ export async function open(
 		clearTimeout(terminal.orphaned);
 		terminals.delete(id);
 	});
-	return { opened: { terminal: id, cwd: dir }, detach: () => release(terminal, listener) };
+	return terminal;
 }
 
 export function input(id: string, data: string) {

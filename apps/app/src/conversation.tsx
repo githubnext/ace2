@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import { aceAvatar, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
+import { aceAvatar, type Attachment, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
 import type { Listing, ModelRef } from "@ace/host/protocol";
 
 import { host } from "./host";
+import { images } from "./images";
 import { toEvents } from "./timeline";
 import { useTranscript } from "./transcript";
 
@@ -51,17 +52,19 @@ export function Conversation({ channel, chat: id, user }: Props) {
 	]);
 	const archived = channel.state === "archived";
 
-	async function send(text: string, mode: string) {
+	async function send(text: string, mode: string, attached: Attachment[]) {
 		const invoke = mode === "ace" || ACE.test(text);
 		const body = text.trim();
-		if (!body) return;
+		if (!body && !attached.length) return;
 		try {
+			const encoded = attached.length ? { images: await images(attached) } : {};
 			if (!invoke) {
 				return void (await host.channel(channel.id, {
 					op: "say",
 					chat: id,
 					author: user,
 					text: body,
+					...encoded,
 				}));
 			}
 			const [provider, ...rest] = model.split("/");
@@ -71,6 +74,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 				chat: id,
 				author: user,
 				text: body,
+				...encoded,
 				model: selected,
 			});
 		} catch (error) {
@@ -98,7 +102,6 @@ export function Conversation({ channel, chat: id, user }: Props) {
 			<div className="utils:max-width relative z-20 shrink-0 px-3 pb-3">
 				<ChatComposer
 					scope={`/channels/${channel.id}`}
-					canAttach={false}
 					modes={MODES}
 					mode={mode}
 					onModeChange={setMode}
@@ -114,7 +117,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 					canStop={transcript.busy}
 					onStop={() => void host.channel(channel.id, { op: "stop", chat: id })}
 					canSend={!archived}
-					onSend={({ doc, mode }) => void send(serialize(doc), mode)}
+					onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 				/>
 			</div>
 		</>
