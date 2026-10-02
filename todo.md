@@ -6,6 +6,8 @@ Move these into issues once the repository has a remote.
   `ace key set` stores them; the app has no settings view to add or see which providers are set.
 - **Show the model on agent replies.** Replies are labelled `ace`; switching models mid-chat is
   invisible in the timeline and to later runs.
+- **Show why a run failed.** A provider error or refusal ends the run with "stopped before
+  answering" in the CLI and nothing in the app; the reason is only in the stored transcript.
 - **Diff tab** for the selected chat's lane.
 - **Two-machine check** of the tailnet gateway: proxying and discovery have only run against
   this machine's own tailnet listener.

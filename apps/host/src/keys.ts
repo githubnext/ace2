@@ -11,6 +11,26 @@ import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 const service = "ace";
 const found = new Map<string, string | undefined>();
+const sealed = new Map<string, string>();
+
+/**
+ * Agent shells inherit the worker's environment, and anyone admitted to a channel can run
+ * `env` through its agent. Credentials leave `process.env` before any tool runs and stay
+ * readable only through `key`.
+ */
+const secret = /^ACE_|(_API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDENTIALS?)$/;
+
+export function seal(): void {
+	for (const [name, value] of Object.entries(process.env)) {
+		if (!secret.test(name) || value === undefined) continue;
+		sealed.set(name, value);
+		delete process.env[name];
+	}
+}
+
+function env(name: string): string | undefined {
+	return set(sealed.get(name) ?? process.env[name]);
+}
 
 function set(value: string | undefined): string | undefined {
 	return value?.trim() ? value : undefined;
@@ -24,7 +44,7 @@ async function keychain(name: string): Promise<string | undefined> {
 }
 
 export async function key(name: string): Promise<string | undefined> {
-	return set(process.env[`ACE_${name}`]) ?? set(process.env[name]) ?? await keychain(name);
+	return env(`ACE_${name}`) ?? env(name) ?? await keychain(name);
 }
 
 export function store(name: string, value: string): Promise<void> {

@@ -9,10 +9,12 @@ import { Channel, type Envelope, type Frame } from "@ace/channel";
 
 import * as catalog from "./catalog";
 import { request } from "./client";
-import { models } from "./keys";
+import { models, seal } from "./keys";
 import { lines } from "./lines";
 
 const RETIRE_AFTER = 10 * 60_000;
+
+seal();
 
 const id = process.argv[2];
 const record = catalog.read(id);
