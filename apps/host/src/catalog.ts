@@ -18,8 +18,18 @@ export type Listing = {
 export const home = process.env.ACE_HOME || join(homedir(), ".local", "state", "ace");
 const root = join(home, "channels");
 
-/** The local human. The tailnet will supply verified identities for remote participants. */
-export const user = process.env.ACE_USER || userInfo().username;
+function login(): string | undefined {
+	const result = Bun.spawnSync(["tailscale", "status", "--json"], { stderr: "ignore" });
+	if (!result.success) return;
+	const status = JSON.parse(result.stdout.toString());
+	return status.User?.[status.Self.UserID]?.LoginName;
+}
+
+/**
+ * The local human, named by their Tailscale login so they are the same participant on every
+ * host. Without Tailscale the host is single-user and the OS account name stands in.
+ */
+export const user = process.env.ACE_USER || login() || userInfo().username;
 
 export function dir(id: string): string {
 	return join(root, id);
@@ -94,6 +104,11 @@ export function create(project: string, model: ModelRef, name?: string): Listing
 	mkdirSync(base, { recursive: true });
 	writeFileSync(file, JSON.stringify(record, null, "\t"));
 	return record;
+}
+
+/** Whether this host runs the channel. Ids arrive from peers, so only well-formed ones reach the disk. */
+export function owns(id: string): boolean {
+	return /^[0-9a-f]{16}$/.test(id) && existsSync(paths(id).record);
 }
 
 export function read(id: string): Listing {

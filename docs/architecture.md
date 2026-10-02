@@ -59,10 +59,22 @@ Shared state that must outlive any one machine (the directory and each project's
 cells: Durable Objects deployed to Cloudflare, or celld on a team machine. Channels never live in
 cells.
 
-The tailnet is the team: it decides which people and machines can reach a host. Within a channel
-there are no tool permissions; the owner can only turn agent invocation by others on or off.
+## The team
+
+The tailnet is the team: it decides which people and machines can reach a host. Every author is a
+Tailscale login, so a person is the same participant on every host. Within a channel there are no
+tool permissions; the owner can only turn agent invocation by others on or off.
+
+Each host's gateway listens twice. Loopback serves the app as the host's owner. The machine's
+tailnet address takes host-to-host sockets only, names each caller with `tailscale whois`, and
+refuses anything with an `Origin` header, so a web page on a teammate's machine cannot act as them.
+Hosts find online, untagged peers through `tailscale status`. A host shows its app every peer's
+channels and proxies their requests; the peer that runs a channel stamps every author. Only a
+channel's host creates it; only the host's owner, from any of their machines, archives, deletes,
+or kills.
 
 ## Not yet built
 
-Tailnet gateway, desktop client, terminals and previews, attachments, lobby and directory cells,
-external harnesses (Claude Code, Codex), and hosted channels.
+Terminals and previews, attachments, lobby and directory cells, external harnesses (Claude Code,
+Codex), and hosted channels. Projects are still a local path, so a teammate's checkout of the same
+repository shows as a separate project.

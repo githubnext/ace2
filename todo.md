@@ -10,7 +10,9 @@ Move these into issues once the repository has a remote.
 - **Show the model on agent replies.** Replies are labelled `ace`; switching models mid-chat is
   invisible in the timeline and to later runs.
 - **Diff tab** for the selected chat's lane.
-- **Tailnet gateway** so teammates' apps reach this host's channels.
+- **Two-machine check** of the tailnet gateway: proxying and discovery have only run against
+  this machine's own tailnet listener.
+- **Projects across hosts**: identify a project by its repository, not a local path.
 - **Desktop bundle.** The desktop app runs the host from the checkout (`ACE_ROOT`); bundle the
   host and worker so it runs standalone. Electrobun's downloaded CLI needs an ad-hoc re-sign.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki

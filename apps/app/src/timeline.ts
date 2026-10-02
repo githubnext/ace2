@@ -39,7 +39,8 @@ export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
 		if (item.kind === "message") {
 			return {
 				...base,
-				sender: { kind: "user", value: item.author, display: item.author },
+				// Authors are Tailscale logins; the name before the domain reads as a handle.
+				sender: { kind: "user", value: item.author, display: item.author.split("@")[0]! },
 				content: [
 					text(item.invoked && !/(^|\s)@ace\b/i.test(item.text) ? `@ace ${item.text}` : item.text),
 				],

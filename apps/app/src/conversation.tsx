@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { aceAvatar, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
 import type { Listing, ModelRef } from "@ace/host/protocol";
@@ -16,11 +16,19 @@ const ACE = /(^|\s)@ace\b/i;
 
 const key = (model: ModelRef) => `${model.provider}/${model.modelId}`;
 
-type Props = { channel: Listing; models: ModelRef[]; user: string };
+type Props = { channel: Listing; user: string; remote: boolean };
 
 /** One channel's chat: the original timeline and composer over the channel's transcript. */
-export function Conversation({ channel, models, user }: Props) {
+export function Conversation({ channel, user, remote }: Props) {
 	const transcript = useTranscript(channel.id);
+	// Runs use the credentials of the host that runs the channel, so offer that host's models.
+	const [models, setModels] = useState<ModelRef[]>([]);
+	useEffect(() => {
+		host.request<ModelRef[]>({ op: "models", host: channel.host }).then(
+			setModels,
+			() => setModels([]),
+		);
+	}, [channel.host]);
 	const [mode, setMode] = useState("ace");
 	const chat = transcript.info?.chats.find((value) => value.id === 1);
 	const [picked, setPicked] = useState<string>();
@@ -52,7 +60,10 @@ export function Conversation({ channel, models, user }: Props) {
 		<>
 			<header className="flex h-11 shrink-0 items-center gap-2 px-4 text-sm electrobun-webkit-app-region-drag">
 				<span className="font-medium">#{channel.name}</span>
-				<span className="truncate text-muted-foreground">{channel.project}</span>
+				<span className="truncate text-muted-foreground">
+					{remote ? `${channel.host}:` : ""}
+					{channel.project}
+				</span>
 				{chat?.lane && <span className="text-muted-foreground">· lane {chat.lane}</span>}
 			</header>
 			<div className="relative min-h-0 flex-1">

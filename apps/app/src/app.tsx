@@ -14,7 +14,7 @@ import {
 	TooltipProvider,
 	useLocalStorage,
 } from "@ace/ui";
-import type { Listing, ModelRef } from "@ace/host/protocol";
+import type { Hello, Listing } from "@ace/host/protocol";
 
 import { Conversation } from "./conversation";
 import { host } from "./host";
@@ -46,8 +46,8 @@ function row(channel: Listing, user: string): SidebarRow {
 export function App() {
 	const channels = useSyncExternalStore(host.subscribe, () => host.channels);
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
-	const [user, setUser] = useState("");
-	const [models, setModels] = useState<ModelRef[]>([]);
+	const [hello, setHello] = useState<Hello>({ user: "", host: "" });
+	const user = hello.user;
 	const [selected, setSelected] = useLocalStorage<string | undefined>("ace:channel", undefined);
 	const [project, setProject] = useLocalStorage<string | undefined>("ace:project", undefined);
 	const [adding, setAdding] = useState(false);
@@ -56,8 +56,7 @@ export function App() {
 
 	useEffect(() => {
 		if (status !== "open") return;
-		host.request<{ user: string }>({ op: "hello" }).then((hello) => setUser(hello.user));
-		host.request<ModelRef[]>({ op: "models" }).then(setModels);
+		host.request<Hello>({ op: "hello" }).then(setHello);
 	}, [status]);
 
 	const projects = [...new Set(channels.map((channel) => channel.project))];
@@ -73,7 +72,14 @@ export function App() {
 		{
 			id: "mine",
 			label: "Channels",
-			rows: visible.filter((value) => value.state !== "archived").map((value) => row(value, user)),
+			rows: visible.filter((value) => value.state !== "archived" && value.owner === user)
+				.map((value) => row(value, user)),
+		},
+		{
+			id: "team",
+			label: "Team",
+			rows: visible.filter((value) => value.state !== "archived" && value.owner !== user)
+				.map((value) => row(value, user)),
 		},
 		{
 			id: "archived",
@@ -125,7 +131,14 @@ export function App() {
 					</Sidebar>
 					<Main className="overflow-hidden">
 						{channel
-							? <Conversation key={channel.id} channel={channel} models={models} user={user} />
+							? (
+								<Conversation
+									key={channel.id}
+									channel={channel}
+									user={user}
+									remote={channel.host !== hello.host}
+								/>
+							)
 							: <NewChannel onCreate={(path) => void create(path)} />}
 					</Main>
 				</Layout>

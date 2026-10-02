@@ -20,6 +20,7 @@
 	},
 	"exports": {
 		".": "./src/cli.ts",
-		"./protocol": "./src/protocol.ts"
+		"./protocol": "./src/protocol.ts",
+		"./gateway-client": "./src/gateway-client.ts"
 	}
 }
