@@ -21,13 +21,14 @@ type Props = {
 	dialog?: boolean;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
+	onSettings?: () => void;
 };
 
 const DESCRIPTION =
 	"Channels run on this machine. Agents work in lanes: worktrees of the project's Git repository.";
 
 /** Starts a channel in a project folder, as the empty state or as a dialog. */
-export function NewChannel({ onCreate, dialog, open, onOpenChange }: Props) {
+export function NewChannel({ onCreate, dialog, open, onOpenChange, onSettings }: Props) {
 	const [path, setPath] = useState("");
 	const form = (
 		<form
@@ -53,7 +54,10 @@ export function NewChannel({ onCreate, dialog, open, onOpenChange }: Props) {
 					<EmptyTitle>Start a channel</EmptyTitle>
 					<EmptyDescription>{DESCRIPTION}</EmptyDescription>
 				</EmptyHeader>
-				<EmptyContent>{form}</EmptyContent>
+				<EmptyContent>
+					{form}
+					{onSettings && <Button variant="ghost" onClick={onSettings}>Provider settings</Button>}
+				</EmptyContent>
 			</Empty>
 		);
 	}

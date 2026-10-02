@@ -6,7 +6,9 @@ import type { ModelRef } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { hostedAuth, request } from "./client";
+import { config } from "./config";
 import { models as providers } from "./keys";
+import { preference } from "./preferences";
 
 const PREFERRED = ["anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
 
@@ -18,19 +20,35 @@ export function parseModel(value: string): ModelRef {
 
 /** Models with credentials on this machine. */
 export async function models(): Promise<ModelRef[]> {
-	return (await providers().getAvailable()).map((m) => ({
+	const registry = providers();
+	const results = await Promise.allSettled(
+		registry.getProviders().map((provider) => registry.getAvailable(provider.id)),
+	);
+	const available = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+	const failed = results.find((result) => result.status === "rejected");
+	if (!available.length && failed?.status === "rejected") throw failed.reason;
+	return available.map((m) => ({
 		provider: m.provider,
 		modelId: m.id,
 	}));
 }
 
 export async function defaultModel(): Promise<ModelRef> {
-	if (process.env.ACE_MODEL) return parseModel(process.env.ACE_MODEL);
+	if (config.model) return parseModel(config.model);
 	const available = new Set((await models()).map((m) => `${m.provider}/${m.modelId}`));
+	const selected = preference();
+	if (selected) {
+		if (!available.has(`${selected.provider}/${selected.modelId}`)) {
+			throw new Error(
+				"The default model is unavailable. Open Settings to check its provider or choose another model.",
+			);
+		}
+		return selected;
+	}
 	const chosen = PREFERRED.find((candidate) => available.has(candidate));
 	if (!chosen) {
 		throw new Error(
-			"No model credentials found; set OPENAI_API_KEY or ANTHROPIC_API_KEY, or pass --model",
+			"No model credentials found. Open Settings to add a provider key, or use ace key set.",
 		);
 	}
 	return parseModel(chosen);

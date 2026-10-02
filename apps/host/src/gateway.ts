@@ -4,20 +4,27 @@ import { join } from "node:path";
 
 import type { Server, ServerWebSocket } from "bun";
 
+import * as auth from "./auth";
 import * as catalog from "./catalog";
 import { Connection } from "./client";
+import { config } from "./config";
 import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
 import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
-import type { HostEnvelope, HostFrame, HostRequest, Listing } from "./protocol";
+import {
+	HOST_PROTOCOL,
+	type HostEnvelope,
+	type HostFrame,
+	type HostInfo,
+	type HostRequest,
+	type Listing,
+} from "./protocol";
 import { self, whois } from "./tailnet";
+import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
 import * as workspace from "./workspace";
-
-/** The built app; a packaged app points this at its bundled copy. */
-const app = () => process.env.ACE_APP_DIR || new URL("../../app/dist", import.meta.url).pathname;
 
 type Client = {
 	/** The participant this socket speaks for: the owner on loopback, a verified login on the tailnet. */
@@ -73,6 +80,12 @@ function broadcast() {
 	}
 }
 
+function settingsChanged(): void {
+	for (const socket of sockets) {
+		if (!socket.data.peer) socket.send(JSON.stringify({ settings: true } satisfies HostFrame));
+	}
+}
+
 function connection(client: Client, channel: string, hosted?: string): Promise<Connection> {
 	let open = client.channels.get(channel);
 	if (!open) {
@@ -101,6 +114,13 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 }
 
 const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
+const settingsOps = new Set<HostRequest["op"]>([
+	"settings",
+	"key-set",
+	"key-check",
+	"key-remove",
+	"preferences",
+]);
 
 async function handle(
 	socket: ServerWebSocket<Client>,
@@ -110,6 +130,9 @@ async function handle(
 	trace: string,
 ): Promise<unknown> {
 	const client = socket.data;
+	if (settingsOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
+		throw new Error("Settings can only be changed from this host's local app");
+	}
 	// A channel runs where it was created, so even its owner creates from that machine.
 	if (client.peer && request.op === "create") {
 		throw new Error("Create channels from the host that will run them");
@@ -122,6 +145,19 @@ async function handle(
 			return { user: client.user, host: name };
 		case "channels":
 			return listings(client);
+		case "settings":
+			return settings();
+		case "key-set":
+			await setKey(request.provider, request.value);
+			return settingsChanged();
+		case "key-check":
+			return checkKey(request.provider);
+		case "key-remove":
+			await removeKey(request.provider);
+			return settingsChanged();
+		case "preferences":
+			await setModel(request.model);
+			return settingsChanged();
 		case "models":
 			if (request.host && request.host !== name && !client.peer) {
 				return (await remote(client, request.host)).request({ op: "models" });
@@ -235,23 +271,55 @@ function client(user: string, peer: boolean): Client {
 
 /** The owner's listener: loopback only, serving the app. */
 function owner(port: number): Server<Client> {
+	const access = auth.owner(port);
 	return Bun.serve<Client>({
 		port,
 		hostname: "127.0.0.1",
 		async fetch(request, server) {
+			if (!access.accepts(request)) return new Response("Forbidden", { status: 403 });
 			const url = new URL(request.url);
+			if (url.pathname === "/health") {
+				const challenge = request.headers.get("x-ace-challenge");
+				if (challenge && !/^[a-f0-9]{64}$/.test(challenge)) {
+					return new Response("Bad challenge", { status: 400 });
+				}
+				const info: HostInfo = {
+					app: "ace",
+					protocol: HOST_PROTOCOL,
+					home: catalog.home,
+					pid: process.pid,
+				};
+				return Response.json(info, {
+					headers: challenge ? { "x-ace-proof": access.proof(info, challenge) } : undefined,
+				});
+			}
 			if (url.pathname === "/ws") {
-				return server.upgrade(request, { data: client(catalog.user, false) })
+				if (!access.authorizes(request)) return new Response("Unauthorized", { status: 401 });
+				const protocols = request.headers.get("sec-websocket-protocol")?.split(",").map((value) =>
+					value.trim()
+				);
+				return server.upgrade(request, {
+						data: client(catalog.user, false),
+						headers: {
+							"set-cookie": access.cookie,
+							...(protocols?.includes("ace") ? { "sec-websocket-protocol": "ace" } : {}),
+						},
+					})
 					? undefined
 					: new Response("Upgrade failed", { status: 400 });
 			}
-			const dir = app();
+			const dir = config.app;
 			if (!existsSync(dir)) {
 				return new Response("The app is not built; run bun app build", { status: 404 });
 			}
 			const file = Bun.file(join(dir, url.pathname));
-			if (url.pathname !== "/" && await file.exists()) return new Response(file);
-			return new Response(Bun.file(join(dir, "index.html")));
+			const headers = {
+				"Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+				"Referrer-Policy": "no-referrer",
+				"X-Content-Type-Options": "nosniff",
+			};
+			if (url.pathname !== "/" && await file.exists()) return new Response(file, { headers });
+			return new Response(Bun.file(join(dir, "index.html")), { headers });
 		},
 		websocket: websocket(),
 	});
@@ -288,6 +356,7 @@ function team(port: number, address: string): Server<Client> {
 }
 
 export async function serve(port: number): Promise<never> {
+	config.port = port;
 	// Hosted channels run tools in this process.
 	seal();
 	openLog("host");

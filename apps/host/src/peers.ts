@@ -1,13 +1,14 @@
 /** Other hosts on the tailnet: found through Tailscale, reached on their gateway's tailnet listener. */
 import { isIP } from "node:net";
 
+import { config } from "./config";
 import { GatewayClient } from "./gateway-client";
 import { log } from "./log";
 import type { Listing } from "./protocol";
 import { type Machine, peers } from "./tailnet";
 
 /** Hosts serve their tailnet listener on the same port unless told otherwise. */
-const port = () => Number(process.env.ACE_PEER_PORT || process.env.ACE_PORT || 4140);
+const port = () => config.peerPort || config.port;
 
 export function url(machine: Machine): string {
 	const address = isIP(machine.address) === 6 ? `[${machine.address}]` : machine.address;

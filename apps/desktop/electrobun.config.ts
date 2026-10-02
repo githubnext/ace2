@@ -2,21 +2,23 @@ import type { ElectrobunConfig } from "electrobun";
 
 import { version } from "./package.json";
 
+const channel = process.env.ACE_BUILD_CHANNEL || "dev";
+
 export default {
 	app: {
 		name: "Ace",
-		identifier: "dev.ace.desktop",
+		identifier: channel === "stable" ? "dev.ace.desktop" : `dev.ace.desktop.${channel}`,
 		version,
 	},
 	build: {
-		// Channels store their state with node:sqlite, which needs Bun 1.4.
-		bunVersion: "1.4.0",
+		// Electrobun's bundled runtime matches its native FFI; Ace Helper carries its own Bun.
 		bun: { entrypoint: "src/index.ts" },
 		copy: {
 			"../app/dist": "web",
-			"stage/worker": "worker",
 		},
 		buildFolder: "dist",
 		artifactFolder: "artifacts",
 	},
+	runtime: { exitOnLastWindowClosed: false },
+	scripts: { postBuild: "scripts/helper.ts", postPackage: "scripts/sign-dev.ts" },
 } satisfies ElectrobunConfig;

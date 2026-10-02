@@ -6,8 +6,8 @@
 	"version": "0.0.1",
 	"scripts": {
 		"stage": "bun scripts/stage.ts",
-		"dev": "bun run stage && electrobun dev",
-		"build": "bun run stage && electrobun build --env=stable",
+		"dev": "bun run stage && ACE_BUILD_CHANNEL=dev electrobun dev",
+		"build": "bun run stage && ACE_BUILD_CHANNEL=stable electrobun build --env=stable",
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {

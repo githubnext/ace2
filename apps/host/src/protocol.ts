@@ -1,6 +1,15 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
 
+export const HOST_PROTOCOL = 2;
+
+export type HostInfo = {
+	app: "ace";
+	protocol: number;
+	home: string;
+	pid: number;
+};
+
 /** `offline`: the channel's host is unreachable. Hosted channels are never offline. */
 export type ChannelState = "running" | "dormant" | "archived" | "offline";
 
@@ -20,9 +29,34 @@ export type Listing = {
 
 export type Hello = { user: string; host: string };
 
+export type ProviderId = "anthropic" | "openai";
+
+export type CredentialStatus = {
+	source: "keychain" | "environment" | "missing" | "unavailable";
+	stored: boolean | null;
+	override?: string;
+	error?: string;
+};
+
+export type ProviderSettings = CredentialStatus & { id: ProviderId; name: string };
+
+export type Settings = {
+	providers: ProviderSettings[];
+	model: ModelRef | null;
+	modelOverride?: ModelRef;
+	models: ModelRef[];
+	error?: string;
+};
+
 export type HostRequest =
 	| { op: "hello" }
 	| { op: "channels" }
+	/** These settings belong to the local owner and are never forwarded to peers. */
+	| { op: "settings" }
+	| { op: "key-set"; provider: ProviderId; value: string }
+	| { op: "key-check"; provider: ProviderId }
+	| { op: "key-remove"; provider: ProviderId }
+	| { op: "preferences"; model: ModelRef | null }
 	/** Models with credentials on a host; this host when omitted. */
 	| { op: "models"; host?: string }
 	/** Owner actions; tailnet peers create, archive, and delete channels on their own hosts. */
@@ -45,6 +79,8 @@ export type HostFrame =
 	| { id: number; ok: true; value: unknown }
 	| { id: number; ok: false; error: string }
 	| { id: number; event: Event }
+	/** Local settings changed; clients reload model availability without receiving secrets. */
+	| { settings: true }
 	/**
 	 * Pushed when any reachable host's catalog changes. A local client sees every reachable host's
 	 * channels; a tailnet peer sees only this host's.

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 
 import {
+	Button,
 	Layout,
 	Main,
 	SessionSidebar,
@@ -19,6 +20,7 @@ import type { Hello, Listing } from "@ace/host/protocol";
 import { Conversation } from "./conversation";
 import { host } from "./host";
 import { NewChannel } from "./new-channel";
+import { Settings } from "./settings";
 
 function basename(path: string) {
 	return path.replace(/\/+$/, "").split("/").pop() || path;
@@ -55,13 +57,20 @@ export function App() {
 	const [selected, setSelected] = useLocalStorage<string | undefined>("ace:channel", undefined);
 	const [project, setProject] = useLocalStorage<string | undefined>("ace:project", undefined);
 	const [adding, setAdding] = useState(false);
+	const [settings, setSettings] = useState(location.hash === "#settings");
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 220);
 
 	useEffect(() => {
 		if (status !== "open") return;
-		host.request<Hello>({ op: "hello" }).then(setHello);
+		host.request<Hello>({ op: "hello" }).then(setHello, () => {});
 	}, [status]);
+
+	useEffect(() => {
+		const open = () => setSettings(true);
+		window.addEventListener("ace:settings", open);
+		return () => window.removeEventListener("ace:settings", open);
+	}, []);
 
 	const projects = [...new Set(channels.map((channel) => channel.project))];
 	const current = project && projects.includes(project) ? project : projects[0];
@@ -132,8 +141,22 @@ export function App() {
 								void host.request({ op: "archive", channel: item.uid, archived: true })}
 							onDelete={(item) => void host.request({ op: "delete", channel: item.uid })}
 						/>
+						<div className="border-t p-2">
+							<Button
+								variant="ghost"
+								className="w-full justify-start"
+								onClick={() => setSettings(true)}
+							>
+								Settings
+							</Button>
+						</div>
 					</Sidebar>
 					<Main className="overflow-hidden">
+						{status === "closed" && (
+							<p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
+								Disconnected from Ace Helper. Open the Ace desktop app or use ace open to reconnect.
+							</p>
+						)}
 						{channel
 							? (
 								<Conversation
@@ -143,7 +166,12 @@ export function App() {
 									remote={channel.host !== hello.host}
 								/>
 							)
-							: <NewChannel onCreate={(path) => void create(path)} />}
+							: (
+								<NewChannel
+									onCreate={(path) => void create(path)}
+									onSettings={() => setSettings(true)}
+								/>
+							)}
 					</Main>
 				</Layout>
 				<NewChannel
@@ -155,6 +183,7 @@ export function App() {
 						void create(path);
 					}}
 				/>
+				{settings && <Settings onClose={() => setSettings(false)} />}
 				<Toaster />
 			</TooltipProvider>
 		</ThemeProvider>

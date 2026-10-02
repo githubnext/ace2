@@ -1,5 +1,8 @@
 /** The tailnet is the team: it says who a peer is and which machines can host channels. */
+import { existsSync } from "node:fs";
 import { isIP } from "node:net";
+import { homedir } from "node:os";
+import { join } from "node:path";
 
 type Status = {
 	BackendState: string;
@@ -18,8 +21,37 @@ type Node = {
 
 export type Machine = { name: string; login: string; address: string };
 
+function executable(): string | undefined {
+	const path = Bun.which("tailscale");
+	if (path) return path;
+	if (process.platform !== "darwin") return;
+	return ["/Applications", join(homedir(), "Applications")]
+		.map((dir) => join(dir, "Tailscale.app", "Contents", "MacOS", "Tailscale"))
+		.find(existsSync);
+}
+
+const binary = executable();
+
+/** Shell aliases cannot be used by a Finder-launched app or a LaunchAgent. */
+function options() {
+	return { env: { ...process.env, TAILSCALE_BE_CLI: "1" }, timeout: 5000 };
+}
+
+export function login(): string | undefined {
+	if (!binary) return;
+	const result = Bun.spawnSync([binary, "status", "--json"], {
+		...options(),
+		stderr: "ignore",
+	});
+	if (!result.success) return;
+	const status = JSON.parse(result.stdout.toString()) as Status;
+	if (status.BackendState !== "Running") return;
+	return status.User?.[status.Self.UserID]?.LoginName;
+}
+
 async function run(args: string[]): Promise<unknown> {
-	const child = Bun.spawn(["tailscale", ...args], { stdout: "pipe", stderr: "pipe" });
+	if (!binary) throw new Error("Tailscale is not installed");
+	const child = Bun.spawn([binary, ...args], { ...options(), stdout: "pipe", stderr: "pipe" });
 	const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
 	if (code !== 0) throw new Error(`tailscale ${args[0]} failed`);
 	return JSON.parse(out);

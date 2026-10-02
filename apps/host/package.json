@@ -23,6 +23,9 @@
 		"./protocol": "./src/protocol.ts",
 		"./gateway-client": "./src/gateway-client.ts",
 		"./gateway": "./src/gateway.ts",
+		"./config": "./src/config.ts",
+		"./auth": "./src/auth.ts",
+		"./health": "./src/health.ts",
 		"./keys": "./src/keys.ts"
 	}
 }

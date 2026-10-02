@@ -6,5 +6,9 @@ const host = `http://127.0.0.1:${process.env.ACE_PORT || 4140}`;
 
 export default defineConfig({
 	plugins: [react(), tailwindcss()],
-	server: { port: 1111, proxy: { "/ws": { target: host, ws: true } } },
+	server: {
+		host: "127.0.0.1",
+		port: 1111,
+		proxy: { "/ws": { target: host, ws: true, changeOrigin: true } },
+	},
 });

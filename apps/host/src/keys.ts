@@ -9,8 +9,9 @@ import { homedir } from "node:os";
 import type { MutableModels } from "@earendil-works/pi-ai";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
-const service = "ace";
-const found = new Map<string, string | undefined>();
+import { config } from "./config";
+import type { CredentialStatus } from "./protocol";
+
 const sealed = new Map<string, string>();
 
 /**
@@ -28,6 +29,11 @@ export function seal(): void {
 	}
 }
 
+/** Only channel workers receive these values; each seals them before running tools. */
+export function workerEnv(): NodeJS.ProcessEnv {
+	return { ...process.env, ...Object.fromEntries(sealed) };
+}
+
 function env(name: string): string | undefined {
 	return set(sealed.get(name) ?? process.env[name]);
 }
@@ -37,10 +43,14 @@ function set(value: string | undefined): string | undefined {
 }
 
 async function keychain(name: string): Promise<string | undefined> {
-	if (!found.has(name)) {
-		found.set(name, set(await Bun.secrets.get({ service, name }).catch(() => null) ?? undefined));
+	try {
+		// Resolve each request so running workers observe replacement and removal immediately.
+		return set(await Bun.secrets.get({ service: config.keychain, name }) ?? undefined);
+	} catch {
+		throw new Error(
+			`Cannot access ${name} in the keychain. Unlock it and allow Ace Helper, then retry.`,
+		);
 	}
-	return found.get(name);
 }
 
 export async function key(name: string): Promise<string | undefined> {
@@ -48,13 +58,26 @@ export async function key(name: string): Promise<string | undefined> {
 }
 
 export function store(name: string, value: string): Promise<void> {
-	found.delete(name);
-	return Bun.secrets.set({ service, name, value });
+	return Bun.secrets.set({ service: config.keychain, name, value });
 }
 
 export async function forget(name: string): Promise<boolean> {
-	found.delete(name);
-	return Bun.secrets.delete({ service, name });
+	return Bun.secrets.delete({ service: config.keychain, name });
+}
+
+export async function credential(name: string): Promise<CredentialStatus> {
+	const override = env(`ACE_${name}`) ? `ACE_${name}` : env(name) ? name : undefined;
+	try {
+		const stored = !!await keychain(name);
+		return { source: override ? "environment" : stored ? "keychain" : "missing", stored, override };
+	} catch (error) {
+		return {
+			source: override ? "environment" : "unavailable",
+			stored: null,
+			override,
+			error: (error as Error).message,
+		};
+	}
 }
 
 /** pi-ai's built-in providers, resolving credentials through Ace. */

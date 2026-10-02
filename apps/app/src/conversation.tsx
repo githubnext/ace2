@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
 import { aceAvatar, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
 import type { Listing, ModelRef } from "@ace/host/protocol";
@@ -23,12 +23,23 @@ export function Conversation({ channel, user, remote }: Props) {
 	const transcript = useTranscript(channel.id);
 	// Runs use the credentials of the host that runs the channel, so offer that host's models.
 	const [models, setModels] = useState<ModelRef[]>([]);
+	const status = useSyncExternalStore(host.subscribe, () => host.status);
+	const settingsVersion = useSyncExternalStore(host.subscribe, () => host.settingsVersion);
 	useEffect(() => {
+		if (status !== "open") return;
+		let active = true;
 		host.request<ModelRef[]>({ op: "models", host: channel.host }).then(
-			setModels,
-			() => setModels([]),
+			(models) => {
+				if (active) setModels(models);
+			},
+			() => {
+				if (active) setModels([]);
+			},
 		);
-	}, [channel.host]);
+		return () => {
+			active = false;
+		};
+	}, [channel.host, status, settingsVersion]);
 	const [mode, setMode] = useState("ace");
 	const chat = transcript.info?.chats.find((value) => value.id === 1);
 	const [picked, setPicked] = useState<string>();

@@ -18,10 +18,20 @@ bun ace --help
 The app runs in a browser against the host's gateway, or as the macOS desktop app:
 
 ```sh
-bun app build && bun ace serve   # http://127.0.0.1:4140
-bun desktop dev                  # the desktop app, hosting channels itself
-bun desktop build                # a standalone Ace.app and .dmg in apps/desktop/artifacts
+bun app build && bun ace serve   # start the local host
+bun ace open                     # in another terminal: open its authenticated browser app
+bun desktop dev                  # desktop UI and the independent Ace Helper
+bun desktop build                # stable artifacts; distribution signing is still required
 ```
+
+Open Settings in the app to check, save, replace, or remove Anthropic and OpenAI keys in Keychain.
+The default model is shared with the CLI's `ace model` command. Provider keys are never returned
+to the UI, and running workers read changes on their next model request. Environment overrides
+still take priority and are identified in Settings.
+
+Development desktop builds use their own catalog, settings, and Keychain service (`ace-dev`).
+The installed stable app and CLI use `ace`. Build with Bun 1.4 or later; the packaged UI uses
+Electrobun's compatible bundled runtime, and Ace Helper carries its own compiled runtime.
 
 With Tailscale running, the host also shares its channels with the tailnet, and the app shows
 teammates' channels. See [the team](docs/architecture.md#the-team).
@@ -57,3 +67,4 @@ signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules
 
 - [Terms](docs/terms.md): what Ace's words mean. Binding.
 - [Architecture](docs/architecture.md): how channels, hosts, and shared services fit together.
+- [Desktop plan](docs/desktop.md): packaging, settings, onboarding, and distribution.

@@ -1,9 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { homedir, userInfo } from "node:os";
+import { userInfo } from "node:os";
 import { join } from "node:path";
 
 import type { ModelRef } from "@ace/channel";
+
+import { config } from "./config";
+import { login } from "./tailnet";
 
 export type Listing = {
 	id: string;
@@ -17,21 +20,14 @@ export type Listing = {
 	hosted?: string;
 };
 
-export const home = process.env.ACE_HOME || join(homedir(), ".local", "state", "ace");
+export const home = config.home;
 const root = join(home, "channels");
-
-function login(): string | undefined {
-	const result = Bun.spawnSync(["tailscale", "status", "--json"], { stderr: "ignore" });
-	if (!result.success) return;
-	const status = JSON.parse(result.stdout.toString());
-	return status.User?.[status.Self.UserID]?.LoginName;
-}
 
 /**
  * The local human, named by their Tailscale login so they are the same participant on every
  * host. Without Tailscale the host is single-user and the OS account name stands in.
  */
-export const user = process.env.ACE_USER || login() || userInfo().username;
+export const user = config.user || login() || userInfo().username;
 
 export function dir(id: string): string {
 	return join(root, id);

@@ -4,13 +4,18 @@ import { parseArgs } from "node:util";
 
 import type { ChannelInfo, ChatId, Event } from "@ace/channel/protocol";
 
+import { appUrl, token } from "./auth";
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";
+import { config } from "./config";
 import * as directory from "./directory";
 import { serve } from "./gateway";
 import { forget, store } from "./keys";
 import { dir as logDir, failure, log, open as openLog } from "./log";
 import { type Filter, follow, print } from "./logs";
+import { health } from "./health";
+import { preference } from "./preferences";
+import { setModel } from "./settings";
 import {
 	archive,
 	defaultModel,
@@ -36,12 +41,14 @@ const HELP = `ace — channels on this host
   ace kill <channel>                             stop all work in the channel now
   ace share <channel> on|off                     let others invoke agents
   ace models
+  ace model [provider/id|auto]                   show or set the default model for new channels
   ace key set <NAME>                             store a key in the OS keychain, read from stdin
   ace key rm <NAME>
   ace directory [<url> | off]                    the team's directory, which lists every host's channels
   ace serve [--port 4140]                         serve the app and its WebSocket gateway
   ace logs [--channel <ref>] [--trace <id>] [--level warn] [--since 10m] [--grep <text>]
            [-n 200] [--follow] [--json]              every process's logs, merged in time order
+  ace open [--port 4140]                          open this host's authenticated app
   ace archive <channel> | unarchive <channel> | delete <channel>
 
 Models are provider/id, such as openai/gpt-6-astra or anthropic/claude-opus-5-5.
@@ -184,8 +191,27 @@ async function main() {
 			if (ref) directory.configure(ref === "off" ? undefined : ref);
 			return console.log(directory.url() ?? "No directory");
 		}
+		case "model": {
+			if (ref) await setModel(ref === "auto" ? null : parseModel(ref));
+			const saved = preference();
+			console.log(saved ? `${saved.provider}/${saved.modelId}` : "Automatic");
+			if (config.model) console.log(`Overridden by ACE_MODEL=${config.model}`);
+			return;
+		}
+		case "open": {
+			const port = Number(flags.port || config.port);
+			const info = await health(port);
+			if (!info || info.home !== config.home) {
+				throw new Error("Start this host with ace serve first");
+			}
+			const url = appUrl(port);
+			url.hash = new URLSearchParams({ token: token() }).toString();
+			const result = Bun.spawnSync([process.platform === "darwin" ? "open" : "xdg-open", url.href]);
+			if (!result.success) throw new Error("Could not open Ace in your browser");
+			return;
+		}
 		case "serve":
-			return serve(Number(flags.port || 4140));
+			return serve(Number(flags.port || config.port));
 		case "key": {
 			const name = rest[0];
 			if (!name || !/^[A-Z][A-Z0-9_]*$/.test(name)) {

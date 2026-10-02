@@ -18,15 +18,20 @@ export class GatewayClient {
 	#closed = false;
 	status: Status = "connecting";
 	channels: Listing[] = [];
+	settingsVersion = 0;
 	/** Called after every connect so watches can be re-established. */
 	onOpen?: () => void;
 
-	constructor(readonly url: string) {
+	constructor(readonly url: string, private readonly token?: string) {
 		this.#connect();
 	}
 
 	#connect() {
-		const socket = new WebSocket(this.url);
+		if (this.#closed) return;
+		const socket = new WebSocket(
+			this.url,
+			this.token ? ["ace", `ace-token.${this.token}`] : undefined,
+		);
 		this.#socket = socket;
 		socket.addEventListener("open", () => {
 			this.#retry = 250;
@@ -55,6 +60,10 @@ export class GatewayClient {
 	}
 
 	#receive(frame: HostFrame) {
+		if ("settings" in frame) {
+			this.settingsVersion++;
+			return this.#emit();
+		}
 		if ("channels" in frame) {
 			this.channels = frame.channels;
 			return this.#emit();

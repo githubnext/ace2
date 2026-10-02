@@ -1,26 +1,34 @@
 import { spawn } from "node:child_process";
-import { openSync } from "node:fs";
+import { closeSync, openSync } from "node:fs";
 import { connect as dial, type Socket } from "node:net";
 
 import type { Event, Frame, Request } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
-import { key } from "./keys";
+import { config } from "./config";
+import { key, workerEnv } from "./keys";
 import { lines } from "./lines";
-import { log } from "./log";
-
-/** The worker's entry; a packaged app points this at its bundled copy. */
-const worker = () => process.env.ACE_WORKER || new URL("./worker.ts", import.meta.url).pathname;
+import { failure, log } from "./log";
 
 function start(id: string): void {
 	// Output the worker didn't log itself, such as a crash before its log opens.
 	const out = openSync(catalog.paths(id).log, "a");
-	const child = spawn(process.execPath, [worker(), id], {
-		detached: true,
-		stdio: ["ignore", out, out],
-	});
-	child.unref();
-	log("info", "worker.spawn", { channel: id, pid: child.pid });
+	const [executable, ...args] = config.worker;
+	try {
+		const child = spawn(executable, [...args, id], {
+			detached: true,
+			stdio: ["ignore", out, out],
+			env: workerEnv(),
+		});
+		child.on(
+			"error",
+			(error) => log("error", "worker.spawn.failed", { channel: id, ...failure(error) }),
+		);
+		child.unref();
+		log("info", "worker.spawn", { channel: id, pid: child.pid });
+	} finally {
+		closeSync(out);
+	}
 }
 
 function attempt(path: string): Promise<Socket> {

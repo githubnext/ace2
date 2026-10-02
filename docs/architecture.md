@@ -12,11 +12,11 @@ Words in this document have the meanings in [terms](terms.md).
 | -------------------- | ----------------------- | -------------------------------------------------------------------- |
 | `packages/channel`   | inside a channel worker | The channel: chats, agents, lanes, and the client protocol types     |
 | `apps/host`          | on every machine (Bun)  | The `ace` CLI, channel workers, the channel catalog, local transport |
-| `apps/desktop`       | on every machine        | The desktop client, with the host built in                           |
+| `apps/desktop`       | on macOS                | The desktop client and packaging for Ace Helper                      |
 | `services/channel`   | Cloudflare Workers      | Hosted channels: one Durable Object per channel                      |
 | `services/directory` | Cloudflare Workers      | The team's list of hosts and where each channel lives                |
 
-Clients (the CLI, later the desktop app) attach to channels; a channel is not a client.
+Clients (the CLI and desktop app) attach to channels; a channel is not a client.
 
 ## Channel
 
@@ -58,6 +58,19 @@ for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment and 
 a channel can invoke its agent, so processes that run tools first move credential-like variables
 out of the environment; only the key lookup can read them.
 
+Workers resolve Keychain credentials on each model request, so adding, replacing, or removing a
+key through the app or CLI takes effect without restarting workers. Keychain access errors are
+distinct from missing keys. Settings exposes provider status and environment overrides, never
+stored key values; it validates new keys against the provider before saving them.
+
+The default model for new channels is a nonsecret preference in `settings.json` under
+`~/Library/Application Support/Ace` on macOS, or `$XDG_CONFIG_HOME/ace` on Linux. The app and CLI
+read the same preference; `ACE_MODEL` and an explicit per-channel model still take precedence.
+
+Host configuration is captured before credential cleanup. A worker receives the host's launch
+environment, then seals credentials again before running tools. Source workers disable automatic
+`.env` loading, so an unrelated working directory cannot change their credentials or configuration.
+
 ### Logs
 
 Every host process writes JSON lines to `$ACE_HOME/logs/<process>.jsonl`: `host` (gateway, peers,
@@ -73,6 +86,36 @@ responses with usage and provider errors, and tool calls with durations; message
 logged, but tool arguments are, clipped to 2,000 characters. `debug` lines (listings, watches,
 directory syncs, workspace calls) are written only with `ACE_DEBUG=1`. Hosted services log the same
 records to Workers Logs.
+
+## Desktop
+
+One `Ace.app` carries the desktop UI and **Ace Helper**, an independently running host executable.
+The helper compiles with Bun 1.4 or newer and dispatches channel workers through the same executable.
+The UI keeps Electrobun's bundled Bun version to match its native FFI callbacks. The helper resolves web
+assets from its application bundle and writes its log under the channel data directory. Closing a
+window or quitting the desktop leaves the helper running; reopening the UI verifies the host's
+protocol, data directory, and a fresh proof of ownership before attaching.
+
+The host stores a private owner token in `host.token` with mode 0600. The native UI supplies it only
+to its local webview; `ace open` supplies it in a URL fragment that the app immediately removes.
+The first WebSocket handshake authenticates with this token and sets an HttpOnly, SameSite cookie
+for page reloads. The loopback listener checks Host and Origin, and Settings requests are forbidden
+on the tailnet listener, including requests from the owner's other machines. A health challenge
+binds discovery to the owner token, listening port, and process before the desktop or CLI opens
+the app. As with channels, this does not isolate Ace from tools running as the same OS user.
+
+On macOS, a bundled LaunchAgent runs Ace Helper as the logged-in user. A small native bridge calls
+`SMAppService` to register it after first-launch consent and expose its approval status. Registration
+starts the helper immediately and at subsequent logins. A disabled background item is left for the
+user to enable in System Settings. The stable service identifier is `dev.ace.desktop.helper`; the
+executable and desktop controls are named Ace Helper.
+macOS groups the background permission under the parent app's name, Ace.
+
+Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
+separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service
+is `ace-dev`. `ACE_CONFIG_HOME` and `ACE_KEYCHAIN_SERVICE` can target an isolated profile for
+development or smoke checks. They are signed locally for `SMAppService`; distribution signing
+and notarization remain release work. The remaining desktop work is tracked in [the plan](desktop.md).
 
 ## Hosted channels
 

@@ -1,58 +1,133 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 
-import { BrowserWindow } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserWindow, Utils } from "electrobun/bun";
 
-/**
- * Apps opened from Finder get launchd's bare environment, without the PATH that agents' tools
- * need or keys exported in shell profiles. Adopt the login shell's environment, as terminal-centric
- * editors do; Ace's own settings from the launch environment still win.
- */
-function adoptLoginShell() {
-	const shell = process.env.SHELL || "/bin/zsh";
-	const mark = "__ace_env__";
-	const result = Bun.spawnSync([shell, "-lc", `printf ${mark}; env -0`], {
-		stdin: "ignore",
-		stderr: "ignore",
-		timeout: 5000,
+import { appUrl, token } from "@ace/host/auth";
+import { config, desktop } from "@ace/host/config";
+import { health } from "@ace/host/health";
+
+import { service } from "./service";
+
+const resources = join(dirname(process.execPath), "..", "Resources");
+const { channel, identifier } = await Bun.file(join(resources, "version.json")).json() as {
+	channel: string;
+	identifier: string;
+};
+desktop(channel);
+const helper = service(identifier);
+const url = appUrl();
+let window: BrowserWindow | undefined;
+let ready = false;
+
+function show(settings = false): void {
+	if (!ready) return;
+	if (window) {
+		window.focus();
+		if (settings) {
+			window.webview.executeJavascript("window.dispatchEvent(new Event('ace:settings'))");
+		}
+		return;
+	}
+	const target = new URL(url);
+	if (settings) target.hash = "settings";
+	window = new BrowserWindow({
+		title: "Ace",
+		titleBarStyle: "hiddenInset",
+		url: target.href,
+		preload: `if (window === window.top && location.origin === ${JSON.stringify(url.origin)}) {
+			Object.defineProperty(window, "__ACE_TOKEN__", { configurable: true, value: ${
+			JSON.stringify(token())
+		} });
+		}`,
+		frame: { width: 1100, height: 760, x: 160, y: 120 },
 	});
-	const out = result.stdout.toString();
-	const start = out.indexOf(mark);
-	if (!result.success || start < 0) return;
-	const own = Object.entries(process.env).filter(([name]) => name.startsWith("ACE_"));
-	for (const pair of out.slice(start + mark.length).split("\0")) {
-		const split = pair.indexOf("=");
-		if (split > 0) process.env[pair.slice(0, split)] = pair.slice(split + 1);
-	}
-	for (const [name, value] of own) process.env[name] = value;
+	window.on("close", () => window = undefined);
 }
 
-adoptLoginShell();
-process.env.ACE_WORKER ||= join(import.meta.dir, "..", "worker", "worker.js");
-process.env.ACE_APP_DIR ||= join(import.meta.dir, "..", "web");
+ApplicationMenu.setApplicationMenu([
+	{
+		label: "Ace",
+		submenu: [
+			{ label: "Show Ace", action: "show" },
+			{ label: "Settings…", action: "settings", accelerator: "CmdOrCtrl+," },
+			{ type: "divider" },
+			{ label: "Ace Helper Settings…", action: "helper-settings" },
+			{ label: "Show Ace Helper Log", action: "helper-log" },
+			{ type: "divider" },
+			{ label: "Quit Ace", role: "quit" },
+		],
+	},
+	{
+		label: "Edit",
+		submenu: [
+			{ role: "undo" },
+			{ role: "redo" },
+			{ type: "divider" },
+			{ role: "cut" },
+			{ role: "copy" },
+			{ role: "paste" },
+			{ role: "selectAll" },
+		],
+	},
+]);
 
-const port = Number(process.env.ACE_PORT || 4140);
-const url = process.env.ACE_APP_URL || `http://127.0.0.1:${port}`;
-
-async function reachable(): Promise<boolean> {
-	try {
-		return (await fetch(`http://127.0.0.1:${port}/`)).status < 500;
-	} catch {
-		return false;
-	}
-}
-
-// A host already serving this port (`ace serve` in a terminal) keeps its channels; the window
-// joins it. Otherwise this process is the host. Imported late so it sees the adopted environment.
-if (!(await reachable())) {
-	const { serve } = await import("@ace/host/gateway");
-	void serve(port);
-	for (let wait = 50; !(await reachable()) && wait < 5000; wait *= 1.5) await Bun.sleep(wait);
-}
-
-const window = new BrowserWindow({
-	title: "Ace",
-	titleBarStyle: "hiddenInset",
-	url,
-	frame: { width: 1100, height: 760, x: 160, y: 120 },
+Electrobun.events.on("reopen", () => show());
+Electrobun.events.on("application-menu-clicked", ({ data }) => {
+	if (data.action === "show") return show();
+	if (data.action === "settings") return show(true);
+	if (data.action === "helper-settings") return helper.settings();
+	if (data.action === "helper-log") Utils.showItemInFolder(join(config.home, "helper.log"));
 });
-window.on("close", () => process.exit(0));
+
+async function start(): Promise<void> {
+	let info = await health(config.port);
+	if (!info) {
+		if (helper.status() === "unregistered") {
+			// The bundled macOS dialog renders message but does not display detail.
+			const { response } = await Utils.showMessageBox({
+				title: "Ace Helper",
+				message:
+					"Enable Ace Helper?\n\nAce Helper keeps this machine's channels available after you quit Ace and starts when you log in. You can manage it in macOS Login Items.",
+				buttons: ["Enable Ace Helper", "Quit"],
+				cancelId: 1,
+			});
+			if (response !== 0) return Utils.quit();
+			helper.register();
+		}
+		if (helper.status() === "approval") {
+			const { response } = await Utils.showMessageBox({
+				title: "Ace Helper",
+				message:
+					"Allow Ace Helper to run in the background.\n\nEnable Ace in macOS Login Items, then reopen Ace.",
+				buttons: ["Open Login Items", "Quit"],
+				cancelId: 1,
+			});
+			if (response === 0) helper.settings();
+			return Utils.quit();
+		}
+		const deadline = Date.now() + 15_000;
+		while (!info && Date.now() < deadline) {
+			await Bun.sleep(100);
+			info = await health(config.port);
+		}
+		if (!info) throw new Error(`Ace Helper did not start. See ${join(config.home, "helper.log")}`);
+	}
+	if (info.home !== config.home) {
+		throw new Error(`Port ${config.port} belongs to an Ace host using a different data directory`);
+	}
+	ready = true;
+	show();
+}
+
+try {
+	await start();
+} catch (error) {
+	await Utils.showMessageBox({
+		type: "error",
+		title: "Ace Helper",
+		message: `Could not connect to Ace Helper.\n\n${
+			error instanceof Error ? error.message : String(error)
+		}`,
+	});
+	Utils.quit();
+}

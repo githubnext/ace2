@@ -1,22 +1,10 @@
-/** Builds what the desktop app carries besides its main process: the web app and the channel worker. */
-import { rmSync } from "node:fs";
+/** Build the web app before Electrobun packages its native processes. */
+import { fileURLToPath } from "node:url";
 
-const root = new URL("../../..", import.meta.url).pathname;
-const out = new URL("../stage", import.meta.url).pathname;
-rmSync(out, { recursive: true, force: true });
+const root = fileURLToPath(new URL("../../..", import.meta.url));
 
-const app = Bun.spawnSync(["bun", "run", "build"], {
+const app = Bun.spawnSync([process.execPath, "run", "build"], {
 	cwd: `${root}/apps/app`,
 	stdio: ["inherit", "inherit", "inherit"],
 });
 if (!app.success) process.exit(1);
-
-const worker = await Bun.build({
-	entrypoints: [`${root}/apps/host/src/worker.ts`],
-	outdir: `${out}/worker`,
-	target: "bun",
-});
-if (!worker.success) {
-	for (const log of worker.logs) console.error(log);
-	process.exit(1);
-}
