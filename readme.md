@@ -45,6 +45,15 @@ Electrobun's compatible bundled runtime, and Ace Helper carries its own compiled
 With Tailscale running, the host also shares its channels with the tailnet, and the app shows
 teammates' channels. See [the team](docs/architecture.md#the-team).
 
+On your phone or another of your devices, with Tailscale on, open the address the host prints
+(`http://<machine>.<tailnet>.ts.net:4140`). Only the host's owner is served; Tailscale names the
+person behind each connection. Teammates open their own host, which shows your channels.
+
+When the tailnet has HTTPS certificates, hosts also listen on HTTPS (port + 1000) and the deployed
+web app can reach them. Deploy it with `bun --filter @ace/app deploy`, point each host at it with
+`bun ace web https://ace-app.<your-subdomain>.workers.dev`, then open it and enter
+`<machine>.<tailnet>.ts.net:5140`. Add it to the home screen to use it as an app.
+
 A hosted channel lives in a Durable Object and runs its tools on the host that created it, while
 that host runs `ace serve` or the desktop app. To try one locally, put `ACE_SECRET` and a model key
 in `services/channel/.dev.vars`, then:
