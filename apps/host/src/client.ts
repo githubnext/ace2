@@ -7,17 +7,20 @@ import type { Event, Frame, Request } from "@ace/channel/protocol";
 import * as catalog from "./catalog";
 import { key } from "./keys";
 import { lines } from "./lines";
+import { log } from "./log";
 
 /** The worker's entry; a packaged app points this at its bundled copy. */
 const worker = () => process.env.ACE_WORKER || new URL("./worker.ts", import.meta.url).pathname;
 
 function start(id: string): void {
-	const log = openSync(catalog.paths(id).log, "a");
+	// Output the worker didn't log itself, such as a crash before its log opens.
+	const out = openSync(catalog.paths(id).log, "a");
 	const child = spawn(process.execPath, [worker(), id], {
 		detached: true,
-		stdio: ["ignore", log, log],
+		stdio: ["ignore", out, out],
 	});
 	child.unref();
+	log("info", "worker.spawn", { channel: id, pid: child.pid });
 }
 
 function attempt(path: string): Promise<Socket> {
@@ -56,9 +59,10 @@ export async function hostedSocket(base: string, path: string): Promise<WebSocke
 	} as unknown as string[]);
 	await new Promise((resolve, reject) => {
 		socket.addEventListener("open", resolve, { once: true });
-		socket.addEventListener("error", () => reject(new Error(`Cannot reach ${base}`)), {
-			once: true,
-		});
+		socket.addEventListener("error", () => {
+			log("warn", "hosted.unreachable", { base, path });
+			reject(new Error(`Cannot reach ${base}`));
+		}, { once: true });
 	});
 	return socket;
 }
@@ -119,13 +123,18 @@ export class Connection {
 				await Bun.sleep(wait);
 			}
 		}
-		throw new Error(`The channel worker did not start; see ${catalog.paths(id).log}`);
+		log("error", "worker.unreachable", { channel: id });
+		throw new Error(`The channel worker did not start; see ace logs --channel ${id}`);
 	}
 
-	request<T = unknown>(request: Request, watch?: (event: Event) => void): Promise<T> {
+	request<T = unknown>(
+		request: Request,
+		watch?: (event: Event) => void,
+		trace?: string,
+	): Promise<T> {
 		const id = this.#next++;
 		if (watch) this.#watchers.set(id, watch);
-		this.#transport.write(JSON.stringify({ id, ...request }));
+		this.#transport.write(JSON.stringify({ id, ...(trace ? { trace } : {}), ...request }));
 		return new Promise((resolve, reject) =>
 			this.#pending.set(id, { resolve: resolve as (value: unknown) => void, reject })
 		);

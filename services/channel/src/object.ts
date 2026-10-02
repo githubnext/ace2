@@ -2,7 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
-import { Channel, type Envelope, type Frame, type ModelRef } from "@ace/channel";
+import { Channel, type Envelope, type Frame, type Log, type ModelRef } from "@ace/channel";
 import { type Call, Link, type Reply } from "@ace/channel/workspace";
 
 import { DurableSqlite } from "./storage";
@@ -25,6 +25,14 @@ export type Config = {
 };
 
 const KEEPALIVE = 30_000;
+
+/** Workers Logs indexes JSON fields, so lines search by the same ids as hosts' log files. */
+const log: Log = (level, event, fields) => {
+	const line = { level, event, ...fields };
+	if (level === "error") console.error(line);
+	else if (level === "warn") console.warn(line);
+	else console.log(line);
+};
 
 /**
  * One hosted channel. Its history and agents live here; its tools run on the workspace host that
@@ -70,7 +78,7 @@ export class HostedChannel extends DurableObject<Env> {
 						throw new Error("Hosted channels cannot message other channels yet");
 					},
 				},
-				report: (error) => console.error(error),
+				log,
 			});
 		})();
 		return this.#channel;
@@ -114,6 +122,7 @@ export class HostedChannel extends DurableObject<Env> {
 		const { 0: client, 1: server } = new WebSocketPair();
 		if (workspace) {
 			for (const old of this.ctx.getWebSockets("workspace")) old.close(1000, "replaced");
+			log("info", "workspace.connect", { channel: config.id, workspace: config.workspace });
 			this.ctx.acceptWebSocket(server, ["workspace"]);
 			this.#attach(server);
 		} else {
@@ -128,7 +137,8 @@ export class HostedChannel extends DurableObject<Env> {
 		this.#link.receive(JSON.parse(message as string) as Reply);
 	}
 
-	override async webSocketClose(socket: WebSocket) {
+	override async webSocketClose(socket: WebSocket, code: number, reason: string) {
+		log("warn", "workspace.drop", { channel: this.#config()?.id, code, reason });
 		if (this.ctx.getWebSockets("workspace").every((open) => open === socket)) this.#link.detach();
 	}
 
@@ -139,9 +149,9 @@ export class HostedChannel extends DurableObject<Env> {
 			for (const watch of watches) watch.stop();
 		});
 		socket.addEventListener("message", async ({ data }) => {
-			const { id, ...body } = JSON.parse(data as string) as Envelope;
+			const { id, trace, ...body } = JSON.parse(data as string) as Envelope;
 			try {
-				const value = await channel.handle(body, (event) => send({ id, event }));
+				const value = await channel.handle(body, (event) => send({ id, event }), trace);
 				if (body.op === "watch") watches.push(value as { stop(): Promise<unknown> });
 				if (body.op === "ask") await this.#keepalive();
 				send({ id, ok: true, value: body.op === "watch" ? null : value ?? null });

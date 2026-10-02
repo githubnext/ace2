@@ -23,6 +23,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import { type Directory, messaging, Subagent } from "./agents";
 import { lanes, LanesDoc } from "./lanes";
+import { failure, type Log, logging, scoped } from "./log";
 import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request } from "./protocol";
 import * as room from "./room";
 
@@ -45,7 +46,7 @@ export type Options = {
 	models: Models;
 	env(cwd: string): ExecutionEnv;
 	directory: Directory;
-	report(error: unknown): void;
+	log: Log;
 };
 
 type Send = (event: Event) => void;
@@ -53,14 +54,18 @@ type Send = (event: Event) => void;
 export class Channel {
 	#options: Options;
 	#harness: Harness;
+	#log: Log;
 
-	private constructor(options: Options, harness: Harness) {
+	private constructor(options: Options, harness: Harness, log: Log) {
 		this.#options = options;
 		this.#harness = harness;
+		this.#log = log;
 	}
 
 	static async open(options: Options): Promise<Channel> {
+		const log = scoped(options.log, { channel: options.id });
 		const registry = createRegistry();
+		registry.install(logging(log));
 		registry.install(CodingTools);
 		registry.install(lanes(options));
 		registry.install(Subagent);
@@ -70,15 +75,43 @@ export class Channel {
 			models: options.models,
 			registry,
 			env: ({ cwd }) => options.env(cwd || options.project),
-			onReport: options.report,
+			onReport: (error) => log("error", "harness.report", failure(error)),
 		}, context);
 		await harness.root(context, { agent: { model: options.model, cwd: options.project } });
 		// Opening resumes work a crash interrupted; a killed channel left only terminal tasks behind.
 		harness.resume();
-		return new Channel(options, harness);
+		log("info", "channel.open", { name: options.name, project: options.project });
+		return new Channel(options, harness, log);
 	}
 
-	async handle(request: Request, send: Send): Promise<unknown> {
+	/** Runs a client request, logging its outcome with the caller's `trace` id. */
+	async handle(request: Request, send: Send, trace?: string): Promise<unknown> {
+		const start = Date.now();
+		const fields = {
+			...(trace ? { trace } : {}),
+			op: request.op,
+			...("chat" in request && request.chat !== undefined ? { chat: request.chat } : {}),
+			...("author" in request ? { author: request.author } : {}),
+			...("requestId" in request && request.requestId ? { requestId: request.requestId } : {}),
+			...("model" in request && request.model ? { model: request.model } : {}),
+		};
+		try {
+			const value = await this.#handle(request, send);
+			// Watches and polls are constant traffic; their failures still log below.
+			const level = request.op === "watch" || request.op === "info" || request.op === "models"
+				? "debug"
+				: "info";
+			this.#log(level, "request", { ...fields, ms: Date.now() - start, ...result(value) });
+			return value;
+		} catch (error) {
+			// Refused requests are expected; their message is enough.
+			const message = error instanceof Error ? error.message : String(error);
+			this.#log("warn", "request.failed", { ...fields, ms: Date.now() - start, error: message });
+			throw error;
+		}
+	}
+
+	async #handle(request: Request, send: Send): Promise<unknown> {
 		switch (request.op) {
 			case "info":
 				return this.info();
@@ -147,6 +180,9 @@ export class Channel {
 	/** Durably abort every chat's work, including background subagents, so reopening resumes none of it. */
 	async kill(): Promise<void> {
 		const { chats } = await this.info();
+		this.#log("warn", "channel.kill", {
+			chats: chats.filter((chat) => chat.busy).map((c) => c.id),
+		});
 		await Promise.all(chats.map(async (chat) => {
 			const conversation = await this.#harness.conversation(chat.id as ConversationId, context);
 			await conversation?.abort(context, { background: true });
@@ -154,6 +190,7 @@ export class Channel {
 	}
 
 	close(): Promise<void> {
+		this.#log("info", "channel.close");
 		return this.#harness.close(context);
 	}
 
@@ -241,6 +278,17 @@ export class Channel {
 		});
 		return stream;
 	}
+}
+
+/** Submission and chat ids a request produced, so later lines can be traced back to it. */
+function result(value: unknown) {
+	if (!value || typeof value !== "object") {
+		return typeof value === "string"
+			? { result: value }
+			: {};
+	}
+	const { submission, chat } = value as { submission?: number; chat?: number };
+	return { ...(submission ? { submission } : {}), ...(chat ? { created: chat } : {}) };
 }
 
 function live(chat: ChatId, event: AgentEvent): Event[] {

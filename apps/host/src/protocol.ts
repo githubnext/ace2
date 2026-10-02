@@ -38,7 +38,8 @@ export type HostRequest =
 	/** Drop this client's connection to a channel, ending its watches. */
 	| { op: "release"; channel: string };
 
-export type HostEnvelope = { id: number } & HostRequest;
+/** `trace` follows a request through every host and worker that relays it. */
+export type HostEnvelope = { id: number; trace?: string } & HostRequest;
 
 export type HostFrame =
 	| { id: number; ok: true; value: unknown }

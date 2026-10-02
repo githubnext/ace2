@@ -5,6 +5,7 @@ import { type Call, serve } from "@ace/channel/workspace";
 
 import * as catalog from "./catalog";
 import { hostedSocket } from "./client";
+import { failure, log } from "./log";
 
 /**
  * A hosted channel's tools run here. The host dials out, so it needs no inbound route; while it
@@ -25,14 +26,25 @@ function link(record: catalog.Listing): () => void {
 		try {
 			socket = await hostedSocket(record.hosted!, `/channels/${record.id}/workspace`);
 			wait = 1000;
+			log("info", "workspace.connect", { channel: record.id, hosted: record.hosted });
 			const handle = serve(env, (reply) => socket?.send(JSON.stringify(reply)));
-			socket.addEventListener("message", ({ data }) => handle(JSON.parse(String(data)) as Call));
-			socket.addEventListener("close", () => {
+			socket.addEventListener("message", ({ data }) => {
+				const call = JSON.parse(String(data)) as Call;
+				log("debug", "workspace.call", {
+					channel: record.id,
+					...("cancel" in call
+						? { cancel: call.cancel }
+						: { call: call.call, method: call.method }),
+				});
+				handle(call);
+			});
+			socket.addEventListener("close", ({ code, reason }) => {
 				socket = undefined;
+				log("warn", "workspace.drop", { channel: record.id, code, reason, stopped });
 				setTimeout(connect, wait);
 			});
 		} catch (error) {
-			console.error(`Workspace for ${record.name}: ${(error as Error).message}`);
+			log("warn", "workspace.failed", { channel: record.id, retry: wait, ...failure(error) });
 			wait = Math.min(wait * 2, 30_000);
 			setTimeout(connect, wait);
 		}

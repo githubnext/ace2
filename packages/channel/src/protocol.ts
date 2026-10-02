@@ -67,7 +67,8 @@ export type Frame =
 	| { id: number; ok: false; error: string }
 	| { id: number; event: Event };
 
-export type Envelope = { id: number } & Request;
+/** `trace` ties a request's log lines together across the processes that relay it. */
+export type Envelope = { id: number; trace?: string } & Request;
 
 /** A message one channel's agent sends to another channel. */
 export type Delivery = {

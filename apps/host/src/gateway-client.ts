@@ -81,7 +81,11 @@ export class GatewayClient {
 		return () => this.#listeners.delete(listener);
 	};
 
-	request<T = unknown>(request: HostRequest, watch?: (event: Event) => void): Promise<T> {
+	request<T = unknown>(
+		request: HostRequest,
+		watch?: (event: Event) => void,
+		trace?: string,
+	): Promise<T> {
 		if (this.status !== "open") return Promise.reject(new Error("Not connected to the host"));
 		const id = this.#next++;
 		const promise = new Promise<T>((resolve, reject) =>
@@ -91,7 +95,7 @@ export class GatewayClient {
 				...(watch ? { watch } : {}),
 			})
 		);
-		this.#socket?.send(JSON.stringify({ id, ...request }));
+		this.#socket?.send(JSON.stringify({ id, ...(trace ? { trace } : {}), ...request }));
 		return promise;
 	}
 
@@ -99,8 +103,9 @@ export class GatewayClient {
 		channel: string,
 		request: Request,
 		watch?: (event: Event) => void,
+		trace?: string,
 	): Promise<T> {
-		return this.request<T>({ op: "channel", channel, request }, watch);
+		return this.request<T>({ op: "channel", channel, request }, watch, trace);
 	}
 
 	close() {

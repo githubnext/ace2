@@ -2,6 +2,7 @@
 import { isIP } from "node:net";
 
 import { GatewayClient } from "./gateway-client";
+import { log } from "./log";
 import type { Listing } from "./protocol";
 import { type Machine, peers } from "./tailnet";
 
@@ -27,12 +28,25 @@ async function discover() {
 		if (online.get(name)?.address === host.machine.address) continue;
 		host.client.close();
 		hosts.delete(name);
+		log("info", "peer.gone", { peer: name });
 		emit();
 	}
 	for (const [name, machine] of online) {
 		if (hosts.has(name)) continue;
 		const client = new GatewayClient(url(machine));
-		client.subscribe(emit);
+		let status = client.status;
+		client.subscribe(() => {
+			if (client.status !== status) {
+				log(client.status === "open" ? "info" : "debug", "peer.status", {
+					peer: name,
+					address: machine.address,
+					from: status,
+					to: client.status,
+				});
+				status = client.status;
+			}
+			emit();
+		});
 		hosts.set(name, { machine, client });
 	}
 }

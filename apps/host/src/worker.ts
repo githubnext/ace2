@@ -11,12 +11,14 @@ import * as catalog from "./catalog";
 import { request } from "./client";
 import { models, seal } from "./keys";
 import { lines } from "./lines";
+import { log, open } from "./log";
 
 const RETIRE_AFTER = 10 * 60_000;
 
 seal();
 
 const id = process.argv[2];
+open(`channel-${id}`, { channel: id });
 const record = catalog.read(id);
 const paths = catalog.paths(id);
 
@@ -45,7 +47,11 @@ function lock(): boolean {
 	}
 }
 
-if (!lock()) process.exit(0);
+if (!lock()) {
+	log("info", "worker.redundant", { owner: Number(readFileSync(paths.pid, "utf8")) });
+	process.exit(0);
+}
+log("info", "worker.start", { bun: Bun.version });
 rmSync(paths.socket, { force: true });
 
 const envs = new Map<string, NodeExecutionEnv>();
@@ -78,16 +84,17 @@ const channel = await Channel.open({
 			});
 		},
 	},
-	report: (error) => console.error(new Date().toISOString(), error),
+	log,
 });
 
 const clients = new Set<Socket>();
 let quiet = Date.now();
 let exiting = false;
 
-async function exit(kill: boolean) {
+async function exit(kill: boolean, reason: string) {
 	if (exiting) return;
 	exiting = true;
+	log("info", "worker.exit", { reason, kill, clients: clients.size });
 	if (kill) await channel.kill();
 	server.close();
 	for (const client of clients) client.destroy();
@@ -100,29 +107,33 @@ async function exit(kill: boolean) {
 
 function serve(socket: Socket) {
 	clients.add(socket);
+	log("debug", "client.open", { clients: clients.size });
 	const watches: { stop(): Promise<unknown> }[] = [];
 	const send = (frame: Frame) => socket.writable && socket.write(`${JSON.stringify(frame)}\n`);
-	socket.on("error", () => socket.destroy());
+	socket.on("error", (error) => {
+		log("warn", "client.error", { error: error.message });
+		socket.destroy();
+	});
 	socket.on("close", () => {
 		clients.delete(socket);
 		quiet = Date.now();
 		for (const watch of watches) watch.stop();
 	});
 	lines(socket, async (line) => {
-		const { id: frame, ...body } = JSON.parse(line) as Envelope;
+		const { id: frame, trace, ...body } = JSON.parse(line) as Envelope;
 		try {
 			if (
 				catalog.read(id).archived && (body.op === "say" || body.op === "ask" || body.op === "chat")
 			) {
 				throw new Error("The channel is archived");
 			}
-			const value = await channel.handle(body, (event) => send({ id: frame, event }));
+			const value = await channel.handle(body, (event) => send({ id: frame, event }), trace);
 			if (body.op === "watch") {
 				watches.push(value as { stop(): Promise<unknown> });
 				return send({ id: frame, ok: true, value: null });
 			}
 			send({ id: frame, ok: true, value: value ?? null });
-			if (body.op === "kill") exit(false);
+			if (body.op === "kill") exit(false, "kill");
 		} catch (error) {
 			send({ id: frame, ok: false, error: error instanceof Error ? error.message : String(error) });
 		}
@@ -136,9 +147,9 @@ server.listen(paths.socket);
 setInterval(async () => {
 	if (clients.size > 0 || exiting) return;
 	if (!(await channel.isIdle())) return void (quiet = Date.now());
-	if (Date.now() - quiet > RETIRE_AFTER) exit(false);
+	if (Date.now() - quiet > RETIRE_AFTER) exit(false, "idle");
 }, 30_000);
 
 // A signal closes without aborting, so a restarted worker resumes the work.
-process.on("SIGTERM", () => exit(false));
-process.on("SIGINT", () => exit(false));
+process.on("SIGTERM", () => exit(false, "SIGTERM"));
+process.on("SIGINT", () => exit(false, "SIGINT"));

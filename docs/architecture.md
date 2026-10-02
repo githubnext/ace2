@@ -58,6 +58,22 @@ for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment and 
 a channel can invoke its agent, so processes that run tools first move credential-like variables
 out of the environment; only the key lookup can read them.
 
+### Logs
+
+Every host process writes JSON lines to `$ACE_HOME/logs/<process>.jsonl`: `host` (gateway, peers,
+directory, workspace links), `channel-<id>` (one per worker), and `cli`. Each process owns its file,
+writes synchronously so the lines before a crash survive, and rotates at 10 MB keeping four files.
+`ace logs` merges them in time order and filters by `--channel`, `--trace`, `--level`, `--since`,
+and `--grep`; `--follow` tails them.
+
+Ids tie lines together: `channel` and `chat` on everything a channel does, `trace` on each
+gateway request as it passes through peer hosts and into a worker, `submission` from a request to
+its outcome, and `task` and `call` on model responses and tool calls. Channels log requests, model
+responses with usage and provider errors, and tool calls with durations; message text is not
+logged, but tool arguments are, clipped to 2,000 characters. `debug` lines (listings, watches,
+directory syncs, workspace calls) are written only with `ACE_DEBUG=1`. Hosted services log the same
+records to Workers Logs.
+
 ## Hosted channels
 
 `services/channel` runs the same `packages/channel` core in a Durable Object, one per channel.

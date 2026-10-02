@@ -9,6 +9,7 @@ import { Connection } from "./client";
 import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
 import { seal } from "./keys";
+import { failure, log, open as openLog } from "./log";
 import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
 import type { HostEnvelope, HostFrame, HostRequest, Listing } from "./protocol";
@@ -106,6 +107,7 @@ async function handle(
 	request: HostRequest,
 	send: (frame: HostFrame) => void,
 	id: number,
+	trace: string,
 ): Promise<unknown> {
 	const client = socket.data;
 	// A channel runs where it was created, so even its owner creates from that machine.
@@ -146,7 +148,7 @@ async function handle(
 					? { ...request.request, author: client.user }
 					: request.request;
 				const target = await connection(client, request.channel);
-				return target.request(forwarded, (event) => send({ id, event }));
+				return target.request(forwarded, (event) => send({ id, event }), trace);
 			}
 			const machine = !client.peer && peers.find(request.channel);
 			const hosted = !client.peer && !machine
@@ -159,11 +161,16 @@ async function handle(
 					? { ...request.request, author: client.user }
 					: request.request;
 				const target = await connection(client, request.channel, hosted.hosted);
-				return target.request(forwarded, (event) => send({ id, event }));
+				return target.request(forwarded, (event) => send({ id, event }), trace);
 			}
 			if (!machine) throw new Error("No reachable host runs that channel");
 			const target = await remote(client, machine.name);
-			return target.channel(request.channel, request.request, (event) => send({ id, event }));
+			return target.channel(
+				request.channel,
+				request.request,
+				(event) => send({ id, event }),
+				trace,
+			);
 		}
 		case "release": {
 			const open = client.channels.get(request.channel);
@@ -181,20 +188,39 @@ function websocket(): Bun.WebSocketHandler<Client> {
 	return {
 		open(socket) {
 			sockets.add(socket);
+			log("info", "gateway.open", { user: socket.data.user, peer: socket.data.peer });
 		},
 		async message(socket, raw) {
-			const { id, ...request } = JSON.parse(String(raw)) as HostEnvelope;
+			const { id, trace: given, ...request } = JSON.parse(String(raw)) as HostEnvelope;
+			// A peer host's trace continues here, so one request reads across both machines' logs.
+			const trace = given || crypto.randomUUID().slice(0, 8);
 			const send = (frame: HostFrame) =>
 				socket.readyState === 1 && socket.send(JSON.stringify(frame));
+			const start = Date.now();
+			const fields = {
+				trace,
+				user: socket.data.user,
+				peer: socket.data.peer,
+				op: request.op,
+				...("channel" in request ? { channel: request.channel } : {}),
+				...(request.op === "channel" ? { request: request.request.op } : {}),
+			};
+			// Listing and watching repeat constantly; everything else is a deliberate action.
+			const quiet = request.op === "channels" || request.op === "hello" || request.op === "models"
+				|| request.op === "release"
+				|| (request.op === "channel" && ["watch", "info", "models"].includes(request.request.op));
 			try {
-				const value = await handle(socket, request, send, id);
+				const value = await handle(socket, request, send, id, trace);
+				log(quiet ? "debug" : "info", "gateway.request", { ...fields, ms: Date.now() - start });
 				send({ id, ok: true, value: value ?? null });
 			} catch (error) {
+				log("warn", "gateway.failed", { ...fields, ms: Date.now() - start, ...failure(error) });
 				send({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
 			}
 		},
-		close(socket) {
+		close(socket, code) {
 			sockets.delete(socket);
+			log("info", "gateway.close", { user: socket.data.user, peer: socket.data.peer, code });
 			for (const open of socket.data.channels.values()) {
 				open.then((connection) => connection.close(), () => {});
 			}
@@ -249,7 +275,8 @@ function team(port: number, address: string): Server<Client> {
 			let user: string;
 			try {
 				user = await whois(ip.address, ip.port);
-			} catch {
+			} catch (error) {
+				log("warn", "gateway.whois", { address: ip.address, ...failure(error) });
 				return new Response("Forbidden", { status: 403 });
 			}
 			return server.upgrade(request, { data: client(user, true) })
@@ -263,12 +290,15 @@ function team(port: number, address: string): Server<Client> {
 export async function serve(port: number): Promise<never> {
 	// Hosted channels run tools in this process.
 	seal();
+	openLog("host");
 	const server = owner(port);
+	log("info", "host.start", { port: server.port, user: catalog.user, bun: Bun.version });
 	console.log(`Ace on http://${server.hostname}:${server.port}`);
 	const machine = await self();
 	if (machine) name = machine.name;
 	const address = machine ? { address: machine.address } : {};
 	const publish = directory.watch({ name, login: catalog.user, ...address }, local, broadcast);
+	log("info", "host.tailnet", machine ? { name, address: machine.address } : { tailscale: false });
 	if (machine) {
 		team(port, machine.address);
 		console.log(`Sharing with the tailnet on ${machine.address}:${port} as ${machine.login}`);

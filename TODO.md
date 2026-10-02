@@ -9,11 +9,6 @@ Dogfooding means everyone who works on Ace does all Ace development in Ace. If A
 surface (channels, diffs, terminals), use Ace's. When something forces another tool, the PR says
 so (see [the PR template](.github/pull_request_template.md)) and the gap goes here.
 
-- **Logging to disk.** Every host, gateway, and channel worker writes structured, timestamped logs
-  under `ACE_HOME`, rotated, with channel, chat, run, and request ids on every line. Cover run
-  start/end and failure reasons, provider errors, tool calls, workspace link connects and drops,
-  gateway and peer requests, directory publishes, worker spawn/exit/crash. `ace logs` reads them.
-  Hosted services keep their logs too (Workers Logs), with the same ids.
 - **Ace Helper, settings, and onboarding** (`feat/desktop` lane): the host keeps running when the
   window closes; keys are set and visible in the app.
 - **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.

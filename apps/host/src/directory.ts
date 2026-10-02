@@ -7,6 +7,7 @@ import { join } from "node:path";
 
 import * as catalog from "./catalog";
 import { hostedAuth } from "./client";
+import { failure, log } from "./log";
 import type { Listing } from "./protocol";
 
 const HEARTBEAT = 30_000;
@@ -62,9 +63,13 @@ export function watch(
 				body: JSON.stringify({ ...self, channels: channels() }),
 			});
 			known = await (await call("/")).json();
+			log("debug", "directory.sync", {
+				hosts: known.hosts.length,
+				channels: known.channels.length,
+			});
 			onChange();
 		} catch (error) {
-			console.error(`Directory: ${(error as Error).message}`);
+			log("warn", "directory.failed", { url: url(), ...failure(error) });
 		} finally {
 			pending = false;
 		}

@@ -9,6 +9,8 @@ import { Connection, request } from "./client";
 import * as directory from "./directory";
 import { serve } from "./gateway";
 import { forget, store } from "./keys";
+import { dir as logDir, failure, log, open as openLog } from "./log";
+import { type Filter, follow, print } from "./logs";
 import {
 	archive,
 	defaultModel,
@@ -38,6 +40,8 @@ const HELP = `ace — channels on this host
   ace key rm <NAME>
   ace directory [<url> | off]                    the team's directory, which lists every host's channels
   ace serve [--port 4140]                         serve the app and its WebSocket gateway
+  ace logs [--channel <ref>] [--trace <id>] [--level warn] [--since 10m] [--grep <text>]
+           [-n 200] [--follow] [--json]              every process's logs, merged in time order
   ace archive <channel> | unarchive <channel> | delete <channel>
 
 Models are provider/id, such as openai/gpt-6-astra or anthropic/claude-opus-5-5.
@@ -55,6 +59,14 @@ const { values: flags, positionals } = parseArgs({
 		port: { type: "string" },
 		all: { type: "boolean" },
 		detach: { type: "boolean" },
+		channel: { type: "string" },
+		trace: { type: "string" },
+		level: { type: "string" },
+		since: { type: "string" },
+		grep: { type: "string" },
+		lines: { type: "string", short: "n" },
+		follow: { type: "boolean", short: "f" },
+		json: { type: "boolean" },
 		help: { type: "boolean", short: "h" },
 	},
 });
@@ -103,9 +115,36 @@ async function watch(id: string, until?: (event: Event) => boolean, replay = tru
 	return { connection, done: done.promise };
 }
 
+/** `10m`, `2h`, `1d`, or an ISO time. */
+function since(value: string): number {
+	const match = /^(\d+)([smhd])$/.exec(value);
+	if (!match) return Date.parse(value);
+	const unit = { s: 1e3, m: 6e4, h: 36e5, d: 864e5 }[match[2] as "s" | "m" | "h" | "d"];
+	return Date.now() - Number(match[1]) * unit;
+}
+
 async function main() {
 	if (flags.help || !command) return console.log(HELP);
+	if (command !== "serve" && command !== "logs") {
+		openLog("cli");
+		log("info", "cli.command", { command, ...(ref ? { ref } : {}) });
+	}
 	switch (command) {
+		case "logs": {
+			const filter: Filter = {};
+			// Ids of channels this host doesn't know, such as a peer's, filter as given.
+			if (flags.channel) {
+				filter.channel = catalog.list().find((r) => r.name === flags.channel)?.id ?? flags.channel;
+			}
+			if (flags.trace) filter.trace = flags.trace;
+			if (flags.level) filter.level = flags.level;
+			if (flags.since) filter.since = since(flags.since);
+			if (flags.grep) filter.grep = flags.grep;
+			if (flags.follow) return follow(filter, !!flags.json);
+			print(filter, Number(flags.lines || 200), !!flags.json);
+			if (!flags.json) console.error(`\x1b[2m${logDir}\x1b[0m`);
+			return;
+		}
 		case "new": {
 			const dir = project(resolve(flags.project || "."));
 			const model = flags.model ? parseModel(flags.model) : await defaultModel();
@@ -225,6 +264,7 @@ async function main() {
 main().then(
 	() => process.exit(0),
 	(error: Error) => {
+		log("error", "cli.failed", { command, ...failure(error) });
 		console.error(error.message);
 		process.exit(1);
 	},
