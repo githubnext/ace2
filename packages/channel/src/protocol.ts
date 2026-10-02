@@ -1,0 +1,69 @@
+/** The wire contract between a channel and its clients: one JSON value per line. */
+
+export type ModelRef = { provider: string; modelId: string };
+
+/** pi conversation and entry IDs. */
+export type ChatId = number;
+export type EntryId = number;
+
+export type ChannelInfo = {
+	id: string;
+	name: string;
+	/** Directory of the project checkout lanes are created from. */
+	project: string;
+	owner: string;
+	/** Whether participants other than the owner may invoke agents. */
+	shared: boolean;
+	chats: Chat[];
+};
+
+export type Chat = {
+	id: ChatId;
+	/** The chat whose agent created this one as a subagent. */
+	parent?: ChatId;
+	busy: boolean;
+	model?: ModelRef;
+	lane?: string;
+};
+
+export type Request =
+	| { op: "info" }
+	| { op: "models" }
+	/** Post to the chat without invoking its agent. */
+	| { op: "say"; chat?: ChatId; author: string; text: string; requestId?: string }
+	/** Post to the chat and invoke its agent; a busy chat takes the message as steering. */
+	| { op: "ask"; chat?: ChatId; author: string; text: string; model?: ModelRef; requestId?: string }
+	| { op: "chat"; author: string; model?: ModelRef }
+	| { op: "stop"; chat?: ChatId }
+	| { op: "kill" }
+	| { op: "share"; author: string; shared: boolean }
+	/** Resolve once the answer to a submission is placed: "done", or "unanswered" when stopped or killed. */
+	| { op: "wait"; submission: number }
+	/** Replay the chat's transcript, then stream its events until the connection closes. */
+	| { op: "watch"; chat?: ChatId };
+
+export type Event =
+	| { kind: "message"; chat: ChatId; entry: EntryId; author: string; text: string }
+	| { kind: "reply"; chat: ChatId; entry: EntryId; model: string; text: string }
+	| { kind: "tool"; chat: ChatId; call: string; name: string; args: unknown }
+	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string }
+	| { kind: "run"; chat: ChatId; state: "start" | "end" }
+	/** The replayed transcript has been sent; later events are live. */
+	| { kind: "live"; chat: ChatId };
+
+export type Frame =
+	| { id: number; ok: true; value: unknown }
+	| { id: number; ok: false; error: string }
+	| { id: number; event: Event };
+
+export type Envelope = { id: number } & Request;
+
+/** A message one channel's agent sends to another channel. */
+export type Delivery = {
+	channel: string;
+	chat?: ChatId;
+	author: string;
+	text: string;
+	invoke: boolean;
+	requestId: string;
+};

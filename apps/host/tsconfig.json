@@ -1,0 +1,9 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"types": ["bun"],
+		// pi-ai pulls in provider SDK declarations that assume optional packages.
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}

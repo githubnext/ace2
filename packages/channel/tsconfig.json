@@ -1,0 +1,11 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		// No runtime types: the channel must not reach for node:*, bun:*, or Workers globals.
+		"types": [],
+		"lib": ["esnext"],
+		// pi-ai pulls in provider SDK declarations that assume DOM and optional packages.
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}

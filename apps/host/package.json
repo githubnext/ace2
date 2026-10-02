@@ -1,0 +1,21 @@
+{
+	"name": "@ace/host",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"bin": {
+		"ace": "./src/cli.ts"
+	},
+	"scripts": {
+		"types": "tsgo --noEmit"
+	},
+	"dependencies": {
+		"@ace/channel": "workspace:*",
+		"@earendil-works/chord": "catalog:pi",
+		"@earendil-works/pi-ai": "catalog:pi",
+		"@earendil-works/pi-durable": "catalog:pi"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:bun"
+	}
+}
