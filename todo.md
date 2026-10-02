@@ -18,9 +18,11 @@ Move these into issues once the repository has a remote.
   while the app is closed.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
-- **Deploy hosted channels.** `services/channel` runs under `wrangler dev`; deploying needs
-  `ACE_SECRET` and model keys as Worker secrets, and a name for the deployment.
-- **Hosted channels for the team**: list them in the directory so teammates and browsers reach
-  them without the workspace host; let them message other channels; create them from the app.
-- **Lobby cell** in `services/team`: presence, notifications, channel lifecycle.
+- **Deploy** `services/channel` and `services/directory`. Both run under `wrangler dev`; deploying
+  needs `ACE_SECRET` (and model keys for channels) as Worker secrets.
+- **Hosted channels**: create them from the app; let them message other channels; let browsers
+  reach them, which needs per-person sign-in rather than the hosts' shared secret.
+- **Directory freshness**: hosts re-read every 30 seconds, so a new channel can take that long to
+  appear on other hosts. Push changes instead of polling if that matters.
+- **Lobbies**: presence, notifications, channel lifecycle.
 - **Terminals and previews** per channel.

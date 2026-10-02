@@ -34,7 +34,11 @@ function row(channel: Listing, user: string): SidebarRow {
 		private: false,
 		mine: channel.owner === user,
 		member: true,
-		connection: channel.state === "running" ? "connected" : "idle",
+		connection: channel.state === "running"
+			? "connected"
+			: channel.state === "offline"
+			? "offline"
+			: "idle",
 		agent: "idle",
 		unreadCount: 0,
 		mentionCount: 0,

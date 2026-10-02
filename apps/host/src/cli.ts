@@ -6,6 +6,7 @@ import type { ChannelInfo, ChatId, Event } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";
+import * as directory from "./directory";
 import { serve } from "./gateway";
 import { forget, store } from "./keys";
 import {
@@ -35,6 +36,7 @@ const HELP = `ace — channels on this host
   ace models
   ace key set <NAME>                             store a key in the OS keychain, read from stdin
   ace key rm <NAME>
+  ace directory [<url> | off]                    the team's directory, which lists every host's channels
   ace serve [--port 4140]                         serve the app and its WebSocket gateway
   ace archive <channel> | unarchive <channel> | delete <channel>
 
@@ -132,6 +134,10 @@ async function main() {
 		case "models": {
 			for (const m of await models()) console.log(`${m.provider}/${m.modelId}`);
 			return;
+		}
+		case "directory": {
+			if (ref) directory.configure(ref === "off" ? undefined : ref);
+			return console.log(directory.url() ?? "No directory");
 		}
 		case "serve":
 			return serve(Number(flags.port || 4140));

@@ -1,0 +1,98 @@
+import { DurableObject } from "cloudflare:workers";
+
+type Env = {
+	DIRECTORY: DurableObjectNamespace<Directory>;
+	/** Bearer secret shared by the team's hosts. */
+	ACE_SECRET?: string;
+};
+
+/** What a host publishes. Channel listings are opaque here: hosts define and read them. */
+export type Publication = {
+	/** The host's owner, by tailnet login. */
+	login: string;
+	/** Tailnet address, when the host has one. */
+	address?: string;
+	channels: { id: string }[];
+};
+
+export type Host = Omit<Publication, "channels"> & { name: string; seen: number };
+
+/**
+ * The team's list of hosts and where each channel lives. It answers lookups; channel traffic never
+ * passes through it. Each publication replaces the host's whole channel set, so a removed channel
+ * disappears on the host's next publish.
+ */
+export class Directory extends DurableObject<Env> {
+	constructor(ctx: DurableObjectState, env: Env) {
+		super(ctx, env);
+		ctx.storage.sql.exec(`
+			CREATE TABLE IF NOT EXISTS hosts (name TEXT PRIMARY KEY, host TEXT NOT NULL);
+			CREATE TABLE IF NOT EXISTS channels (
+				id TEXT PRIMARY KEY,
+				host TEXT NOT NULL,
+				listing TEXT NOT NULL
+			);
+			CREATE INDEX IF NOT EXISTS channels_host ON channels (host);
+		`);
+	}
+
+	publish(name: string, publication: Publication): void {
+		const { channels, ...rest } = publication;
+		const host: Host = { ...rest, name, seen: Date.now() };
+		const sql = this.ctx.storage.sql;
+		this.ctx.storage.transactionSync(() => {
+			sql.exec("INSERT OR REPLACE INTO hosts VALUES (?, ?)", name, JSON.stringify(host));
+			sql.exec("DELETE FROM channels WHERE host = ?", name);
+			for (const channel of channels) {
+				sql.exec(
+					"INSERT OR REPLACE INTO channels VALUES (?, ?, ?)",
+					channel.id,
+					name,
+					JSON.stringify(channel),
+				);
+			}
+		});
+	}
+
+	read(): { hosts: Host[]; channels: unknown[] } {
+		const sql = this.ctx.storage.sql;
+		return {
+			hosts: sql.exec<{ host: string }>("SELECT host FROM hosts").toArray().map((row) =>
+				JSON.parse(row.host)
+			),
+			channels: sql.exec<{ listing: string }>("SELECT listing FROM channels").toArray().map((
+				row,
+			) => JSON.parse(row.listing)),
+		};
+	}
+}
+
+/** A deployment without `ACE_SECRET` refuses everything. */
+function authorized(request: Request, env: Env): boolean {
+	const encoder = new TextEncoder();
+	const given = encoder.encode(request.headers.get("authorization") ?? "");
+	const expected = encoder.encode(`Bearer ${env.ACE_SECRET}`);
+	return !!env.ACE_SECRET && given.byteLength === expected.byteLength
+		&& crypto.subtle.timingSafeEqual(given, expected);
+}
+
+const HOST = /^\/hosts\/([A-Za-z0-9._-]{1,128})$/;
+
+export default {
+	async fetch(request, env) {
+		if (!authorized(request, env)) return new Response("Unauthorized", { status: 401 });
+		const directory = env.DIRECTORY.get(env.DIRECTORY.idFromName("team"));
+		const { pathname } = new URL(request.url);
+		if (pathname === "/" && request.method === "GET") return Response.json(await directory.read());
+		const host = HOST.exec(pathname);
+		if (host && request.method === "PUT") {
+			const publication = await request.json<Publication>();
+			if (typeof publication.login !== "string" || !Array.isArray(publication.channels)) {
+				return new Response("Invalid publication", { status: 400 });
+			}
+			await directory.publish(host[1], publication);
+			return new Response(null, { status: 204 });
+		}
+		return new Response("Not found", { status: 404 });
+	},
+} satisfies ExportedHandler<Env>;

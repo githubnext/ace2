@@ -32,9 +32,13 @@ in `services/channel/.dev.vars`, then:
 
 ```sh
 bun --filter @ace/channel-service dev                     # http://localhost:8787
-printf %s "$SECRET" | bun ace key set ACE_HOSTED_SECRET   # the same value as ACE_SECRET
+printf %s "$SECRET" | bun ace key set ACE_SECRET          # the value in .dev.vars
 bun ace new --hosted http://localhost:8787 --project ~/code/my-repo
 ```
+
+The team's directory lists every host's channels, so they stay visible while their host sleeps.
+Run `services/directory` the same way (`bun --filter @ace/directory dev --port 8788`), then point
+each host at it with `bun ace directory http://localhost:8788`.
 
 If `bun desktop dev` or `build` exits silently, macOS killed Electrobun's downloaded CLI for an invalid
 signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules/electrobun/bin/electrobun`.

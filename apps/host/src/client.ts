@@ -43,10 +43,10 @@ function local(socket: Socket, receive: (text: string) => void): Transport {
 	};
 }
 
-/** Hosts share the team's secret with the hosting service; see services/channel. */
+/** Hosts hold the team's secret for its services: hosted channels and the directory. */
 export async function hostedAuth(): Promise<Record<string, string>> {
-	const secret = await key("ACE_HOSTED_SECRET");
-	if (!secret) throw new Error("Hosted channels need ACE_HOSTED_SECRET; see ace key set");
+	const secret = await key("ACE_SECRET");
+	if (!secret) throw new Error("The team's services need ACE_SECRET; see ace key set");
 	return { authorization: `Bearer ${secret}` };
 }
 
@@ -64,10 +64,11 @@ export async function hostedSocket(base: string, path: string): Promise<WebSocke
 }
 
 async function hosted(
-	record: catalog.Listing,
+	base: string,
+	id: string,
 	receive: (text: string) => void,
 ): Promise<Transport> {
-	const socket = await hostedSocket(record.hosted!, `/channels/${record.id}`);
+	const socket = await hostedSocket(base, `/channels/${id}`);
 	socket.addEventListener("message", ({ data }) => receive(String(data)));
 	return {
 		write: (text) => socket.send(text),
@@ -98,9 +99,14 @@ export class Connection {
 		return connection;
 	}
 
+	/** A hosted channel, which need not be in this host's catalog. */
+	static hosted(base: string, id: string): Promise<Connection> {
+		return Connection.#connect((receive) => hosted(base, id, receive));
+	}
+
 	static async open(id: string): Promise<Connection> {
 		const record = catalog.read(id);
-		if (record.hosted) return Connection.#connect((receive) => hosted(record, receive));
+		if (record.hosted) return Connection.hosted(record.hosted, id);
 		const { socket } = catalog.paths(id);
 		let started = false;
 		for (let wait = 50; wait < 10_000; wait *= 1.5) {

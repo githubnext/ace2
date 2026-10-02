@@ -125,6 +125,13 @@
         "wrangler": "catalog:cloudflare",
       },
     },
+    "services/directory": {
+      "name": "@ace/directory",
+      "devDependencies": {
+        "@cloudflare/workers-types": "catalog:cloudflare",
+        "wrangler": "catalog:cloudflare",
+      },
+    },
   },
   "catalogs": {
     "bun": {
@@ -195,6 +202,8 @@
     "@ace/channel-service": ["@ace/channel-service@workspace:services/channel"],
 
     "@ace/desktop": ["@ace/desktop@workspace:apps/desktop"],
+
+    "@ace/directory": ["@ace/directory@workspace:services/directory"],
 
     "@ace/host": ["@ace/host@workspace:apps/host"],
 

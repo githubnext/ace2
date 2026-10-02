@@ -6,6 +6,7 @@ import type { Server, ServerWebSocket } from "bun";
 
 import * as catalog from "./catalog";
 import { Connection } from "./client";
+import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
 import { seal } from "./keys";
 import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
@@ -32,13 +33,35 @@ let name = hostname();
 function local(): Listing[] {
 	return catalog.list().map((record) => {
 		const state = record.archived ? "archived" : isRunning(record.id) ? "running" : "dormant";
-		const { id, name: channel, owner, project, model, created } = record;
-		return { id, host: name, name: channel, owner, project, model, created, state };
+		const { id, name: channel, owner, project, model, created, hosted } = record;
+		const listing: Listing = {
+			id,
+			host: name,
+			name: channel,
+			owner,
+			project,
+			model,
+			created,
+			state,
+		};
+		if (hosted) listing.hosted = hosted;
+		return listing;
 	});
 }
 
+/** Channels only the directory knows: their host is unreachable, unless they are hosted. */
+function listed(seen: Set<string>): Listing[] {
+	return directory.read().channels.filter((value) => !seen.has(value.id) && value.host !== name)
+		.map((value) => ({
+			...value,
+			state: value.state === "archived" || value.hosted ? value.state : "offline",
+		}));
+}
+
 function listings(client: Client): Listing[] {
-	return client.peer ? local() : [...local(), ...peers.listings()];
+	if (client.peer) return local();
+	const reachable = [...local(), ...peers.listings()];
+	return [...reachable, ...listed(new Set(reachable.map((value) => value.id)))];
 }
 
 const sockets = new Set<ServerWebSocket<Client>>();
@@ -49,10 +72,10 @@ function broadcast() {
 	}
 }
 
-function connection(client: Client, channel: string): Promise<Connection> {
+function connection(client: Client, channel: string, hosted?: string): Promise<Connection> {
 	let open = client.channels.get(channel);
 	if (!open) {
-		open = Connection.open(channel);
+		open = hosted ? Connection.hosted(hosted, channel) : Connection.open(channel);
 		client.channels.set(channel, open);
 		open.then((connection) => connection.closed.then(() => client.channels.delete(channel)), () => {
 			client.channels.delete(channel);
@@ -126,6 +149,18 @@ async function handle(
 				return target.request(forwarded, (event) => send({ id, event }));
 			}
 			const machine = !client.peer && peers.find(request.channel);
+			const hosted = !client.peer && !machine
+				&& directory.read().channels.find((value) => value.id === request.channel && value.hosted);
+			if (hosted) {
+				if (request.request.op === "kill" && client.user !== hosted.owner) {
+					throw new Error("Only the channel's owner can kill it");
+				}
+				const forwarded = "author" in request.request
+					? { ...request.request, author: client.user }
+					: request.request;
+				const target = await connection(client, request.channel, hosted.hosted);
+				return target.request(forwarded, (event) => send({ id, event }));
+			}
 			if (!machine) throw new Error("No reachable host runs that channel");
 			const target = await remote(client, machine.name);
 			return target.channel(request.channel, request.request, (event) => send({ id, event }));
@@ -231,8 +266,10 @@ export async function serve(port: number): Promise<never> {
 	const server = owner(port);
 	console.log(`Ace on http://${server.hostname}:${server.port}`);
 	const machine = await self();
+	if (machine) name = machine.name;
+	const address = machine ? { address: machine.address } : {};
+	const publish = directory.watch({ name, login: catalog.user, ...address }, local, broadcast);
 	if (machine) {
-		name = machine.name;
 		team(port, machine.address);
 		console.log(`Sharing with the tailnet on ${machine.address}:${port} as ${machine.login}`);
 		peers.watch(broadcast);
@@ -243,7 +280,10 @@ export async function serve(port: number): Promise<never> {
 	// Workers create and remove their sockets; tell clients when a channel starts or retires.
 	watch(join(catalog.home, "channels"), { recursive: true }, (_, file) => {
 		if (file?.endsWith("channel.sock") || file?.endsWith("channel.json")) broadcast();
-		if (file?.endsWith("channel.json")) workspace.sync();
+		if (file?.endsWith("channel.json")) {
+			workspace.sync();
+			void publish();
+		}
 	});
 	workspace.sync();
 	return new Promise(() => {});

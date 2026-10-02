@@ -28,6 +28,10 @@ function resolveBadge(data: SidebarRow): { show: boolean; pulse: boolean; color?
 	if (data.connection === "error") {
 		return { show: true, pulse: false, color: "var(--color-destructive)" };
 	}
+	// The channel's host is asleep or away: expected, not a fault.
+	if (data.connection === "offline") {
+		return { show: true, pulse: false, color: "var(--color-muted-foreground)" };
+	}
 	if (data.connection === "reconnecting") {
 		return { show: true, pulse: true, color: "var(--color-warning)" };
 	}

@@ -1,0 +1,10 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	"name": "ace-directory",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-09-25",
+	"durable_objects": {
+		"bindings": [{ "name": "DIRECTORY", "class_name": "Directory" }],
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Directory"] }],
+}

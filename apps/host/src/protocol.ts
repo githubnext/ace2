@@ -1,7 +1,8 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
 
-export type ChannelState = "running" | "dormant" | "archived";
+/** `offline`: the channel's host is unreachable. Hosted channels are never offline. */
+export type ChannelState = "running" | "dormant" | "archived" | "offline";
 
 export type Listing = {
 	id: string;
@@ -13,6 +14,8 @@ export type Listing = {
 	model: ModelRef;
 	created: number;
 	state: ChannelState;
+	/** The hosting service's base URL, for a hosted channel; `host` is then its workspace. */
+	hosted?: string;
 };
 
 export type Hello = { user: string; host: string };

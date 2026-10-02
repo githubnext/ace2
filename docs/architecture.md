@@ -8,13 +8,13 @@ Words in this document have the meanings in [terms](terms.md).
 
 ## Layout
 
-| Path               | Runs                           | Owns                                                                 |
-| ------------------ | ------------------------------ | -------------------------------------------------------------------- |
-| `packages/channel` | inside a channel worker        | The channel: chats, agents, lanes, and the client protocol types     |
-| `apps/host`        | on every machine (Bun)         | The `ace` CLI, channel workers, the channel catalog, local transport |
-| `apps/desktop`     | on every machine               | The desktop client, with the host built in                           |
-| `services/channel` | Cloudflare Workers             | Hosted channels: one Durable Object per channel                      |
-| `services/team`    | hosted, one per team (planned) | The directory and lobby cells                                        |
+| Path                 | Runs                    | Owns                                                                 |
+| -------------------- | ----------------------- | -------------------------------------------------------------------- |
+| `packages/channel`   | inside a channel worker | The channel: chats, agents, lanes, and the client protocol types     |
+| `apps/host`          | on every machine (Bun)  | The `ace` CLI, channel workers, the channel catalog, local transport |
+| `apps/desktop`       | on every machine        | The desktop client, with the host built in                           |
+| `services/channel`   | Cloudflare Workers      | Hosted channels: one Durable Object per channel                      |
+| `services/directory` | Cloudflare Workers      | The team's list of hosts and where each channel lives                |
 
 Clients (the CLI, later the desktop app) attach to channels; a channel is not a client.
 
@@ -75,15 +75,23 @@ offline, and a call in flight when it drops is reported to the model as failed.
 - The workspace socket hibernates, so an idle hosted channel costs nothing while its host stays
   connected. Client sockets carry live pi event streams and keep the object awake.
 - An alarm re-wakes the object while a run is active, so an evicted object resumes the run.
-- Hosts share the team's secret with the service (`ACE_HOSTED_SECRET` on hosts, `ACE_SECRET` on the
-  Worker) and state each message's author. They verify their own users over the tailnet, so the
+- Hosts share the team's secret with the service (`ACE_SECRET` on hosts and Workers) and state each message's author. They verify their own users over the tailnet, so the
   service trusts hosts, not individual people.
 - Model keys are Worker secrets.
 
 ## Shared services
 
-Shared state that must outlive any one machine (the directory and each project's lobby) lives in
-cells: Durable Objects deployed to Cloudflare, or celld on a team machine.
+Shared state that must outlive any one machine lives in cells: Durable Objects deployed to
+Cloudflare, or celld on a team machine. Each service is named for its job.
+
+`services/directory` holds the team's hosts and where each channel lives. Every host publishes its
+whole channel set on each change and every 30 seconds, then reads everyone's. It answers lookups
+only: channel traffic goes to the channel's host over the tailnet, or to the hosted channel. So a
+channel stays listed while its host is asleep. The app shows a local channel whose host is
+unreachable as offline, and reaches a hosted channel directly. Hosts find the directory through
+`ace directory <url>` and authenticate with the team's `ACE_SECRET`.
+
+Lobbies (presence, notifications) are not built.
 
 ## The team
 

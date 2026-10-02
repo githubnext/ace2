@@ -1,0 +1,15 @@
+{
+	"name": "@ace/directory",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
+		"types": "tsgo --noEmit"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:cloudflare",
+		"wrangler": "catalog:cloudflare"
+	}
+}

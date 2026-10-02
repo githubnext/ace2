@@ -29,7 +29,14 @@ export type SidebarRow = {
 
 	// Connectivity (only meaningful when lifecycle === "live")
 	// "warming": the transport is open but the session has not proven it is serving yet.
-	connection: "connected" | "connecting" | "warming" | "reconnecting" | "error" | "idle";
+	connection:
+		| "connected"
+		| "connecting"
+		| "warming"
+		| "reconnecting"
+		| "error"
+		| "idle"
+		| "offline";
 
 	// Agent (only meaningful while connection === "connected")
 	agent: "idle" | "thinking" | "tool" | "streaming" | "aborting";
