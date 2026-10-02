@@ -27,6 +27,12 @@ export function configure(value: string | undefined): void {
 }
 
 let known: { hosts: Host[]; channels: Listing[] } = { hosts: [], channels: [] };
+let synced: number | undefined;
+let error: string | undefined;
+
+export function status() {
+	return { url: url(), synced, error };
+}
 
 /** The directory's last answer; empty until it first responds or without a directory. */
 export function read() {
@@ -53,28 +59,40 @@ export function watch(
 	channels: () => Listing[],
 	onChange: () => void,
 ) {
+	const controller = new AbortController();
 	let pending = false;
 	const sync = async () => {
-		if (!url() || pending) return;
+		if (!url() || pending || controller.signal.aborted) return;
 		pending = true;
 		try {
 			await call(`/hosts/${encodeURIComponent(self.name)}`, {
 				method: "PUT",
 				body: JSON.stringify({ ...self, channels: channels() }),
+				signal: controller.signal,
 			});
-			known = await (await call("/")).json();
+			known = await (await call("/", { signal: controller.signal })).json();
+			synced = Date.now();
+			error = undefined;
 			log("debug", "directory.sync", {
 				hosts: known.hosts.length,
 				channels: known.channels.length,
 			});
 			onChange();
-		} catch (error) {
-			log("warn", "directory.failed", { url: url(), ...failure(error) });
+		} catch (cause) {
+			if (controller.signal.aborted) return;
+			error = (cause as Error).message;
+			log("warn", "directory.failed", { url: url(), ...failure(cause) });
 		} finally {
 			pending = false;
 		}
 	};
 	void sync();
-	setInterval(() => void sync(), HEARTBEAT);
-	return sync;
+	const interval = setInterval(() => void sync(), HEARTBEAT);
+	return {
+		sync,
+		stop() {
+			controller.abort();
+			clearInterval(interval);
+		},
+	};
 }

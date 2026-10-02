@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useId, useState } from "react";
 
 import {
 	Button,
@@ -16,8 +16,11 @@ import {
 	Input,
 } from "@ace/ui";
 
+import { desktop } from "./desktop";
+
 type Props = {
-	onCreate: (project: string) => void;
+	onCreate: (project: string) => Promise<void>;
+	disabled?: boolean;
 	dialog?: boolean;
 	open?: boolean;
 	onOpenChange?: (open: boolean) => void;
@@ -28,23 +31,75 @@ const DESCRIPTION =
 	"Channels run on this machine. Agents work in lanes: worktrees of the project's Git repository.";
 
 /** Starts a channel in a project folder, as the empty state or as a dialog. */
-export function NewChannel({ onCreate, dialog, open, onOpenChange, onSettings }: Props) {
+export function NewChannel({ onCreate, disabled, dialog, open, onOpenChange, onSettings }: Props) {
+	const id = useId();
 	const [path, setPath] = useState("");
+	const [pending, setPending] = useState<"folder" | "channel">();
+	const [error, setError] = useState("");
+
+	async function choose() {
+		if (!desktop) return;
+		setPending("folder");
+		setError("");
+		try {
+			const selected = await desktop.project();
+			if (selected) setPath(selected);
+		} catch (error) {
+			setError((error as Error).message);
+		} finally {
+			setPending(undefined);
+		}
+	}
+
+	async function create() {
+		if (!path.trim() || disabled || pending) return;
+		setPending("channel");
+		setError("");
+		try {
+			await onCreate(path.trim());
+			onOpenChange?.(false);
+		} catch (error) {
+			setError((error as Error).message);
+		} finally {
+			setPending(undefined);
+		}
+	}
+
 	const form = (
 		<form
-			className="flex w-full max-w-md gap-2"
+			id={id}
+			className="flex w-full max-w-md flex-col gap-3"
 			onSubmit={(event) => {
 				event.preventDefault();
-				if (path.trim()) onCreate(path.trim());
+				void create();
 			}}
 		>
-			<Input
-				autoFocus
-				placeholder="~/code/project"
-				value={path}
-				onChange={(event) => setPath(event.target.value)}
-			/>
-			{!dialog && <Button type="submit" disabled={!path.trim()}>Start channel</Button>}
+			<div className="flex gap-2">
+				<Input
+					autoFocus
+					aria-label="Project folder"
+					placeholder="~/code/project"
+					value={path}
+					disabled={!!pending}
+					onChange={(event) => setPath(event.target.value)}
+				/>
+				{desktop && (
+					<Button
+						type="button"
+						variant="outline"
+						disabled={!!pending}
+						onClick={() => void choose()}
+					>
+						{pending === "folder" ? "Choosing…" : "Choose folder…"}
+					</Button>
+				)}
+			</div>
+			{error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+			{!dialog && (
+				<Button type="submit" disabled={disabled || !!pending || !path.trim()}>
+					{pending === "channel" ? "Starting…" : "Start channel"}
+				</Button>
+			)}
 		</form>
 	);
 	if (!dialog) {
@@ -70,8 +125,9 @@ export function NewChannel({ onCreate, dialog, open, onOpenChange, onSettings }:
 				</DialogHeader>
 				{form}
 				<DialogFooter>
-					<Button disabled={!path.trim()} onClick={() => onCreate(path.trim())}>
-						Start channel
+					{onSettings && <Button variant="ghost" onClick={onSettings}>Provider settings</Button>}
+					<Button type="submit" form={id} disabled={disabled || !!pending || !path.trim()}>
+						{pending === "channel" ? "Starting…" : "Start channel"}
 					</Button>
 				</DialogFooter>
 			</DialogContent>

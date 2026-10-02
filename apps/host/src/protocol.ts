@@ -1,13 +1,27 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 2;
+export const HOST_PROTOCOL = 3;
 
 export type HostInfo = {
 	app: "ace";
 	protocol: number;
 	home: string;
 	pid: number;
+	helper: boolean;
+};
+
+export type WorkerInfo = { id: string; pid: number };
+export type WorkerRequest = { op: "worker" };
+
+export type Diagnostics = {
+	tools: { name: string; path?: string; version?: string; error?: string }[];
+	tailscale: {
+		state: "missing" | "offline" | "running" | "error";
+		name?: string;
+		error?: string;
+	};
+	directory: { url?: string; synced?: number; error?: string };
 };
 
 /** `offline`: the channel's host is unreachable. Hosted channels are never offline. */
@@ -53,6 +67,7 @@ export type HostRequest =
 	| { op: "channels" }
 	/** These settings belong to the local owner and are never forwarded to peers. */
 	| { op: "settings" }
+	| { op: "diagnostics" }
 	| { op: "key-set"; provider: ProviderId; value: string }
 	| { op: "key-check"; provider: ProviderId }
 	| { op: "key-remove"; provider: ProviderId }

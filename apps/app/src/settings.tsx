@@ -14,6 +14,8 @@ import {
 import type { ProviderSettings, Settings as HostSettings } from "@ace/host/protocol";
 
 import { host } from "./host";
+import { desktop } from "./desktop";
+import { HostStatus } from "./host-settings";
 
 const sources = {
 	keychain: "Saved in Keychain",
@@ -155,6 +157,7 @@ function DefaultModel({ settings, disabled }: { settings: HostSettings; disabled
 			<FieldLabel htmlFor="default-model">Default model</FieldLabel>
 			<select
 				id="default-model"
+				aria-label="Default model"
 				className="h-8 w-full rounded-md border bg-background px-2 text-xs outline-none focus-visible:ring-2 focus-visible:ring-ring"
 				value={value}
 				disabled={disabled || action.busy || !!settings.modelOverride}
@@ -179,12 +182,15 @@ function DefaultModel({ settings, disabled }: { settings: HostSettings; disabled
 
 export function Settings({ onClose }: { onClose: () => void }) {
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
+	const [section, setSection] = useState<"providers" | "host">(
+		status === "open" ? "providers" : "host",
+	);
 	const version = useSyncExternalStore(host.subscribe, () => host.settingsVersion);
 	const [retry, setRetry] = useState(0);
 	const [result, setResult] = useState<{ settings?: HostSettings; error?: string }>({});
 
 	useEffect(() => {
-		if (status !== "open") return;
+		if (status !== "open" || section !== "providers") return;
 		let active = true;
 		host.request<HostSettings>({ op: "settings" }).then(
 			(settings) => {
@@ -197,7 +203,7 @@ export function Settings({ onClose }: { onClose: () => void }) {
 		return () => {
 			active = false;
 		};
-	}, [status, version, retry]);
+	}, [status, version, retry, section]);
 
 	return (
 		<Dialog
@@ -210,33 +216,57 @@ export function Settings({ onClose }: { onClose: () => void }) {
 				<DialogHeader>
 					<DialogTitle>Settings</DialogTitle>
 					<DialogDescription>
-						Provider keys stay in your system keychain. Changes apply to the next model request.
+						{section === "providers"
+							? "Provider keys stay in your system keychain. Changes apply to the next model request."
+							: "Tools, team connectivity, and background hosting."}
 					</DialogDescription>
 				</DialogHeader>
-				{status !== "open" && <p role="status">Waiting for Ace Helper to reconnect…</p>}
-				{result.settings
-					? (
-						<>
-							{result.settings.providers.map((provider) => (
-								<Provider key={provider.id} provider={provider} disabled={status !== "open"} />
-							))}
-							<DefaultModel settings={result.settings} disabled={status !== "open"} />
-							{result.settings.error && (
-								<p role="alert" className="text-destructive">{result.settings.error}</p>
-							)}
-						</>
-					)
-					: !result.error && status === "open" && <p role="status">Reading provider settings…</p>}
-				{result.error && <p role="alert" className="text-destructive">{result.error}</p>}
-				<div className="flex justify-end">
+				<nav aria-label="Settings sections" className="flex gap-2">
 					<Button
-						variant="ghost"
-						disabled={status !== "open"}
-						onClick={() => setRetry((value) => value + 1)}
+						variant={section === "providers" ? "secondary" : "ghost"}
+						aria-pressed={section === "providers"}
+						onClick={() => setSection("providers")}
 					>
-						Refresh settings
+						Providers
 					</Button>
-				</div>
+					<Button
+						variant={section === "host" ? "secondary" : "ghost"}
+						aria-pressed={section === "host"}
+						onClick={() => setSection("host")}
+					>
+						{desktop ? "This Mac" : "This host"}
+					</Button>
+				</nav>
+				{section === "host" ? <HostStatus /> : (
+					<>
+						{status !== "open" && <p role="status">Waiting for Ace Helper to reconnect…</p>}
+						{result.settings
+							? (
+								<>
+									{result.settings.providers.map((provider) => (
+										<Provider key={provider.id} provider={provider} disabled={status !== "open"} />
+									))}
+									<DefaultModel settings={result.settings} disabled={status !== "open"} />
+									{result.settings.error && (
+										<p role="alert" className="text-destructive">{result.settings.error}</p>
+									)}
+								</>
+							)
+							: !result.error && status === "open" && (
+								<p role="status">Reading provider settings…</p>
+							)}
+						{result.error && <p role="alert" className="text-destructive">{result.error}</p>}
+						<div className="flex justify-end">
+							<Button
+								variant="ghost"
+								disabled={status !== "open"}
+								onClick={() => setRetry((value) => value + 1)}
+							>
+								Refresh settings
+							</Button>
+						</div>
+					</>
+				)}
 			</DialogContent>
 		</Dialog>
 	);

@@ -18,6 +18,7 @@ import {
 import type { Hello, Listing } from "@ace/host/protocol";
 
 import { Conversation } from "./conversation";
+import { desktop } from "./desktop";
 import { host } from "./host";
 import { NewChannel } from "./new-channel";
 import { Settings } from "./settings";
@@ -103,13 +104,9 @@ export function App() {
 	];
 
 	async function create(path: string) {
-		try {
-			const created = await host.request<Listing>({ op: "create", project: path });
-			setProject(created.project);
-			setSelected(created.id);
-		} catch (error) {
-			toast.error("Could not create channel", { description: (error as Error).message });
-		}
+		const created = await host.request<Listing>({ op: "create", project: path });
+		setProject(created.project);
+		setSelected(created.id);
 	}
 
 	return (
@@ -136,7 +133,14 @@ export function App() {
 							onRepoChange={(repo) => setProject(repo.id)}
 							onAddRepo={() => setAdding(true)}
 							onSelect={(item) => setSelected(item.uid)}
-							onNewSession={current ? () => void create(current) : () => setAdding(true)}
+							onNewSession={current
+								? () =>
+									void create(current).catch((error) =>
+										toast.error("Could not create channel", {
+											description: (error as Error).message,
+										})
+									)
+								: () => setAdding(true)}
 							onArchive={(item) =>
 								void host.request({ op: "archive", channel: item.uid, archived: true })}
 							onDelete={(item) => void host.request({ op: "delete", channel: item.uid })}
@@ -154,7 +158,9 @@ export function App() {
 					<Main className="overflow-hidden">
 						{status === "closed" && (
 							<p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
-								Disconnected from Ace Helper. Open the Ace desktop app or use ace open to reconnect.
+								{desktop
+									? "Disconnected from Ace Helper. Open Settings → This Mac to start it."
+									: "Disconnected from Ace Helper. Open the Ace desktop app or use ace open to reconnect."}
 							</p>
 						)}
 						{channel
@@ -168,7 +174,8 @@ export function App() {
 							)
 							: (
 								<NewChannel
-									onCreate={(path) => void create(path)}
+									onCreate={create}
+									disabled={status !== "open"}
 									onSettings={() => setSettings(true)}
 								/>
 							)}
@@ -178,9 +185,11 @@ export function App() {
 					dialog
 					open={adding}
 					onOpenChange={setAdding}
-					onCreate={(path) => {
+					onCreate={create}
+					disabled={status !== "open"}
+					onSettings={() => {
 						setAdding(false);
-						void create(path);
+						setSettings(true);
 					}}
 				/>
 				{settings && <Settings onClose={() => setSettings(false)} />}

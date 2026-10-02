@@ -24,7 +24,7 @@ export async function health(port: number): Promise<HostInfo | undefined> {
 	) {
 		throw new Error(`Port ${port} is occupied by a service other than Ace Helper`);
 	}
-	if (info.protocol !== HOST_PROTOCOL) {
+	if (info.protocol !== HOST_PROTOCOL || typeof info.helper !== "boolean") {
 		throw new Error(`Ace Helper on port ${port} uses an incompatible protocol; restart it`);
 	}
 	const received = response.headers.get("x-ace-proof");

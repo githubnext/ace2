@@ -71,6 +71,11 @@ Host configuration is captured before credential cleanup. A worker receives the 
 environment, then seals credentials again before running tools. Source workers disable automatic
 `.env` loading, so an unrelated working directory cannot change their credentials or configuration.
 
+Stopping the host closes listeners and workspace links, then closes active local workers and their
+tool processes without writing durable abort marks. Shutdown identifies workers through their live
+Unix sockets; a stale PID file must never cause an unrelated process to be signaled or a dormant
+worker to start. Reopening a channel after the host restarts resumes unfinished work through pi.
+
 ### Logs
 
 Every host process writes JSON lines to `$ACE_HOME/logs/<process>.jsonl`: `host` (gateway, peers,
@@ -110,6 +115,17 @@ starts the helper immediately and at subsequent logins. A disabled background it
 user to enable in System Settings. The stable service identifier is `dev.ace.desktop.helper`; the
 executable and desktop controls are named Ace Helper.
 macOS groups the background permission under the parent app's name, Ace.
+
+The desktop owns the native project picker and helper controls. Its webview uses a typed native
+bridge, authenticates each request with the owner token, and restricts navigation to the local app
+origin. Settings exposes Start, Stop, and Restart through this bridge, and its controls remain
+available while the host is disconnected. Stopping unregisters login hosting until the user
+enables it again. An authenticated command-line host can serve the UI, but the desktop does not
+manage that process as Ace Helper.
+
+Git, shell, Tailscale, and directory diagnostics come from the host through the same local-only
+boundary as provider settings. The project picker selects a local Git checkout; project creation
+errors remain in the form so the person can fix the path or provider setup.
 
 Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
 separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service
@@ -168,7 +184,6 @@ or kills.
 
 ## Not yet built
 
-Terminals and previews, attachments, lobby and directory cells, and external harnesses (Claude
-Code, Codex). Hosted channels cannot message other channels yet, and only their workspace host
-lists them. Projects are still a local path, so a teammate's checkout of the same
-repository shows as a separate project.
+Terminals and previews, attachments, lobby cells, and external harnesses (Claude Code, Codex).
+Hosted channels cannot message other channels yet. Projects are still a local path, so a
+teammate's checkout of the same repository shows as a separate project.

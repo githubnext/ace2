@@ -11,6 +11,7 @@ if (!worker) adoptLoginShell();
 
 const { config, desktop } = await import("./config");
 desktop(ACE_CHANNEL);
+config.helper = true;
 config.app = join(dirname(process.execPath), "..", "Resources", "app", "web");
 config.worker = [process.execPath, "--worker"];
 

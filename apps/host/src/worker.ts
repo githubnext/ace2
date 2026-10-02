@@ -12,6 +12,7 @@ import { request } from "./client";
 import { models, seal } from "./keys";
 import { lines } from "./lines";
 import { log, open } from "./log";
+import type { WorkerInfo, WorkerRequest } from "./protocol";
 
 const RETIRE_AFTER = 10 * 60_000;
 
@@ -97,11 +98,12 @@ async function exit(kill: boolean, reason: string) {
 	log("info", "worker.exit", { reason, kill, clients: clients.size });
 	if (kill) await channel.kill();
 	server.close();
-	for (const client of clients) client.destroy();
 	await channel.close();
 	for (const env of envs.values()) await env.cleanup(BACKGROUND_CONTEXT);
 	rmSync(paths.socket, { force: true });
 	rmSync(paths.pid, { force: true });
+	// A closed connection tells the host that durable storage and tool cleanup have finished.
+	for (const client of clients) client.destroy();
 	process.exit(0);
 }
 
@@ -120,8 +122,14 @@ function serve(socket: Socket) {
 		for (const watch of watches) watch.stop();
 	});
 	lines(socket, async (line) => {
-		const { id: frame, trace, ...body } = JSON.parse(line) as Envelope;
+		const { id: frame, trace, ...body } = JSON.parse(line) as
+			| Envelope
+			| ({ id: number; trace?: string } & WorkerRequest);
 		try {
+			if (body.op === "worker") {
+				return send({ id: frame, ok: true, value: { id, pid: process.pid } satisfies WorkerInfo });
+			}
+			if (exiting) throw new Error("The channel worker is shutting down");
 			if (
 				catalog.read(id).archived && (body.op === "say" || body.op === "ask" || body.op === "chat")
 			) {

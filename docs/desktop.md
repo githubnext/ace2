@@ -90,11 +90,43 @@ and Ace's grouped permission in macOS background-item settings.
 - The final fresh install under `/Applications` passed authenticated startup and native Settings,
   ignored the unrelated `.env`, and kept the helper available after the UI exited. Removed the
   temporary apps, service registrations, Keychain entries, and channel data.
-- Next: project selection, tool and Tailscale diagnostics, clean shutdown and restart controls,
-  and distribution signing, notarization, and updates. Lifecycle work must also stop the desktop
-  launcher's process after Quit; a smoke run left it alive after its UI child exited. Other
-  providers remain configurable through the CLI; Settings currently supports Anthropic and
-  OpenAI API keys.
+- Rebased the lane onto main's directory and hosted-channel routing changes (`9f4d528`). Preserved
+  the shared `ACE_SECRET` lookup, nonsecret host configuration, and offline channel listings.
+- Implemented the third milestone: a native project folder picker, inline setup errors, Git and
+  shell checks, Tailscale and directory status, and Start, Stop, and Restart controls in This Mac.
+  Native controls require the owner token and remain usable while the helper is stopped. The
+  desktop distinguishes a source CLI host from its managed helper before changing processes.
+- Host shutdown now closes active workers and their tools without cancelling pi's durable work,
+  closes hosted workspace links, and stops discovery and directory activity. It identifies live
+  workers through their sockets rather than trusting PID files, and leaves dormant channels alone.
+- Passed type and lint checks. A real Anthropic run with an active shell tool survived a host
+  restart: shutdown removed its worker and tool, and a new worker resumed the run. Also verified
+  pending-request cleanup, stale PID safety, and that shutdown does not start dormant workers.
+- React Doctor scored the latest changes 92/100, with one control-flow complexity warning in
+  the This Mac settings component.
+- Ran both shared services in real local Workers. Verified directory publication after credential
+  sealing, offline listings, routing to a directory-only hosted channel, and denial of local
+  diagnostics to a real tailnet peer.
+- From an isolated app under `/Applications`, verified picker cancellation and paths with spaces
+  and commas, missing-key and invalid-project feedback, a compiled-worker Anthropic/tool run using
+  Keychain, native Settings, Stop/Start/Restart, and transcript recovery. Quit now ends both the UI
+  runtime and desktop launcher while Ace Helper stays running.
+- Remaining: distribution signing, notarization, upgrades, and clean-account login/sleep/wake
+  checks. Team directory configuration and providers beyond Anthropic/OpenAI still use the CLI;
+  directory status in Settings is read-only.
+
+## UI testing
+
+Use the development `Ace-dev.app` from `apps/desktop/dist/dev-macos-arm64`, copied to
+`/Applications/Ace-dev.app`. It uses port 4141 and its own `ace-dev` catalog and Keychain service,
+plus `~/Library/Application Support/Ace-dev` for preferences. Build it with `bun run stage` then
+`ACE_BUILD_CHANNEL=dev bunx electrobun build --env=dev` from `apps/desktop`.
+
+On first launch, enable Ace Helper, add a provider key in Settings, and choose a Git project.
+Check key validation and replacement, picker cancellation, invalid paths, and starting a channel.
+In Settings → This Mac, try restarting the helper, then stopping and starting it. Finally quit
+and reopen the app; its channel history should remain available. No `.env` or source checkout is
+required to run the installed bundle. This build is signed locally, not notarized for distribution.
 
 ## Browser development
 

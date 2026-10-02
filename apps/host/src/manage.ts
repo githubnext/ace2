@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
-import { hostname } from "node:os";
+import { homedir, hostname } from "node:os";
+import { resolve } from "node:path";
 
 import type { ModelRef } from "@ace/channel/protocol";
 
@@ -56,9 +57,11 @@ export async function defaultModel(): Promise<ModelRef> {
 
 /** The Git top level containing `dir`. */
 export function project(dir: string): string {
+	dir = resolve(dir === "~" ? homedir() : dir.startsWith("~/") ? homedir() + dir.slice(1) : dir);
 	const result = spawnSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
 		encoding: "utf8",
 	});
+	if (result.error) throw new Error("Git is unavailable. Check This Mac in Settings.");
 	if (result.status !== 0) throw new Error(`${dir} is not inside a Git repository`);
 	return result.stdout.trim();
 }

@@ -23,8 +23,9 @@ function emit() {
 	for (const listener of listeners) listener();
 }
 
-async function discover() {
+async function discover(signal: AbortSignal) {
 	const online = new Map((await peers()).map((machine) => [machine.name, machine]));
+	if (signal.aborted) return;
 	for (const [name, host] of hosts) {
 		if (online.get(name)?.address === host.machine.address) continue;
 		host.client.close();
@@ -54,9 +55,17 @@ async function discover() {
 
 /** Start looking for peers; `onChange` runs when any peer's channels or reachability change. */
 export function watch(onChange: () => void) {
+	const controller = new AbortController();
 	listeners.add(onChange);
-	void discover();
-	setInterval(() => void discover(), 15_000);
+	void discover(controller.signal);
+	const interval = setInterval(() => void discover(controller.signal), 15_000);
+	return () => {
+		controller.abort();
+		clearInterval(interval);
+		listeners.delete(onChange);
+		for (const { client } of hosts.values()) client.close();
+		hosts.clear();
+	};
 }
 
 /** Every reachable peer's channels. */

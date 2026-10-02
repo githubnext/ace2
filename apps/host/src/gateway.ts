@@ -8,6 +8,7 @@ import * as auth from "./auth";
 import * as catalog from "./catalog";
 import { Connection } from "./client";
 import { config } from "./config";
+import { diagnostics } from "./diagnostics";
 import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
 import { seal } from "./keys";
@@ -24,6 +25,7 @@ import {
 } from "./protocol";
 import { self, whois } from "./tailnet";
 import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
+import { shutdown } from "./shutdown";
 import * as workspace from "./workspace";
 
 type Client = {
@@ -37,6 +39,8 @@ type Client = {
 };
 
 let name = hostname();
+let closing = false;
+const pending = new Set<Promise<unknown>>();
 
 function local(): Listing[] {
 	return catalog.list().map((record) => {
@@ -60,10 +64,11 @@ function local(): Listing[] {
 /** Channels only the directory knows: their host is unreachable, unless they are hosted. */
 function listed(seen: Set<string>): Listing[] {
 	return directory.read().channels.filter((value) => !seen.has(value.id) && value.host !== name)
-		.map((value) => ({
-			...value,
-			state: value.state === "archived" || value.hosted ? value.state : "offline",
-		}));
+		.map((value) =>
+			Object.assign({}, value, {
+				state: value.state === "archived" || value.hosted ? value.state : "offline" as const,
+			})
+		);
 }
 
 function listings(client: Client): Listing[] {
@@ -116,6 +121,7 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
 const settingsOps = new Set<HostRequest["op"]>([
 	"settings",
+	"diagnostics",
 	"key-set",
 	"key-check",
 	"key-remove",
@@ -129,6 +135,7 @@ async function handle(
 	id: number,
 	trace: string,
 ): Promise<unknown> {
+	if (closing) throw new Error("Ace Helper is shutting down");
 	const client = socket.data;
 	if (settingsOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
 		throw new Error("Settings can only be changed from this host's local app");
@@ -147,6 +154,8 @@ async function handle(
 			return listings(client);
 		case "settings":
 			return settings();
+		case "diagnostics":
+			return diagnostics();
 		case "key-set":
 			await setKey(request.provider, request.value);
 			return settingsChanged();
@@ -245,13 +254,17 @@ function websocket(): Bun.WebSocketHandler<Client> {
 			const quiet = request.op === "channels" || request.op === "hello" || request.op === "models"
 				|| request.op === "release"
 				|| (request.op === "channel" && ["watch", "info", "models"].includes(request.request.op));
+			const handling = handle(socket, request, send, id, trace);
+			pending.add(handling);
 			try {
-				const value = await handle(socket, request, send, id, trace);
+				const value = await handling;
 				log(quiet ? "debug" : "info", "gateway.request", { ...fields, ms: Date.now() - start });
 				send({ id, ok: true, value: value ?? null });
 			} catch (error) {
 				log("warn", "gateway.failed", { ...fields, ms: Date.now() - start, ...failure(error) });
 				send({ id, ok: false, error: error instanceof Error ? error.message : String(error) });
+			} finally {
+				pending.delete(handling);
 			}
 		},
 		close(socket, code) {
@@ -288,6 +301,7 @@ function owner(port: number): Server<Client> {
 					protocol: HOST_PROTOCOL,
 					home: catalog.home,
 					pid: process.pid,
+					helper: config.helper,
 				};
 				return Response.json(info, {
 					headers: challenge ? { "x-ace-proof": access.proof(info, challenge) } : undefined,
@@ -362,28 +376,51 @@ export async function serve(port: number): Promise<never> {
 	openLog("host");
 	const server = owner(port);
 	log("info", "host.start", { port: server.port, user: catalog.user, bun: Bun.version });
+	const servers = [server];
+	const cleanup: (() => void)[] = [];
+	async function stop() {
+		if (closing) return;
+		closing = true;
+		log("info", "host.stop", { pending: pending.size });
+		for (const close of cleanup) close();
+		await Promise.allSettled(servers.map((server) => server.stop(true)));
+		await Promise.allSettled(pending);
+		const results = await Promise.allSettled([workspace.close(), shutdown()]);
+		for (const result of results) {
+			if (result.status === "rejected") {
+				log("error", "host.shutdown.failed", failure(result.reason));
+			}
+		}
+		process.exit(results.some((result) => result.status === "rejected") ? 1 : 0);
+	}
+	process.on("SIGTERM", () => void stop());
+	process.on("SIGINT", () => void stop());
 	console.log(`Ace on http://${server.hostname}:${server.port}`);
 	const machine = await self();
+	if (closing) return new Promise(() => {});
 	if (machine) name = machine.name;
 	const address = machine ? { address: machine.address } : {};
 	const publish = directory.watch({ name, login: catalog.user, ...address }, local, broadcast);
 	log("info", "host.tailnet", machine ? { name, address: machine.address } : { tailscale: false });
+	cleanup.push(publish.stop);
 	if (machine) {
-		team(port, machine.address);
+		servers.push(team(port, machine.address));
 		console.log(`Sharing with the tailnet on ${machine.address}:${port} as ${machine.login}`);
-		peers.watch(broadcast);
+		cleanup.push(peers.watch(broadcast));
 	} else {
 		console.log("Tailscale is not running; channels stay on this machine");
 	}
 	mkdirSync(join(catalog.home, "channels"), { recursive: true });
 	// Workers create and remove their sockets; tell clients when a channel starts or retires.
-	watch(join(catalog.home, "channels"), { recursive: true }, (_, file) => {
+	const watcher = watch(join(catalog.home, "channels"), { recursive: true }, (_, file) => {
+		if (closing) return;
 		if (file?.endsWith("channel.sock") || file?.endsWith("channel.json")) broadcast();
 		if (file?.endsWith("channel.json")) {
 			workspace.sync();
-			void publish();
+			void publish.sync();
 		}
 	});
+	cleanup.push(() => watcher.close());
 	workspace.sync();
 	return new Promise(() => {});
 }

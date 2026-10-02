@@ -4,6 +4,8 @@ import { isIP } from "node:net";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
+import type { Diagnostics } from "./protocol";
+
 type Status = {
 	BackendState: string;
 	Self: Node;
@@ -78,6 +80,17 @@ async function status(): Promise<Status | undefined> {
 export async function self(): Promise<Machine | undefined> {
 	const value = await status();
 	return value && machine(value.Self, value);
+}
+
+export async function diagnostics(): Promise<Diagnostics["tailscale"]> {
+	if (!binary) return { state: "missing" };
+	try {
+		const value = await run(["status", "--json"]) as Status;
+		if (value.BackendState !== "Running") return { state: "offline" };
+		return { state: "running", name: machine(value.Self, value).name };
+	} catch (error) {
+		return { state: "error", error: (error as Error).message };
+	}
 }
 
 /** Online machines owned by people; tagged nodes are servers, not participants. */

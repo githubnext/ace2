@@ -9,6 +9,7 @@ import { config } from "./config";
 import { key, workerEnv } from "./keys";
 import { lines } from "./lines";
 import { failure, log } from "./log";
+import type { WorkerRequest } from "./protocol";
 
 function start(id: string): void {
 	// Output the worker didn't log itself, such as a crash before its log opens.
@@ -116,6 +117,17 @@ export class Connection {
 		return Connection.#connect((receive) => hosted(base, id, receive));
 	}
 
+	/** Shutdown must never start a dormant worker. */
+	static async running(id: string): Promise<Connection | undefined> {
+		try {
+			const socket = await attempt(catalog.paths(id).socket);
+			return Connection.#connect(async (receive) => local(socket, receive));
+		} catch (error) {
+			const code = (error as NodeJS.ErrnoException).code;
+			if (code !== "ENOENT" && code !== "ECONNREFUSED") throw error;
+		}
+	}
+
 	static async open(id: string): Promise<Connection> {
 		const record = catalog.read(id);
 		if (record.hosted) return Connection.hosted(record.hosted, id);
@@ -136,7 +148,7 @@ export class Connection {
 	}
 
 	request<T = unknown>(
-		request: Request,
+		request: Request | WorkerRequest,
 		watch?: (event: Event) => void,
 		trace?: string,
 	): Promise<T> {

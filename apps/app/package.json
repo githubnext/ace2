@@ -9,8 +9,10 @@
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@ace/desktop": "workspace:*",
 		"@ace/host": "workspace:*",
 		"@ace/ui": "workspace:*",
+		"electrobun": "catalog:desktop",
 		"react": "catalog:ui",
 		"react-dom": "catalog:ui"
 	},

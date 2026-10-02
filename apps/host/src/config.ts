@@ -17,6 +17,7 @@ export const config = {
 	peerPort: process.env.ACE_PEER_PORT ? Number(process.env.ACE_PEER_PORT) : undefined,
 	app: process.env.ACE_APP_DIR || fileURLToPath(new URL("../../app/dist", import.meta.url)),
 	appUrl: process.env.ACE_APP_URL,
+	helper: false,
 	worker: [
 		process.execPath,
 		"--no-env-file",

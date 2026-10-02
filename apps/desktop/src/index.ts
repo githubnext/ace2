@@ -1,12 +1,13 @@
+import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 
-import Electrobun, { ApplicationMenu, BrowserWindow, Utils } from "electrobun/bun";
+import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 
 import { appUrl, token } from "@ace/host/auth";
-import { config, desktop } from "@ace/host/config";
-import { health } from "@ace/host/health";
+import { desktop } from "@ace/host/config";
 
-import { service } from "./service";
+import { helper as control } from "./helper";
+import type { DesktopRPC } from "./protocol";
 
 const resources = join(dirname(process.execPath), "..", "Resources");
 const { channel, identifier } = await Bun.file(join(resources, "version.json")).json() as {
@@ -14,10 +15,38 @@ const { channel, identifier } = await Bun.file(join(resources, "version.json")).
 	identifier: string;
 };
 desktop(channel);
-const helper = service(identifier);
+const helper = control(identifier);
 const url = appUrl();
+const secret = token();
 let window: BrowserWindow | undefined;
 let ready = false;
+
+function authorize(value: string): void {
+	if (value !== secret) throw new Error("Native controls are only available to Ace's local app");
+}
+
+const rpc = BrowserView.defineRPC<DesktopRPC>({
+	handlers: {
+		requests: {
+			project: async ({ token }) => {
+				authorize(token);
+				const paths = await Utils.openFileDialog({
+					startingFolder: homedir(),
+					canChooseFiles: false,
+					canChooseDirectory: true,
+					allowsMultipleSelection: false,
+				});
+				// The SDK splits paths on commas, even for a single selected folder.
+				return paths.join(",") || null;
+			},
+			helper: ({ token, action }) => {
+				authorize(token);
+				return helper.act(action);
+			},
+		},
+		messages: {},
+	},
+});
 
 function show(settings = false): void {
 	if (!ready) return;
@@ -34,10 +63,13 @@ function show(settings = false): void {
 		title: "Ace",
 		titleBarStyle: "hiddenInset",
 		url: target.href,
+		navigationRules: JSON.stringify(["^*", `${url.origin}/*`]),
+		rpc,
 		preload: `if (window === window.top && location.origin === ${JSON.stringify(url.origin)}) {
 			Object.defineProperty(window, "__ACE_TOKEN__", { configurable: true, value: ${
-			JSON.stringify(token())
+			JSON.stringify(secret)
 		} });
+			Object.defineProperty(window, "__ACE_DESKTOP__", { configurable: true, value: true });
 		}`,
 		frame: { width: 1100, height: 760, x: 160, y: 120 },
 	});
@@ -51,10 +83,12 @@ ApplicationMenu.setApplicationMenu([
 			{ label: "Show Ace", action: "show" },
 			{ label: "Settings…", action: "settings", accelerator: "CmdOrCtrl+," },
 			{ type: "divider" },
+			{ label: "Start Ace Helper", action: "helper-start" },
+			{ label: "Restart Ace Helper", action: "helper-restart" },
 			{ label: "Ace Helper Settings…", action: "helper-settings" },
 			{ label: "Show Ace Helper Log", action: "helper-log" },
 			{ type: "divider" },
-			{ label: "Quit Ace", role: "quit" },
+			{ label: "Quit Ace", action: "quit", accelerator: "CmdOrCtrl+q" },
 		],
 	},
 	{
@@ -72,17 +106,31 @@ ApplicationMenu.setApplicationMenu([
 ]);
 
 Electrobun.events.on("reopen", () => show());
+function errorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
 Electrobun.events.on("application-menu-clicked", ({ data }) => {
 	if (data.action === "show") return show();
 	if (data.action === "settings") return show(true);
-	if (data.action === "helper-settings") return helper.settings();
-	if (data.action === "helper-log") Utils.showItemInFolder(join(config.home, "helper.log"));
+	if (data.action === "quit") return Utils.quit();
+	const action = data.action.slice("helper-".length);
+	if (action !== "start" && action !== "restart" && action !== "settings" && action !== "log") {
+		return;
+	}
+	void helper.act(action).catch((error) =>
+		Utils.showMessageBox({
+			type: "error",
+			title: "Ace Helper",
+			message: errorMessage(error),
+		})
+	);
 });
 
 async function start(): Promise<void> {
-	let info = await health(config.port);
-	if (!info) {
-		if (helper.status() === "unregistered") {
+	const state = await helper.status();
+	if (!state.running) {
+		if (state.service === "unregistered") {
 			// The bundled macOS dialog renders message but does not display detail.
 			const { response } = await Utils.showMessageBox({
 				title: "Ace Helper",
@@ -92,9 +140,8 @@ async function start(): Promise<void> {
 				cancelId: 1,
 			});
 			if (response !== 0) return Utils.quit();
-			helper.register();
 		}
-		if (helper.status() === "approval") {
+		if (state.service === "approval") {
 			const { response } = await Utils.showMessageBox({
 				title: "Ace Helper",
 				message:
@@ -102,18 +149,10 @@ async function start(): Promise<void> {
 				buttons: ["Open Login Items", "Quit"],
 				cancelId: 1,
 			});
-			if (response === 0) helper.settings();
+			if (response === 0) await helper.act("settings");
 			return Utils.quit();
 		}
-		const deadline = Date.now() + 15_000;
-		while (!info && Date.now() < deadline) {
-			await Bun.sleep(100);
-			info = await health(config.port);
-		}
-		if (!info) throw new Error(`Ace Helper did not start. See ${join(config.home, "helper.log")}`);
-	}
-	if (info.home !== config.home) {
-		throw new Error(`Port ${config.port} belongs to an Ace host using a different data directory`);
+		await helper.act("start");
 	}
 	ready = true;
 	show();
@@ -125,9 +164,7 @@ try {
 	await Utils.showMessageBox({
 		type: "error",
 		title: "Ace Helper",
-		message: `Could not connect to Ace Helper.\n\n${
-			error instanceof Error ? error.message : String(error)
-		}`,
+		message: `Could not connect to Ace Helper.\n\n${errorMessage(error)}`,
 	});
 	Utils.quit();
 }

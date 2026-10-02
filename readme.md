@@ -29,6 +29,11 @@ The default model is shared with the CLI's `ace model` command. Provider keys ar
 to the UI, and running workers read changes on their next model request. Environment overrides
 still take priority and are identified in Settings.
 
+The desktop's folder picker selects a local Git project. Settings → This Mac shows Git, shell,
+Tailscale, and directory status, plus Start, Stop, and Restart controls for Ace Helper. Quitting
+the UI leaves hosting available. Stopping the helper takes local channels offline and suspends
+their work; restarting it and reopening a channel resumes that work.
+
 Development desktop builds use their own catalog, settings, and Keychain service (`ace-dev`).
 The installed stable app and CLI use `ace`. Build with Bun 1.4 or later; the packaged UI uses
 Electrobun's compatible bundled runtime, and Ace Helper carries its own compiled runtime.

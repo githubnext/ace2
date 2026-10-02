@@ -34,7 +34,9 @@ export function appUrl(port = config.port): URL {
 /** Bind discovery to this owner, listener, and process before the UI loads its web content. */
 export function proof(info: HostInfo, challenge: string, port: number, secret: string): string {
 	return createHmac("sha256", secret)
-		.update(JSON.stringify([info.app, info.protocol, info.home, info.pid, port, challenge]))
+		.update(
+			JSON.stringify([info.app, info.protocol, info.home, info.pid, info.helper, port, challenge]),
+		)
 		.digest("hex");
 }
 
