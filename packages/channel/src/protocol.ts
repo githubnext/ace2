@@ -43,9 +43,20 @@ export type Request =
 	| { op: "watch"; chat?: ChatId };
 
 export type Event =
-	| { kind: "message"; chat: ChatId; entry: EntryId; author: string; text: string }
-	| { kind: "reply"; chat: ChatId; entry: EntryId; model: string; text: string }
-	| { kind: "tool"; chat: ChatId; call: string; name: string; args: unknown }
+	/** A human message; `invoked` when it asked the chat's agent to run. */
+	| {
+		kind: "message";
+		chat: ChatId;
+		entry: EntryId;
+		at: number;
+		author: string;
+		text: string;
+		invoked: boolean;
+	}
+	| { kind: "reply"; chat: ChatId; entry: EntryId; at: number; model: string; text: string }
+	/** Streamed text of the reply being generated; the next `reply` replaces it. */
+	| { kind: "delta"; chat: ChatId; text: string }
+	| { kind: "tool"; chat: ChatId; at: number; call: string; name: string; args: unknown }
 	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string }
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
 	/** The replayed transcript has been sent; later events are live. */

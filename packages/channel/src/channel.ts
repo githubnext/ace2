@@ -245,6 +245,12 @@ export class Channel {
 
 function live(chat: ChatId, event: AgentEvent): Event[] {
 	if (event.type === "message_end") return events(event.entry);
+	if (event.type === "message_update") {
+		const text = event.changes.flatMap((change) =>
+			change.type === "text_delta" ? [change.delta] : []
+		).join("");
+		return text ? [{ kind: "delta", chat, text }] : [];
+	}
 	if (event.type === "run_start") return [{ kind: "run", chat, state: "start" }];
 	if (event.type === "run_end") return [{ kind: "run", chat, state: "end" }];
 	return [];
@@ -258,10 +264,11 @@ function events(entry: EntryRecord): Event[] {
 	if (message?.role === "assistant") {
 		const out: Event[] = [];
 		const text = room.text(message);
-		if (text) out.push({ kind: "reply", chat, entry: entry.id, model: message.model, text });
+		const at = message.timestamp;
+		if (text) out.push({ kind: "reply", chat, entry: entry.id, at, model: message.model, text });
 		for (const block of message.content) {
 			if (block.type !== "toolCall") continue;
-			out.push({ kind: "tool", chat, call: block.id, name: block.name, args: block.arguments });
+			out.push({ kind: "tool", chat, at, call: block.id, name: block.name, args: block.arguments });
 		}
 		return out;
 	}

@@ -1,15 +1,22 @@
 #!/usr/bin/env bun
-import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
-
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
 import type { ChannelInfo, ChatId, Event, ModelRef } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";
+import { serve } from "./gateway";
+import {
+	archive,
+	defaultModel,
+	isRunning,
+	kill,
+	models,
+	parseModel,
+	project,
+	remove,
+} from "./manage";
 
 const HELP = `ace — channels on this host
 
@@ -24,12 +31,11 @@ const HELP = `ace — channels on this host
   ace kill <channel>                             stop all work in the channel now
   ace share <channel> on|off                     let others invoke agents
   ace models
+  ace serve [--port 4140]                         serve the app and its WebSocket gateway
   ace archive <channel> | unarchive <channel> | delete <channel>
 
 Models are provider/id, such as openai/gpt-6-astra or anthropic/claude-opus-5-5.
 Credentials come from provider environment variables such as OPENAI_API_KEY.`;
-
-const PREFERRED = ["anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
 
 const { values: flags, positionals } = parseArgs({
 	allowPositionals: true,
@@ -38,6 +44,7 @@ const { values: flags, positionals } = parseArgs({
 		name: { type: "string" },
 		model: { type: "string" },
 		chat: { type: "string" },
+		port: { type: "string" },
 		all: { type: "boolean" },
 		detach: { type: "boolean" },
 		help: { type: "boolean", short: "h" },
@@ -45,34 +52,7 @@ const { values: flags, positionals } = parseArgs({
 });
 const [command, ref, ...rest] = positionals;
 
-function model(value: string): ModelRef {
-	const split = value.indexOf("/");
-	if (split < 1) throw new Error("A model is written provider/id, such as openai/gpt-6-astra");
-	return { provider: value.slice(0, split), modelId: value.slice(split + 1) };
-}
-
-async function defaultModel(): Promise<ModelRef> {
-	if (flags.model) return model(flags.model);
-	if (process.env.ACE_MODEL) return model(process.env.ACE_MODEL);
-	const available = new Set(
-		(await builtinModels().getAvailable()).map((m) => `${m.provider}/${m.id}`),
-	);
-	const chosen = PREFERRED.find((candidate) => available.has(candidate));
-	if (!chosen) {
-		throw new Error(
-			"No model credentials found; set OPENAI_API_KEY or ANTHROPIC_API_KEY, or pass --model",
-		);
-	}
-	return model(chosen);
-}
-
-function project(dir: string): string {
-	const result = spawnSync("git", ["-C", dir, "rev-parse", "--show-toplevel"], {
-		encoding: "utf8",
-	});
-	if (result.status !== 0) throw new Error(`${dir} is not inside a Git repository`);
-	return result.stdout.trim();
-}
+const model = parseModel;
 
 function chat(): ChatId | undefined {
 	return flags.chat === undefined ? undefined : Number(flags.chat);
@@ -129,7 +109,7 @@ async function main() {
 		case "ls": {
 			for (const record of catalog.list()) {
 				if (record.archived && !flags.all) continue;
-				const running = existsSync(catalog.paths(record.id).socket) ? "running" : "dormant";
+				const running = isRunning(record.id) ? "running" : "dormant";
 				const state = record.archived ? "archived" : running;
 				console.log(
 					[
@@ -144,9 +124,11 @@ async function main() {
 			return;
 		}
 		case "models": {
-			for (const m of await builtinModels().getAvailable()) console.log(`${m.provider}/${m.id}`);
+			for (const m of await models()) console.log(`${m.provider}/${m.modelId}`);
 			return;
 		}
+		case "serve":
+			return serve(Number(flags.port || 4140));
 	}
 
 	if (!ref) throw new Error(`ace ${command} needs a channel`);
@@ -197,33 +179,17 @@ async function main() {
 			await request(record.id, { op: "stop", chat: chat() });
 			return;
 		case "kill":
-			if (!existsSync(catalog.paths(record.id).socket)) return;
-			await request(record.id, { op: "kill" });
-			return;
+			return kill(record.id);
 		case "share":
 			await request(record.id, { op: "share", author: catalog.user, shared: rest[0] === "on" });
 			return;
 		case "archive":
-			if (existsSync(catalog.paths(record.id).socket)) await request(record.id, { op: "kill" });
-			return catalog.write({ ...record, archived: true });
+			return void (await archive(record.id, true));
 		case "unarchive":
-			return catalog.write({ ...record, archived: false });
-		case "delete": {
-			if (existsSync(catalog.paths(record.id).socket)) await request(record.id, { op: "kill" });
-			const lanes = catalog.paths(record.id).lanes;
-			for (const lane of existsSync(lanes) ? readdirSync(lanes) : []) {
-				spawnSync("git", [
-					"-C",
-					record.project,
-					"worktree",
-					"remove",
-					"--force",
-					`${lanes}/${lane}`,
-				]);
-			}
-			catalog.remove(record.id);
+			return void (await archive(record.id, false));
+		case "delete":
+			await remove(record.id);
 			return console.log(`Deleted ${record.name}. Its lane branches remain in ${record.project}.`);
-		}
 	}
 	throw new Error(`Unknown command ${command}\n\n${HELP}`);
 }

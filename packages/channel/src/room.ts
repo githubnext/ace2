@@ -40,17 +40,21 @@ export function text(message: Message): string {
 	return message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }
 
-/** The author and text of a human entry, or undefined for any other entry. */
-export function human(entry: EntryRecord): { author: string; text: string } | undefined {
-	if (MessageEntry.is(entry)) return entry.data;
-	if (entry.kind !== "pi.user") return;
+export type Human = { author: string; text: string; at: number; invoked: boolean };
+
+/** A human entry's author, text, and time, or undefined for any other entry. */
+export function human(entry: EntryRecord): Human | undefined {
 	const user = entry.model?.[0];
 	if (user?.role !== "user") return;
+	if (MessageEntry.is(entry)) return { ...entry.data, at: user.timestamp, invoked: false };
+	if (entry.kind !== "pi.user") return;
 	const body = text(user);
 	const split = body.indexOf(": ");
 	const author = body.slice(0, split);
-	if (split < 1 || !isAuthor(author)) return { author: "unknown", text: body };
-	return { author, text: body.slice(split + 2) };
+	if (split < 1 || !isAuthor(author)) {
+		return { author: "unknown", text: body, at: user.timestamp, invoked: true };
+	}
+	return { author, text: body.slice(split + 2), at: user.timestamp, invoked: true };
 }
 
 export type Room = { name: string; project: string };
