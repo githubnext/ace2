@@ -2,7 +2,7 @@
 import { resolve } from "node:path";
 import { parseArgs } from "node:util";
 
-import type { ChannelInfo, ChatId, Event, ModelRef } from "@ace/channel/protocol";
+import type { ChannelInfo, ChatId, Event } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";

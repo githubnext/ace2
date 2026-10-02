@@ -18,10 +18,11 @@ type Client = {
 };
 
 function listings(): Listing[] {
-	return catalog.list().map(({ archived, ...record }) => ({
-		...record,
-		state: archived ? "archived" : isRunning(record.id) ? "running" : "dormant",
-	}));
+	return catalog.list().map((record) => {
+		const state = record.archived ? "archived" : isRunning(record.id) ? "running" : "dormant";
+		const { id, name, owner, project, model, created } = record;
+		return { id, name, owner, project, model, created, state };
+	});
 }
 
 const sockets = new Set<ServerWebSocket<Client>>();
