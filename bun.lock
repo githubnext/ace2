@@ -13,9 +13,13 @@
     "apps/app": {
       "name": "@ace/app",
       "dependencies": {
+        "@ace/channel": "workspace:*",
         "@ace/desktop": "workspace:*",
         "@ace/host": "workspace:*",
+        "@ace/split-tabs": "workspace:*",
         "@ace/ui": "workspace:*",
+        "@xterm/addon-fit": "catalog:ui",
+        "@xterm/xterm": "catalog:ui",
         "electrobun": "catalog:desktop",
         "react": "catalog:ui",
         "react-dom": "catalog:ui",
@@ -64,6 +68,9 @@
         "@earendil-works/pi-ai": "catalog:pi",
         "@earendil-works/pi-durable": "catalog:pi",
       },
+    },
+    "packages/split-tabs": {
+      "name": "@ace/split-tabs",
     },
     "packages/ui": {
       "name": "@ace/ui",
@@ -166,6 +173,8 @@
       "@types/react-dom": "19.2.3",
       "@vitejs/plugin-react": "5.1.4",
       "@webgpu/types": "0.1.69",
+      "@xterm/addon-fit": "0.11.0",
+      "@xterm/xterm": "6.0.0",
       "class-variance-authority": "0.7.1",
       "clsx": "2.1.1",
       "comark": "0.3.2",
@@ -208,6 +217,8 @@
     "@ace/directory": ["@ace/directory@workspace:services/directory"],
 
     "@ace/host": ["@ace/host@workspace:apps/host"],
+
+    "@ace/split-tabs": ["@ace/split-tabs@workspace:packages/split-tabs"],
 
     "@ace/ui": ["@ace/ui@workspace:packages/ui"],
 
@@ -796,6 +807,10 @@
     "@vitejs/plugin-react": ["@vitejs/plugin-react@5.1.4", "", { "dependencies": { "@babel/core": "^7.29.0", "@babel/plugin-transform-react-jsx-self": "^7.27.1", "@babel/plugin-transform-react-jsx-source": "^7.27.1", "@rolldown/pluginutils": "1.0.0-rc.3", "@types/babel__core": "^7.20.5", "react-refresh": "^0.18.0" }, "peerDependencies": { "vite": "^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0" } }, "sha512-VIcFLdRi/VYRU8OL/puL7QXMYafHmqOnwTZY50U1JPlCNj30PxCMx65c494b1K9be9hX83KVt0+gTEwTWLqToA=="],
 
     "@webgpu/types": ["@webgpu/types@0.1.69", "", {}, "sha512-RPmm6kgRbI8e98zSD3RVACvnuktIja5+yLgDAkTmxLr90BEwdTXRQWNLF3ETTTyH/8mKhznZuN5AveXYFEsMGQ=="],
+
+    "@xterm/addon-fit": ["@xterm/addon-fit@0.11.0", "", {}, "sha512-jYcgT6xtVYhnhgxh3QgYDnnNMYTcf8ElbxxFzX0IZo+vabQqSPAjC3c1wJrKB5E19VwQei89QCiZZP86DCPF7g=="],
+
+    "@xterm/xterm": ["@xterm/xterm@6.0.0", "", {}, "sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg=="],
 
     "accepts": ["accepts@2.0.0", "", { "dependencies": { "mime-types": "^3.0.0", "negotiator": "^1.0.0" } }, "sha512-5cvg6CtKwfgdmVqY1WIiXKc3Q1bkRqGLi+2W/6ao+6Y7gu/RCwRuAhGEzh5B4KlszSuTLgZYuqFqo5bImjNKng=="],
 

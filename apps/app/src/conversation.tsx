@@ -1,15 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import {
-	aceAvatar,
-	Button,
-	ChatComposer,
-	serialize,
-	Timeline,
-	toast,
-	useLayoutLeft,
-} from "@ace/ui";
-import { IconSidebar } from "@ace/ui/icons";
+import { aceAvatar, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
 import type { Listing, ModelRef } from "@ace/host/protocol";
 
 import { host } from "./host";
@@ -25,12 +16,11 @@ const ACE = /(^|\s)@ace\b/i;
 
 const key = (model: ModelRef) => `${model.provider}/${model.modelId}`;
 
-type Props = { channel: Listing; user: string; remote: boolean };
+type Props = { channel: Listing; chat: number; user: string };
 
-/** One channel's chat: the original timeline and composer over the channel's transcript. */
-export function Conversation({ channel, user, remote }: Props) {
-	const left = useLayoutLeft();
-	const transcript = useTranscript(channel.id);
+/** One chat's timeline and composer over its transcript; the content of a Chat tab. */
+export function Conversation({ channel, chat: id, user }: Props) {
+	const transcript = useTranscript(channel.id, id);
 	// Runs use the credentials of the host that runs the channel, so offer that host's models.
 	const [models, setModels] = useState<ModelRef[]>([]);
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
@@ -51,7 +41,7 @@ export function Conversation({ channel, user, remote }: Props) {
 		};
 	}, [channel.host, status, settingsVersion]);
 	const [mode, setMode] = useState("ace");
-	const chat = transcript.info?.chats.find((value) => value.id === 1);
+	const chat = transcript.info?.chats.find((value) => value.id === id);
 	const [picked, setPicked] = useState<string>();
 	const model = picked || (chat?.model ? key(chat.model) : key(channel.model));
 	const events = useMemo(() => toEvents(transcript.items, channel.id, transcript.busy), [
@@ -67,11 +57,22 @@ export function Conversation({ channel, user, remote }: Props) {
 		if (!body) return;
 		try {
 			if (!invoke) {
-				return void (await host.channel(channel.id, { op: "say", author: user, text: body }));
+				return void (await host.channel(channel.id, {
+					op: "say",
+					chat: id,
+					author: user,
+					text: body,
+				}));
 			}
 			const [provider, ...rest] = model.split("/");
 			const selected = { provider: provider!, modelId: rest.join("/") };
-			await host.channel(channel.id, { op: "ask", author: user, text: body, model: selected });
+			await host.channel(channel.id, {
+				op: "ask",
+				chat: id,
+				author: user,
+				text: body,
+				model: selected,
+			});
 		} catch (error) {
 			toast.error("Could not send", { description: (error as Error).message });
 		}
@@ -79,25 +80,6 @@ export function Conversation({ channel, user, remote }: Props) {
 
 	return (
 		<>
-			<header className="flex h-8 shrink-0 items-center gap-2 border-b pr-3 text-xs electrobun-webkit-app-region-drag">
-				<Button
-					variant="ghost"
-					size="icon-sm"
-					className="h-8 w-8 shrink-0 rounded-none electrobun-webkit-app-region-no-drag"
-					aria-label="Toggle channels sidebar"
-					aria-expanded={left.open}
-					onClick={() => left.setOpen((value) => !value)}
-				>
-					<IconSidebar className="size-4" />
-				</Button>
-				<span className="min-w-0 truncate font-medium" title={channel.project}>
-					#{channel.name}
-				</span>
-				{remote && <span className="truncate text-muted-foreground">{channel.host}</span>}
-				{chat?.lane && (
-					<span className="ml-auto truncate text-muted-foreground">lane {chat.lane}</span>
-				)}
-			</header>
 			<div className="relative min-h-0 flex-1">
 				<Timeline
 					className="h-full min-h-0 contain-paint scroll-fade [--fade:3rem]"
@@ -130,7 +112,7 @@ export function Conversation({ channel, user, remote }: Props) {
 					onModelChange={setPicked}
 					busy={transcript.busy}
 					canStop={transcript.busy}
-					onStop={() => void host.channel(channel.id, { op: "stop" })}
+					onStop={() => void host.channel(channel.id, { op: "stop", chat: id })}
 					canSend={!archived}
 					onSend={({ doc, mode }) => void send(serialize(doc), mode)}
 				/>
