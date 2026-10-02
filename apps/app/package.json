@@ -9,9 +9,13 @@
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@ace/channel": "workspace:*",
 		"@ace/desktop": "workspace:*",
 		"@ace/host": "workspace:*",
+		"@ace/split-tabs": "workspace:*",
 		"@ace/ui": "workspace:*",
+		"@xterm/addon-fit": "catalog:ui",
+		"@xterm/xterm": "catalog:ui",
 		"electrobun": "catalog:desktop",
 		"react": "catalog:ui",
 		"react-dom": "catalog:ui"
