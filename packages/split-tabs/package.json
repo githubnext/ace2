@@ -1,0 +1,12 @@
+{
+	"name": "@ace/split-tabs",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"exports": {
+		".": "./index.ts"
+	},
+	"scripts": {
+		"types": "tsgo --noEmit"
+	}
+}

@@ -65,6 +65,9 @@
         "@earendil-works/pi-durable": "catalog:pi",
       },
     },
+    "packages/split-tabs": {
+      "name": "@ace/split-tabs",
+    },
     "packages/ui": {
       "name": "@ace/ui",
       "dependencies": {
@@ -208,6 +211,8 @@
     "@ace/directory": ["@ace/directory@workspace:services/directory"],
 
     "@ace/host": ["@ace/host@workspace:apps/host"],
+
+    "@ace/split-tabs": ["@ace/split-tabs@workspace:packages/split-tabs"],
 
     "@ace/ui": ["@ace/ui@workspace:packages/ui"],
 
