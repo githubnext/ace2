@@ -26,6 +26,15 @@ export type Chat = {
 	lane?: string;
 };
 
+/** A file the chat's work changed, relative to `Changes.cwd`. */
+export type Change = { file: string; from?: string; binary: boolean; adds: number; dels: number };
+
+/**
+ * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus
+ * uncommitted and untracked files. A chat without a lane shows the checkout against HEAD.
+ */
+export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
+
 export type Request =
 	| { op: "info" }
 	| { op: "models" }
@@ -39,6 +48,9 @@ export type Request =
 	| { op: "share"; author: string; shared: boolean }
 	/** Resolve once the answer to a submission is placed: "done", or "unanswered" when stopped or killed. */
 	| { op: "wait"; submission: number }
+	| { op: "changes"; chat?: ChatId }
+	/** One file's unified diff, against the same base as `changes`. */
+	| { op: "patch"; chat?: ChatId; file: string }
 	/** Replay the chat's transcript, then stream its events until the connection closes. */
 	| { op: "watch"; chat?: ChatId };
 

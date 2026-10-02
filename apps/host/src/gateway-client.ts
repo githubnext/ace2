@@ -1,5 +1,13 @@
 /** A client of a host gateway, shared by the app and by hosts reaching their tailnet peers. */
-import type { Event, HostFrame, HostRequest, Listing, Project, Request } from "./protocol";
+import type {
+	Event,
+	HostFrame,
+	HostRequest,
+	Listing,
+	Project,
+	Request,
+	TerminalFrame,
+} from "./protocol";
 
 type Pending = {
 	resolve(value: unknown): void;
@@ -14,6 +22,7 @@ export class GatewayClient {
 	#next = 1;
 	#pending = new Map<number, Pending>();
 	#listeners = new Set<() => void>();
+	#terminals = new Map<string, (frame: TerminalFrame) => void>();
 	#retry = 250;
 	#closed = false;
 	status: Status = "connecting";
@@ -73,6 +82,7 @@ export class GatewayClient {
 			this.channels = frame.channels;
 			return this.#emit();
 		}
+		if ("terminal" in frame) return this.#terminals.get(frame.terminal)?.(frame);
 		const pending = this.#pending.get(frame.id);
 		if ("event" in frame) return pending?.watch?.(frame.event);
 		// A watch keeps its entry so later events still reach it.
@@ -120,6 +130,12 @@ export class GatewayClient {
 		trace?: string,
 	): Promise<T> {
 		return this.request<T>({ op: "channel", channel, request }, watch, trace);
+	}
+
+	/** Receive a terminal's output and exit; returns the unsubscribe. */
+	terminal(id: string, listener: (frame: TerminalFrame) => void): () => void {
+		this.#terminals.set(id, listener);
+		return () => this.#terminals.delete(id);
 	}
 
 	close() {
