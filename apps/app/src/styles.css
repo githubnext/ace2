@@ -16,8 +16,37 @@ body {
 }
 
 #root {
-	block-size: 100%;
+	/* The visible viewport, which shrinks while a phone's keyboard is open (see viewport.ts). */
+	block-size: var(--viewport-height, 100dvh);
 	inline-size: 100%;
+}
+
+@media (width < 40rem) {
+	/* Keep content clear of the notch and home indicator in a full-screen web app. */
+	.layout\:shell {
+		padding:
+			max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right))
+			max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left));
+	}
+
+	/* The tab bar gives way to the keyboard, as native apps do. */
+	[data-keyboard] .layout\:nav {
+		display: none;
+	}
+
+	[data-keyboard] .layout\:shell {
+		padding-block-end: 0.5rem;
+	}
+}
+
+/* iOS zooms the page into any field smaller than 16px. */
+@media (pointer: coarse) {
+	input,
+	textarea,
+	select,
+	[contenteditable="true"] {
+		font-size: max(16px, 1em);
+	}
 }
 
 .layout-grip {

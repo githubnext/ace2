@@ -86,6 +86,11 @@ type Popup = {
 	anchor: { getBoundingClientRect: () => DOMRect };
 };
 
+/** No mouse or trackpad: a phone, or a tablet without a keyboard case. */
+function touchOnly() {
+	return !matchMedia("(any-pointer: fine)").matches;
+}
+
 function getAnchor(view: EditorView, pos: number) {
 	let box = view.coordsAtPos(pos);
 	return {
@@ -458,8 +463,10 @@ function useEditor(
 		}
 
 		if (!p) {
+			// A phone's Return key adds a line, as in other mobile chat apps; its Send button sends.
 			if (
 				onSubmit && e.key === "Enter" && !composing && !e.shiftKey && !e.metaKey && !e.ctrlKey
+				&& !touchOnly()
 			) {
 				e.preventDefault();
 				onSubmit(v);

@@ -6,7 +6,9 @@
 	"scripts": {
 		"dev": "vite",
 		"build": "vite build",
-		"types": "tsgo --noEmit"
+		"types": "tsgo --noEmit",
+		"build:web": "VITE_ACE_WEB=1 vite build --outDir dist-web",
+		"deploy": "bun run build:web && wrangler deploy"
 	},
 	"dependencies": {
 		"@ace/channel": "workspace:*",
@@ -27,6 +29,7 @@
 		"@vitejs/plugin-react": "catalog:ui",
 		"@webgpu/types": "catalog:ui",
 		"tailwindcss": "catalog:ui",
-		"vite": "catalog:ui"
+		"vite": "catalog:ui",
+		"wrangler": "catalog:cloudflare"
 	}
 }

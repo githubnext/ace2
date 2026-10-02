@@ -1,6 +1,14 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 
-import { aceAvatar, type Attachment, ChatComposer, serialize, Timeline, toast } from "@ace/ui";
+import {
+	aceAvatar,
+	type Attachment,
+	ChatComposer,
+	serialize,
+	Timeline,
+	toast,
+	useMedia,
+} from "@ace/ui";
 import type { Listing, ModelRef } from "@ace/host/protocol";
 
 import { host } from "./host";
@@ -51,6 +59,8 @@ export function Conversation({ channel, chat: id, user }: Props) {
 		transcript.busy,
 	]);
 	const archived = channel.state === "archived";
+	// Formatting tools crowd a phone's composer; they stay one tap away.
+	const phone = useMedia("(width < 40rem)");
 
 	async function send(text: string, mode: string, attached: Attachment[]) {
 		const invoke = mode === "ace" || ACE.test(text);
@@ -102,6 +112,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 			<div className="utils:max-width relative z-20 shrink-0 px-3 pb-3">
 				<ChatComposer
 					scope={`/channels/${channel.id}`}
+					tools={!phone}
 					modes={MODES}
 					mode={mode}
 					onModeChange={setMode}

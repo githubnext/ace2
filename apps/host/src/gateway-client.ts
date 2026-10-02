@@ -24,6 +24,7 @@ export class GatewayClient {
 	#listeners = new Set<() => void>();
 	#terminals = new Map<string, (frame: TerminalFrame) => void>();
 	#retry = 250;
+	#timer?: ReturnType<typeof setTimeout>;
 	#closed = false;
 	status: Status = "connecting";
 	channels: Listing[] = [];
@@ -36,8 +37,17 @@ export class GatewayClient {
 		this.#connect();
 	}
 
+	/** Retry now instead of waiting out the backoff, e.g. when a phone wakes the page. */
+	wake() {
+		if (this.#closed || this.status !== "closed") return;
+		clearTimeout(this.#timer);
+		this.#retry = 250;
+		this.#connect();
+	}
+
 	#connect() {
 		if (this.#closed) return;
+		this.#timer = undefined;
 		const socket = new WebSocket(
 			this.url,
 			this.token ? ["ace", `ace-token.${this.token}`] : undefined,
@@ -64,7 +74,7 @@ export class GatewayClient {
 			this.channels = [];
 			this.#set("closed");
 			if (this.#closed) return;
-			setTimeout(() => this.#connect(), this.#retry);
+			this.#timer = setTimeout(() => this.#connect(), this.#retry);
 			this.#retry = Math.min(this.#retry * 2, 5000);
 		});
 	}

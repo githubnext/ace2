@@ -9,6 +9,7 @@ import * as catalog from "./catalog";
 import { Connection, request } from "./client";
 import { config } from "./config";
 import * as directory from "./directory";
+import * as web from "./web";
 import { serve } from "./gateway";
 import { forget, store } from "./keys";
 import { dir as logDir, failure, log, open as openLog } from "./log";
@@ -45,6 +46,7 @@ const HELP = `ace — channels on this host
   ace key set <NAME>                             store a key in the OS keychain, read from stdin
   ace key rm <NAME>
   ace directory [<url> | off]                    the team's directory, which lists every host's channels
+  ace web [<url> | off]                          the deployed web app your devices may use with this host
   ace serve [--port 4140]                         serve the app and its WebSocket gateway
   ace logs [--channel <ref>] [--trace <id>] [--level warn] [--since 10m] [--grep <text>]
            [-n 200] [--follow] [--json]              every process's logs, merged in time order
@@ -190,6 +192,10 @@ async function main() {
 		case "directory": {
 			if (ref) directory.configure(ref === "off" ? undefined : ref);
 			return console.log(directory.url() ?? "No directory");
+		}
+		case "web": {
+			if (ref) web.configure(ref === "off" ? undefined : ref);
+			return console.log(web.app() ?? "No web app");
 		}
 		case "model": {
 			if (ref) await setModel(ref === "auto" ? null : parseModel(ref));

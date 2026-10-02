@@ -14,11 +14,14 @@ import {
 	toast,
 	Toaster,
 	TooltipProvider,
+	useLayoutLeft,
 	useLocalStorage,
+	useMedia,
 } from "@ace/ui";
 import { IconHash, IconPlus } from "@ace/ui/icons";
 import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 
+import { chosen, deployed, remember } from "./address";
 import { Channel } from "./channel";
 import { Dashboard } from "./dashboard";
 import { desktop, titlebar } from "./desktop";
@@ -27,6 +30,40 @@ import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
 import { projectId, projects } from "./projects";
 import { Settings } from "./settings";
+
+/**
+ * On a phone the channel list is a drawer over the channel: open while no channel is chosen, and
+ * out of the way once one is.
+ */
+function PhoneDrawer({ page, channel }: { page: string; channel?: string }) {
+	const left = useLayoutLeft();
+	const phone = useMedia("(width < 40rem)");
+	const { setOpen } = left;
+	useEffect(() => {
+		if (phone) setOpen(page === "channels" && !channel);
+	}, [phone, page, channel, setOpen]);
+	return null;
+}
+
+function Disconnected() {
+	if (desktop) return <>Disconnected from Ace Helper. Open Settings → This Mac to start it.</>;
+	if (!deployed) return <>Disconnected from your host. Reconnecting…</>;
+	return (
+		<>
+			Can't reach {chosen}. Check that Tailscale is on.{" "}
+			<button
+				type="button"
+				className="underline underline-offset-2"
+				onClick={() => {
+					remember(undefined);
+					location.reload();
+				}}
+			>
+				Change host
+			</button>
+		</>
+	);
+}
 
 function row(channel: Listing, user: string): SidebarRow {
 	return {
@@ -203,6 +240,7 @@ export function App() {
 						/>
 					}
 				>
+					<PhoneDrawer page={page} channel={channel?.id} />
 					<WindowControls
 						onOpen={() => void choose()}
 						onSettings={() => setSettings(true)}
@@ -255,14 +293,20 @@ export function App() {
 							? "overflow-hidden bg-background"
 							: "overflow-y-auto bg-background"}
 					>
-						{status === "closed" && (
+						{deployed && status === "connecting" && !channels.length && (
 							<p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
-								{desktop
-									? "Disconnected from Ace Helper. Open Settings → This Mac to start it."
-									: "Disconnected from Ace Helper. Open the Ace desktop app or use ace open to reconnect."}
+								Connecting to{" "}
+								{chosen}… If your browser asks to reach devices on your local network, allow it.
 							</p>
 						)}
-						{!current
+						{status === "closed" && (
+							<p role="status" className="border-b px-4 py-2 text-xs text-muted-foreground">
+								<Disconnected />
+							</p>
+						)}
+						{!current && !connected
+							? null
+							: !current
 							? <EmptyProjects onOpen={() => void choose()} disabled={!connected} />
 							: page === "dashboard"
 							? (
