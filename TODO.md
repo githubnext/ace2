@@ -48,8 +48,10 @@ Driven by what the team hits. Known so far:
 
 - **First desktop release.** Supply the Apple certificate, notarization API key, Sparkle key, and
   public R2 download domain described in [updates](docs/updates.md); run the notarized canary
-  workflow and verify an upgrade on another Mac. Add the application icon. The signed updater,
-  helper handoff, resume receipts, and release/publish scripts are implemented.
+  workflow and verify Updates settings and an upgrade on another Mac. Add the application icon.
+  Signed ZIP and hardened-runtime DMG upgrades resumed real model work in the isolated local
+  check. The updater, loopback-only helper handoff, resume receipts, and release/publish scripts
+  are implemented.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
 - **Review the public tree** for internal material and run a secret scan before publishing.

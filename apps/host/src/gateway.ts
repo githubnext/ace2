@@ -35,6 +35,7 @@ type Client = {
 	user: string;
 	/** Arrived over the tailnet. Peers act only on this host's channels, and never as its owner. */
 	peer: boolean;
+	local: boolean;
 	channels: Map<string, Promise<Connection>>;
 	/** This client's connections to peer hosts, opened when it first uses one of their channels. */
 	remotes: Map<string, GatewayClient>;
@@ -45,6 +46,8 @@ type Client = {
 let name = hostname();
 let closing = false;
 let updating = false;
+let update = 0;
+let suspending: Promise<unknown> | undefined;
 const pending = new Set<Promise<unknown>>();
 
 function local(): Listing[] {
@@ -159,6 +162,9 @@ async function handle(
 	if (localOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
 		throw new Error("This action is only available from this host's local app");
 	}
+	if (!client.local && (request.op === "update-prepare" || request.op === "update-cancel")) {
+		throw new Error("Desktop updates are only available from this host's local app");
+	}
 	if (updating && request.op !== "update-cancel") {
 		throw new Error("Ace is pausing this machine's channels to install an update");
 	}
@@ -172,15 +178,33 @@ async function handle(
 	switch (request.op) {
 		case "update-prepare": {
 			if (!config.helper) throw new Error("Only Ace Helper can prepare a desktop update");
+			const current = ++update;
 			updating = true;
 			// handle() starts before this request enters pending, so it cannot await itself.
 			await Promise.allSettled(pending);
-			terminals.closeAll();
-			await Promise.all([workspace.close(), shutdown()]);
+			// A timed-out desktop request can be canceled while an older request is still draining.
+			if (current !== update) throw new Error("The update was canceled");
+			const stopping = Promise.allSettled([workspace.close(), shutdown(), terminals.closeAll()]);
+			suspending = stopping;
+			try {
+				const results = await stopping;
+				const errors = results.filter((result) => result.status === "rejected");
+				if (errors.length) {
+					throw new AggregateError(
+						errors.map((result) => result.reason),
+						"Some work could not be paused for the update",
+					);
+				}
+				if (current !== update) throw new Error("The update was canceled");
+			} finally {
+				suspending = undefined;
+			}
 			return { ready: true };
 		}
 		case "update-cancel":
 			if (updating) {
+				update++;
+				if (suspending) await Promise.allSettled([suspending]);
 				await resume();
 				workspace.sync();
 				updating = false;
@@ -349,8 +373,8 @@ function websocket(): Bun.WebSocketHandler<Client> {
 	};
 }
 
-function client(user: string, peer: boolean): Client {
-	return { user, peer, channels: new Map(), remotes: new Map(), terminals: new Map() };
+function client(user: string, peer: boolean, local = false): Client {
+	return { user, peer, local, channels: new Map(), remotes: new Map(), terminals: new Map() };
 }
 
 /** The owner's listener: loopback only, serving the app. */
@@ -384,7 +408,7 @@ function owner(port: number): Server<Client> {
 					value.trim()
 				);
 				return server.upgrade(request, {
-						data: client(catalog.user, false),
+						data: client(catalog.user, false, true),
 						headers: {
 							"set-cookie": access.cookie,
 							...(protocols?.includes("ace") ? { "sec-websocket-protocol": "ace" } : {}),
@@ -455,10 +479,9 @@ export async function serve(port: number): Promise<never> {
 		closing = true;
 		log("info", "host.stop", { pending: pending.size });
 		for (const close of cleanup) close();
-		terminals.closeAll();
 		await Promise.allSettled(servers.map((server) => server.stop(true)));
 		await Promise.allSettled(pending);
-		const results = await Promise.allSettled([workspace.close(), shutdown()]);
+		const results = await Promise.allSettled([workspace.close(), shutdown(), terminals.closeAll()]);
 		for (const result of results) {
 			if (result.status === "rejected") {
 				log("error", "host.shutdown.failed", failure(result.reason));

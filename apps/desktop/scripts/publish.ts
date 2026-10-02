@@ -44,7 +44,7 @@ const digest = (buffer: ArrayBuffer) =>
 if (digest(await Bun.file(archive).arrayBuffer()) !== release.sha256) {
 	throw new Error("The release archive changed after signing");
 }
-const target = `${release.channel}/macos-arm64`;
+const target = decodeURIComponent(new URL(release.url).pathname).replace(/^\/|\/$/g, "");
 const wrangler = join(root, "node_modules", ".bin", "wrangler");
 
 function upload(file: string, type: string, cache: string) {

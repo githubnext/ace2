@@ -322,7 +322,7 @@ export function App() {
 						onClose={() => setSettings(false)}
 					/>
 				)}
-				{desktop && <UpdateNotice onOpen={() => setSettings("updates")} />}
+				{desktop && <UpdateNotice onOpen={() => window.dispatchEvent(new Event("ace:updates"))} />}
 				<Toaster />
 			</TooltipProvider>
 		</ThemeProvider>

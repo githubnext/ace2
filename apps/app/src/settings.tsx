@@ -191,6 +191,11 @@ export function Settings(
 	const version = useSyncExternalStore(host.subscribe, () => host.settingsVersion);
 	const [retry, setRetry] = useState(0);
 	const [result, setResult] = useState<{ settings?: HostSettings; error?: string }>({});
+	useEffect(() => {
+		const updates = () => setSection("updates");
+		window.addEventListener("ace:updates", updates);
+		return () => window.removeEventListener("ace:updates", updates);
+	}, []);
 
 	useEffect(() => {
 		if (status !== "open" || section !== "providers") return;

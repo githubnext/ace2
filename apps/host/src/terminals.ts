@@ -143,6 +143,21 @@ export function closeChannel(channel: string) {
 	for (const terminal of terminals.values()) if (terminal.channel === channel) close(terminal.id);
 }
 
-export function closeAll() {
-	for (const id of terminals.keys()) close(id);
+export async function closeAll(): Promise<void> {
+	const running = [...terminals.values()];
+	for (const terminal of running) close(terminal.id);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			Promise.all(running.map((terminal) => terminal.process.exited)),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() => reject(new Error("Some terminal shells did not exit within 10 seconds")),
+					10_000,
+				);
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+	}
 }

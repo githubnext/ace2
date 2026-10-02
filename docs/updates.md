@@ -14,11 +14,14 @@ automatic checks off. **Install and Restart** is an explicit action.
 Automatic downloads and installation on ordinary quit are disabled. Quitting normally leaves
 Ace Helper running. After choosing to install, this machine's channels and workspace tools pause
 while the update downloads and installs. Unfinished local channel work resumes automatically after
-restart. Hosted channels stay reachable, but their workspace disconnects during the update.
+restart. Terminal shells close and do not resume. Hosted channels stay reachable, but their
+workspace disconnects during the update.
 
 Updates require a running, enabled Ace Helper. Command-line hosts and helpers disabled in macOS
 are left alone. Development builds have no feed. The first Sparkle-enabled build requires a manual
-installation; previous builds do not understand this feed.
+installation; previous builds do not understand this feed. Stop Ace Helper before manually
+replacing an existing installation, then reopen Ace. Builds predating resume receipts need their
+channels reopened once to resume any unfinished runs.
 
 ## Handoff and recovery
 
@@ -65,6 +68,8 @@ A release requires Developer ID signing, hardened runtime, notarization, and sta
 both the app and disk image. The image contains the app and an Applications shortcut. Sparkle
 signs its archive and feed with Ed25519; the app embeds only the public key and enables
 `SURequireSignedFeed` and `SUVerifyUpdateBeforeExtraction`. Feed URLs must use HTTPS.
+Sparkle's 20-day feed-signing recovery window remains enabled for lost-key recovery; archive
+verification and Apple signatures still apply during that recovery path.
 
 Increment `apps/desktop/package.json` for each release. Sparkle compares bundle versions and does
 not offer ordinary downgrades. Revert a bad release by shipping a fixed build under a higher
@@ -138,3 +143,20 @@ bun desktop publish
 ```
 
 `release` builds and verifies without publishing. `publish` uploads the prepared artifact.
+
+## Validation
+
+The October 2, 2026 local check used a separate app identifier, helper, and data directory. Native
+Sparkle upgrades from 0.0.3 to 0.0.4 (ZIP) and 0.0.4 to 0.0.5 (signed DMG with hardened runtime)
+replaced the app, re-registered Ace Helper, and resumed interrupted real Anthropic runs without
+opening their channels. Old workers exited, channel data remained, and recovery receipts cleared.
+
+Corrupted feeds and archives were rejected. Download cancellation restored hosting. A canceled
+preparation could not stop workers after a delayed request drained, and preparation waited for a
+real terminal shell to exit. Canary packaging and workflow syntax checks passed, as did repository
+type, formatting, and lint checks. A real host accepted update coordination over authenticated
+loopback and rejected both operations over its tailnet listener.
+
+Production notarization and R2 publishing await the credentials above. Review the native Updates
+screen manually and verify the first notarized upgrade on another Mac; the local computer-use
+tool could not inspect this app's window. No production release was published by these checks.

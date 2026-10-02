@@ -155,7 +155,7 @@ ApplicationMenu.setApplicationMenu([
 
 Electrobun.events.on("reopen", () => show());
 Electrobun.events.on("before-quit", (event) => {
-	if (updates.busy() && updates.status().phase !== "restarting") {
+	if (ready && updates.busy() && updates.status().phase !== "restarting") {
 		event.response = { allow: false };
 		show("updates");
 	}
@@ -181,7 +181,7 @@ Electrobun.events.on("application-menu-clicked", ({ data }) => {
 		return show(data.action);
 	}
 	if (data.action === "quit") {
-		if (!updates.busy()) return Utils.quit();
+		if (!ready || !updates.busy()) return Utils.quit();
 		return show("updates");
 	}
 	if (!data.action.startsWith("helper-")) return;

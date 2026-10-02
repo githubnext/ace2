@@ -7,6 +7,7 @@ import { desktop } from "./desktop";
 
 let state: UpdateState | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
+let polling = false;
 const listeners = new Set<() => void>();
 
 function publish(value: UpdateState) {
@@ -16,16 +17,18 @@ function publish(value: UpdateState) {
 }
 
 async function poll() {
+	polling = true;
 	try {
 		if (desktop) publish(await desktop.updates({ op: "status" }));
 	} finally {
+		polling = false;
 		if (listeners.size) timer = setTimeout(() => void poll().catch(() => {}), 1000);
 	}
 }
 
 function subscribe(listener: () => void) {
 	listeners.add(listener);
-	if (listeners.size === 1) void poll().catch(() => {});
+	if (listeners.size === 1 && !polling) void poll().catch(() => {});
 	return () => {
 		listeners.delete(listener);
 		if (!listeners.size) clearTimeout(timer);
@@ -67,7 +70,7 @@ const labels: Record<UpdateState["phase"], string> = {
 
 export function UpdateSettings() {
 	const update = useUpdates();
-	const [error, setError] = useState<string>();
+	const [error, setError] = useState<string | undefined>(undefined);
 	const [acting, setActing] = useState(false);
 
 	async function act(action: UpdateAction) {
@@ -115,8 +118,9 @@ export function UpdateSettings() {
 			{!disabled && (
 				<>
 					<p className="text-muted-foreground">
-						Ace Helper pauses while an update downloads and installs. Unfinished channel work
-						resumes after restart. Your projects, history, and provider keys stay on this Mac.
+						Ace Helper pauses while an update downloads and installs. Unfinished runs resume after
+						restart; terminal shells close. Your projects, history, and provider keys stay on this
+						Mac.
 					</p>
 					<label className="flex items-center gap-2">
 						<input

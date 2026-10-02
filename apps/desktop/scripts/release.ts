@@ -15,7 +15,7 @@ export function required(name: string): string {
 
 export function signedTool(command: string[]): void {
 	const result = Bun.spawnSync(command, {
-		stdin: Buffer.from(required("ACE_SPARKLE_PRIVATE_KEY")),
+		stdin: Buffer.from(required("ACE_SPARKLE_PRIVATE_KEY").trim()),
 		stdout: "inherit",
 		stderr: "inherit",
 	});
@@ -65,7 +65,7 @@ async function release(): Promise<void> {
 	const keyId = required("ACE_NOTARY_KEY_ID");
 	const issuer = required("ACE_NOTARY_ISSUER");
 	function notarize(path: string) {
-		run([
+		const result = Bun.spawnSync([
 			"xcrun",
 			"notarytool",
 			"submit",
@@ -79,7 +79,19 @@ async function release(): Promise<void> {
 			"--wait",
 			"--timeout",
 			"20m",
-		]);
+			"--output-format",
+			"json",
+		], { stdout: "pipe", stderr: "pipe" });
+		if (!result.success) {
+			throw new Error(`Notarization submission failed: ${result.stderr.toString()}`);
+		}
+		const submission = JSON.parse(result.stdout.toString()) as { id: string; status: string };
+		if (submission.status !== "Accepted") {
+			throw new Error(
+				`Notarization ${submission.id} finished with status ${submission.status}. Retrieve its notarytool log before releasing.`,
+			);
+		}
+		console.log(`Notarization accepted: ${submission.id}`);
 	}
 
 	await build(channel);

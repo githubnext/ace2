@@ -52,6 +52,7 @@
 		return;
 	}
 	self.state[@"phase"] = @"available";
+	[self.state removeObjectForKey:@"error"];
 	self.state[@"available"] = item.displayVersionString;
 	self.choice = reply;
 }
@@ -61,6 +62,7 @@
 
 - (void)showUpdateNotFoundWithError:(NSError *)error acknowledgement:(void (^)(void))acknowledgement {
 	self.state[@"phase"] = @"idle";
+	[self.state removeObjectForKey:@"error"];
 	acknowledgement();
 }
 
@@ -74,6 +76,7 @@
 	self.cancel = cancellation;
 	self.expected = 0;
 	self.received = 0;
+	[self.state removeObjectForKey:@"progress"];
 }
 
 - (void)showDownloadDidReceiveExpectedContentLength:(uint64_t)length { self.expected = length; }
@@ -115,7 +118,10 @@
 }
 
 - (void)updater:(SPUUpdater *)updater didFinishUpdateCycleForUpdateCheck:(SPUUpdateCheck)check error:(NSError *)error {
-	if (error && error.code != SUNoUpdateError) [self fail:error];
+	if (error.code == SUNoUpdateError) {
+		self.state[@"phase"] = @"idle";
+		[self.state removeObjectForKey:@"error"];
+	} else if (error) [self fail:error];
 	else if (![self.state[@"phase"] isEqual:@"restarting"] && ![self.state[@"phase"] isEqual:@"error"]) self.state[@"phase"] = @"idle";
 }
 @end

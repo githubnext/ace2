@@ -20,6 +20,14 @@ if (!app) throw new Error("The Ace application bundle is missing");
 const contents = join(build, app, "Contents");
 const bin = join(contents, "MacOS");
 const native = fileURLToPath(new URL("../native", import.meta.url));
+run([
+	"/usr/bin/plutil",
+	"-insert",
+	"LSMinimumSystemVersion",
+	"-string",
+	"14.0",
+	join(contents, "Info.plist"),
+]);
 
 // Only the helper needs node:sqlite; changing Electrobun's runtime breaks its native callbacks.
 run([
