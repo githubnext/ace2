@@ -1,0 +1,18 @@
+{
+	"name": "@ace/desktop",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"version": "0.0.1",
+	"scripts": {
+		"dev": "ACE_ROOT=$PWD/../.. electrobun dev",
+		"types": "tsgo --noEmit"
+	},
+	"dependencies": {
+		"electrobun": "catalog:desktop"
+	},
+	"devDependencies": {
+		"@types/bun": "catalog:bun",
+		"@types/three": "catalog:desktop"
+	}
+}

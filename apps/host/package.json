@@ -17,5 +17,9 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:bun"
+	},
+	"exports": {
+		".": "./src/cli.ts",
+		"./protocol": "./src/protocol.ts"
 	}
 }

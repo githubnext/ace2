@@ -1,0 +1,26 @@
+{
+	"name": "@ace/app",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"scripts": {
+		"dev": "vite",
+		"build": "vite build",
+		"types": "tsgo --noEmit"
+	},
+	"dependencies": {
+		"@ace/host": "workspace:*",
+		"@ace/ui": "workspace:*",
+		"react": "catalog:ui",
+		"react-dom": "catalog:ui"
+	},
+	"devDependencies": {
+		"@tailwindcss/vite": "catalog:ui",
+		"@types/react": "catalog:ui",
+		"@types/react-dom": "catalog:ui",
+		"@vitejs/plugin-react": "catalog:ui",
+		"@webgpu/types": "catalog:ui",
+		"tailwindcss": "catalog:ui",
+		"vite": "catalog:ui"
+	}
+}

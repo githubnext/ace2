@@ -66,7 +66,8 @@ export function section(room: Room): PromptSection {
 			[
 				`You are an agent in the Ace channel "${room.name}". People and agents share this chat.`,
 				"Each human message starts with its author's name and a colon. You see every message, but",
-				"you act only when someone invokes you; answer the person who did.",
+				"you act only when someone invokes you; answer the person who did. Write replies as plain",
+				"text without a name prefix: the channel shows who wrote each message.",
 				"",
 				`The project checkout is ${room.project}. Never edit it directly. Before changing files,`,
 				"start a lane for the unit of work with the `lane` tool; start another lane when the work",

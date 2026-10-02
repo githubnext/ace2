@@ -1,0 +1,56 @@
+import type { Event } from "@ace/ui";
+
+import type { Item, Tool } from "./transcript";
+
+const AGENT = "ace:agent";
+const MENTION = /(?<=^|\s)@([a-zA-Z0-9_-]+)/g;
+
+function text(value: string): Event.Message.Content.Text {
+	const parts = [...value.matchAll(MENTION)].map((match) => ({
+		type: "mention" as const,
+		value: match[1]!,
+		index: match.index,
+	}));
+	return parts.length ? { type: "text", text: value, parts } : { type: "text", text: value };
+}
+
+function tool(tool: Tool, busy: boolean): Event.Message.Content.Tool {
+	const status = tool.result ? (tool.result.error ? "error" : "success") : busy ? "start" : "error";
+	return {
+		type: "tool",
+		id: tool.call,
+		name: tool.name,
+		arguments: (tool.args ?? {}) as Record<string, unknown>,
+		status,
+		...(tool.result ? { result: { content: tool.result.text } } : {}),
+	};
+}
+
+/** Channel transcript items in the shape the original timeline renders. */
+export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
+	return items.map((item) => {
+		const base = {
+			id: `${topic}::${item.key}`,
+			uid: item.key,
+			type: "message",
+			topic,
+			created_at: Math.floor(item.at / 1000),
+		} as const;
+		if (item.kind === "message") {
+			return {
+				...base,
+				sender: { kind: "user", value: item.author, display: item.author },
+				content: [
+					text(item.invoked && !/(^|\s)@ace\b/i.test(item.text) ? `@ace ${item.text}` : item.text),
+				],
+			} as Event;
+		}
+		const content: Event.Message.Agent["content"] = item.tools.map((call) => tool(call, busy));
+		if (item.text) content.push(text(item.text));
+		return {
+			...base,
+			sender: { kind: "agent", value: AGENT, display: item.model || "Agent" },
+			content,
+		} as Event;
+	});
+}
