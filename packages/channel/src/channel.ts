@@ -22,6 +22,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import { type Directory, messaging, Subagent } from "./agents";
+import { instructions } from "./context";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
 import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request } from "./protocol";
@@ -70,7 +71,9 @@ export class Channel {
 		registry.install(lanes(options));
 		registry.install(Subagent);
 		registry.install(messaging(options.directory));
-		registry.install(defineExtension({ name: "ace-channel", sections: [room.section(options)] }));
+		registry.install(
+			defineExtension({ name: "ace-channel", sections: [room.section(options), instructions] }),
+		);
 		const harness = await Harness.open(options.storage, {
 			models: options.models,
 			registry,

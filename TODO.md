@@ -14,8 +14,6 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.
   Rebuilding and reinstalling it must not lose channels or runs in progress; check an update
   during a run.
-- **The agent reads the repository's instructions.** `AGENTS.md`, `CLAUDE.md`, rules, and skills
-  reach the prompt; `room.ts` has a one-line system prompt today.
 - **Show why a run failed.** A provider error or refusal ends the run with "stopped before
   answering" in the CLI and nothing in the app; the reason is only in the stored transcript.
 - **Show the model on agent replies.** Replies are labelled `ace`; switching models mid-chat is
