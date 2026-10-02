@@ -1,0 +1,67 @@
+name: Desktop release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [canary, stable]
+        default: canary
+      publish:
+        description: Publish the verified release to the public download bucket
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ inputs.channel }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: macos-15
+    timeout-minutes: 60
+    environment: desktop-${{ inputs.channel }}
+    env:
+      ACE_CODESIGN_IDENTITY: ${{ vars.ACE_CODESIGN_IDENTITY }}
+      ACE_UPDATE_URL: ${{ vars.ACE_UPDATE_URL }}
+      ACE_UPDATE_PUBLIC_KEY: ${{ vars.ACE_UPDATE_PUBLIC_KEY }}
+      ACE_NOTARY_KEY_ID: ${{ vars.ACE_NOTARY_KEY_ID }}
+      ACE_NOTARY_ISSUER: ${{ vars.ACE_NOTARY_ISSUER }}
+      ACE_RELEASE_CHANNEL: ${{ inputs.channel }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: 1.4.0
+      - run: bun install --frozen-lockfile
+      - run: bun types && bun run ci
+      - name: Import release credentials
+        run: bun apps/desktop/scripts/credentials.ts
+        env:
+          ACE_CERTIFICATE_P12: ${{ secrets.ACE_CERTIFICATE_P12 }}
+          ACE_CERTIFICATE_PASSWORD: ${{ secrets.ACE_CERTIFICATE_PASSWORD }}
+          ACE_NOTARY_PRIVATE_KEY: ${{ secrets.ACE_NOTARY_PRIVATE_KEY }}
+      - name: Build, sign, notarize, and verify
+        run: bun desktop release "$ACE_RELEASE_CHANNEL"
+        env:
+          ACE_SPARKLE_PRIVATE_KEY: ${{ secrets.ACE_SPARKLE_PRIVATE_KEY }}
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ace-${{ inputs.channel }}-macos-arm64
+          path: apps/desktop/artifacts/sparkle/
+          if-no-files-found: error
+      - name: Publish downloads, then the feed
+        if: inputs.publish
+        run: bun desktop publish
+        env:
+          ACE_SPARKLE_PRIVATE_KEY: ${{ secrets.ACE_SPARKLE_PRIVATE_KEY }}
+          ACE_UPDATE_BUCKET: ${{ vars.ACE_UPDATE_BUCKET }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      - name: Remove signing credentials
+        if: always()
+        run: bun apps/desktop/scripts/credentials.ts clean

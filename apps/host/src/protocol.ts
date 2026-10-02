@@ -77,6 +77,9 @@ export type HostRequest =
 	| { op: "key-check"; provider: ProviderId }
 	| { op: "key-remove"; provider: ProviderId }
 	| { op: "preferences"; model: ModelRef | null }
+	/** Quiesce this helper before replacing its application, or recover a canceled update. */
+	| { op: "update-prepare" }
+	| { op: "update-cancel" }
 	/** Models with credentials on a host; this host when omitted. */
 	| { op: "models"; host?: string }
 	/** Owner actions; tailnet peers create, archive, and delete channels on their own hosts. */

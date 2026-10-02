@@ -113,8 +113,7 @@ export function HostStatus() {
 						<div className="space-y-2 rounded-md border p-3">
 							<p>
 								This host's channels and tools will go offline. Work resumes when you start Ace
-								Helper and reopen a channel. Background hosting will stay off until you enable it
-								again.
+								Helper. Background hosting will stay off until you enable it again.
 							</p>
 							<div className="flex gap-2">
 								<Button variant="destructive" onClick={() => void control("stop")}>

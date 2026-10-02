@@ -3,12 +3,14 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
-	"version": "0.0.2",
+	"version": "0.0.3",
 	"exports": { "./protocol": "./src/protocol.ts" },
 	"scripts": {
 		"stage": "bun scripts/stage.ts",
-		"dev": "bun run stage && ACE_BUILD_CHANNEL=dev electrobun dev",
-		"build": "bun run stage && ACE_BUILD_CHANNEL=stable electrobun build --env=stable",
+		"dev": "bun scripts/build.ts dev --run",
+		"build": "bun scripts/build.ts",
+		"release": "bun scripts/release.ts",
+		"publish": "bun scripts/publish.ts",
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
@@ -17,6 +19,7 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:bun",
-		"@types/three": "catalog:desktop"
+		"@types/three": "catalog:desktop",
+		"wrangler": "catalog:cloudflare"
 	}
 }

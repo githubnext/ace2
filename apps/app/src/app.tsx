@@ -27,6 +27,7 @@ import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
 import { projectId, projects } from "./projects";
 import { Settings } from "./settings";
+import { UpdateNotice } from "./updates";
 
 function row(channel: Listing, user: string): SidebarRow {
 	return {
@@ -63,7 +64,7 @@ export function App() {
 		{},
 	);
 	const [adding, setAdding] = useState(false);
-	const [settings, setSettings] = useState(false);
+	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
 	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
@@ -74,6 +75,15 @@ export function App() {
 	});
 	const picking = useRef(false);
 	const creating = useRef(false);
+	useEffect(() => {
+		const open = () => setSettings("updates");
+		window.addEventListener("ace:updates", open);
+		if (location.hash === "#updates") {
+			history.replaceState(null, "", location.pathname + location.search);
+			open();
+		}
+		return () => window.removeEventListener("ace:updates", open);
+	}, []);
 
 	useEffect(() => {
 		if (status !== "open") return;
@@ -305,7 +315,14 @@ export function App() {
 					</Main>
 				</Layout>
 				{adding && <OpenProject onOpen={open} onClose={() => setAdding(false)} />}
-				{settings && <Settings onClose={() => setSettings(false)} />}
+				{settings && (
+					<Settings
+						key={String(settings)}
+						initialSection={settings === "updates" ? "updates" : undefined}
+						onClose={() => setSettings(false)}
+					/>
+				)}
+				{desktop && <UpdateNotice onOpen={() => setSettings("updates")} />}
 				<Toaster />
 			</TooltipProvider>
 		</ThemeProvider>

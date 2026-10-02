@@ -79,7 +79,8 @@ environment, then seals credentials again before running tools. Source workers d
 Stopping the host closes listeners and workspace links, then closes active local workers and their
 tool processes without writing durable abort marks. Shutdown identifies workers through their live
 Unix sockets; a stale PID file must never cause an unrelated process to be signaled or a dormant
-worker to start. Reopening a channel after the host restarts resumes unfinished work through pi.
+worker to start. A receipt of suspended worker IDs lets the next host startup resume unfinished
+work through pi without waiting for a client to reopen a channel.
 
 ### Logs
 
@@ -136,7 +137,10 @@ Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace
 separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service
 is `ace-dev`. `ACE_CONFIG_HOME` and `ACE_KEYCHAIN_SERVICE` can target an isolated profile for
 development or smoke checks. They are signed locally for `SMAppService`; distribution signing
-and notarization remain release work. The remaining desktop work is tracked in [the plan](desktop.md).
+and notarization are handled by the release pipeline. Sparkle checks for updates while Ace is open;
+installation explicitly pauses and unregisters the helper before replacing the application. The
+relaunched app restores hosting and resumes interrupted workers. See [updates](updates.md) for
+the handoff, signed feeds, hosting, and release credentials.
 
 ## Hosted channels
 

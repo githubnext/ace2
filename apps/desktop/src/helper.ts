@@ -1,8 +1,11 @@
+import { existsSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { Utils } from "electrobun/bun";
 
+import { token } from "@ace/host/auth";
 import { config } from "@ace/host/config";
+import { GatewayClient } from "@ace/host/gateway-client";
 import { health } from "@ace/host/health";
 
 import type { HelperAction, HelperState } from "./protocol";
@@ -31,6 +34,7 @@ async function exited(pid: number): Promise<void> {
 
 export function helper(identifier: string) {
 	const agent = service(identifier);
+	const receipt = join(config.home, "desktop-update.json");
 	let changing = false;
 
 	async function info() {
@@ -67,6 +71,59 @@ export function helper(identifier: string) {
 			if (found && !found.helper) throw new Error("This port is in use by a command-line host.");
 			return !!found;
 		}, `Ace Helper did not start. See ${join(config.home, "helper.log")}`);
+	}
+
+	async function request(op: "update-prepare" | "update-cancel") {
+		const client = new GatewayClient(`ws://127.0.0.1:${config.port}/ws`, token());
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		try {
+			return await Promise.race([
+				(async () => {
+					await wait(async () => client.status === "open", "Could not connect to Ace Helper");
+					return client.request<{ ready: boolean } | null>({ op });
+				})(),
+				new Promise<never>((_, reject) => {
+					timer = setTimeout(
+						() => reject(new Error("Ace Helper did not finish preparing the update")),
+						30_000,
+					);
+				}),
+			]);
+		} finally {
+			clearTimeout(timer);
+			client.close();
+		}
+	}
+
+	async function prepare(): Promise<void> {
+		if (changing) throw new Error("Ace Helper is already changing state");
+		changing = true;
+		try {
+			const found = await info();
+			if (!found?.helper || agent.status() !== "enabled") {
+				throw new Error(
+					"Start Ace Helper before installing an update. Command-line hosts cannot be updated from the app.",
+				);
+			}
+			// Recovery is needed even if the desktop exits between pausing and unregistering.
+			writeFileSync(receipt, JSON.stringify({ helper: true }), { mode: 0o600 });
+			if (!(await request("update-prepare"))?.ready) {
+				throw new Error("This Ace Helper cannot prepare an update. Restart it and try again.");
+			}
+			agent.unregister();
+			await exited(found.pid);
+		} finally {
+			changing = false;
+		}
+	}
+
+	async function recover(): Promise<void> {
+		if (!existsSync(receipt)) return;
+		const found = await info();
+		if (found && !found.helper) throw new Error("Stop the command-line host to resume Ace Helper");
+		if (found) await request("update-cancel");
+		else await start();
+		rmSync(receipt);
 	}
 
 	async function act(action: HelperAction): Promise<HelperState> {
@@ -107,5 +164,5 @@ export function helper(identifier: string) {
 		}
 	}
 
-	return { status, act };
+	return { status, act, prepare, recover, pending: () => existsSync(receipt) };
 }

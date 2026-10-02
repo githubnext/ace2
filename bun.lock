@@ -32,7 +32,7 @@
     },
     "apps/desktop": {
       "name": "@ace/desktop",
-      "version": "0.0.2",
+      "version": "0.0.3",
       "dependencies": {
         "@ace/host": "workspace:*",
         "electrobun": "catalog:desktop",
@@ -40,6 +40,7 @@
       "devDependencies": {
         "@types/bun": "catalog:bun",
         "@types/three": "catalog:desktop",
+        "wrangler": "catalog:cloudflare",
       },
     },
     "apps/host": {

@@ -8,15 +8,18 @@ import { desktop } from "@ace/host/config";
 
 import { helper as control } from "./helper";
 import type { DesktopRPC } from "./protocol";
+import { updates as updater } from "./updates";
 import { windowStyle } from "./window";
 
 const resources = join(dirname(process.execPath), "..", "Resources");
-const { channel, identifier } = await Bun.file(join(resources, "version.json")).json() as {
+const { channel, identifier, version } = await Bun.file(join(resources, "version.json")).json() as {
 	channel: string;
 	identifier: string;
+	version: string;
 };
 desktop(channel);
 const helper = control(identifier);
+const updates = updater(helper, version, channel);
 const url = appUrl();
 const secret = token();
 let window: BrowserWindow | undefined;
@@ -52,7 +55,14 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
 			},
 			helper: ({ token, action }) => {
 				authorize(token);
+				if (updates.busy() && ["start", "stop", "restart"].includes(action)) {
+					throw new Error("Ace Helper is being managed by the update. Wait for it to finish.");
+				}
 				return helper.act(action);
+			},
+			updates: ({ token, action }) => {
+				authorize(token);
+				return updates.act(action);
 			},
 		},
 		messages: {},
@@ -99,6 +109,7 @@ ApplicationMenu.setApplicationMenu([
 		submenu: [
 			{ label: "Show Ace", action: "show" },
 			{ label: "Settings…", action: "settings", accelerator: "CmdOrCtrl+," },
+			{ label: "Check for Updates…", action: "updates" },
 			{ type: "divider" },
 			{ label: "Start Ace Helper", action: "helper-start" },
 			{ label: "Restart Ace Helper", action: "helper-restart" },
@@ -143,12 +154,25 @@ ApplicationMenu.setApplicationMenu([
 ]);
 
 Electrobun.events.on("reopen", () => show());
+Electrobun.events.on("before-quit", (event) => {
+	if (updates.busy() && updates.status().phase !== "restarting") {
+		event.response = { allow: false };
+		show("updates");
+	}
+});
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
 }
 
 Electrobun.events.on("application-menu-clicked", ({ data }) => {
 	if (data.action === "show") return show();
+	if (data.action === "updates") {
+		show("updates");
+		if (["idle", "error"].includes(updates.status().phase)) {
+			void updates.act({ op: "check" }).catch(() => {});
+		}
+		return;
+	}
 	if (
 		["settings", "project-open", "dashboard", "channels", "nav-toggle", "channels-toggle"].includes(
 			data.action,
@@ -156,12 +180,16 @@ Electrobun.events.on("application-menu-clicked", ({ data }) => {
 	) {
 		return show(data.action);
 	}
-	if (data.action === "quit") return Utils.quit();
+	if (data.action === "quit") {
+		if (!updates.busy()) return Utils.quit();
+		return show("updates");
+	}
 	if (!data.action.startsWith("helper-")) return;
 	const action = data.action.slice("helper-".length);
 	if (action !== "start" && action !== "restart" && action !== "settings" && action !== "log") {
 		return;
 	}
+	if (updates.busy() && (action === "start" || action === "restart")) return show("updates");
 	void helper.act(action).catch((error) =>
 		Utils.showMessageBox({
 			type: "error",
@@ -172,6 +200,7 @@ Electrobun.events.on("application-menu-clicked", ({ data }) => {
 });
 
 async function start(): Promise<void> {
+	await helper.recover();
 	const state = await helper.status();
 	if (!state.running) {
 		if (state.service === "unregistered") {
@@ -200,6 +229,7 @@ async function start(): Promise<void> {
 	}
 	ready = true;
 	show();
+	updates.start();
 }
 
 try {

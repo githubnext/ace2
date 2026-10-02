@@ -9,10 +9,10 @@ Dogfooding means everyone who works on Ace does all Ace development in Ace. If A
 surface (channels, diffs, terminals), use Ace's. When something forces another tool, the PR says
 so (see [the PR template](.github/pull_request_template.md)) and the gap goes here.
 
-- **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.
-  Rebuilding and reinstalling it must not lose channels or runs in progress; check an update
-  during a run. Use the same Apple signing identity for installed development builds; ad-hoc
-  signatures can leave macOS rejecting the updated helper.
+- **Rebuild Ace from Ace.** Connect the signed release workflow to Ace so development agents can
+  build and publish updates. The updater lane used Codex's local tools because Ace does not yet
+  expose packaging or native app inspection. Keep the same Apple signing identity for installed
+  development builds; ad-hoc signatures can leave macOS rejecting the updated helper.
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
@@ -42,8 +42,10 @@ Driven by what the team hits. Known so far:
 
 ## Release
 
-- **Desktop release.** Signing, notarization, an icon, and updates (Electrobun needs a
-  `baseUrl`). Electrobun's downloaded CLI needs an ad-hoc re-sign.
+- **First desktop release.** Supply the Apple certificate, notarization API key, Sparkle key, and
+  public R2 download domain described in [updates](docs/updates.md); run the notarized canary
+  workflow and verify an upgrade on another Mac. Add the application icon. The signed updater,
+  helper handoff, resume receipts, and release/publish scripts are implemented.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
 - **Review the public tree** for internal material and run a secret scan before publishing.

@@ -18,7 +18,10 @@ export default {
 		},
 		buildFolder: "dist",
 		artifactFolder: "artifacts",
+		// Release packaging signs the real app; Electrobun's self-extracting wrapper is unused.
+		mac: { codesign: false, notarize: false, createDmg: false },
 	},
+	release: { generatePatch: false },
 	runtime: { exitOnLastWindowClosed: false },
 	scripts: { postBuild: "scripts/helper.ts", postPackage: "scripts/sign-dev.ts" },
 } satisfies ElectrobunConfig;

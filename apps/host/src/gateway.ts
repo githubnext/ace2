@@ -26,7 +26,7 @@ import {
 } from "./protocol";
 import { self, whois } from "./tailnet";
 import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
-import { shutdown } from "./shutdown";
+import { resume, shutdown } from "./shutdown";
 import * as workspace from "./workspace";
 
 type Client = {
@@ -41,6 +41,7 @@ type Client = {
 
 let name = hostname();
 let closing = false;
+let updating = false;
 const pending = new Set<Promise<unknown>>();
 
 function local(): Listing[] {
@@ -134,6 +135,8 @@ const localOps = new Set<HostRequest["op"]>([
 	"key-check",
 	"key-remove",
 	"preferences",
+	"update-prepare",
+	"update-cancel",
 ]);
 
 async function handle(
@@ -148,6 +151,9 @@ async function handle(
 	if (localOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
 		throw new Error("This action is only available from this host's local app");
 	}
+	if (updating && request.op !== "update-cancel") {
+		throw new Error("Ace is pausing this machine's channels to install an update");
+	}
 	// A channel runs where it was created, so even its owner creates from that machine.
 	if (client.peer && request.op === "create") {
 		throw new Error("Create channels from the host that will run them");
@@ -156,6 +162,21 @@ async function handle(
 		throw new Error("Only this host's owner can do that");
 	}
 	switch (request.op) {
+		case "update-prepare": {
+			if (!config.helper) throw new Error("Only Ace Helper can prepare a desktop update");
+			updating = true;
+			// handle() starts before this request enters pending, so it cannot await itself.
+			await Promise.allSettled(pending);
+			await Promise.all([workspace.close(), shutdown()]);
+			return { ready: true };
+		}
+		case "update-cancel":
+			if (updating) {
+				await resume();
+				workspace.sync();
+				updating = false;
+			}
+			return;
 		case "hello":
 			return { user: client.user, host: name };
 		case "channels":
@@ -393,6 +414,7 @@ export async function serve(port: number): Promise<never> {
 	// Hosted channels run tools in this process.
 	seal();
 	openLog("host");
+	await resume();
 	const server = owner(port);
 	log("info", "host.start", { port: server.port, user: catalog.user, bun: Bun.version });
 	const servers = [server];
@@ -432,7 +454,7 @@ export async function serve(port: number): Promise<never> {
 	mkdirSync(join(catalog.home, "channels"), { recursive: true });
 	// Workers create and remove their sockets; tell clients when a channel starts or retires.
 	const watcher = watch(join(catalog.home, "channels"), { recursive: true }, (_, file) => {
-		if (closing) return;
+		if (closing || updating) return;
 		if (file?.endsWith("channel.sock") || file?.endsWith("channel.json")) broadcast();
 		if (file?.endsWith("channel.json")) {
 			projectsChanged();

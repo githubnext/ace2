@@ -16,6 +16,7 @@ import type { ProviderSettings, Settings as HostSettings } from "@ace/host/proto
 import { host } from "./host";
 import { desktop } from "./desktop";
 import { HostStatus } from "./host-settings";
+import { UpdateSettings } from "./updates";
 
 const sources = {
 	keychain: "Saved in Keychain",
@@ -180,10 +181,12 @@ function DefaultModel({ settings, disabled }: { settings: HostSettings; disabled
 	);
 }
 
-export function Settings({ onClose }: { onClose: () => void }) {
+export function Settings(
+	{ onClose, initialSection }: { onClose: () => void; initialSection?: "updates" },
+) {
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
-	const [section, setSection] = useState<"providers" | "host">(
-		status === "open" ? "providers" : "host",
+	const [section, setSection] = useState<"providers" | "host" | "updates">(
+		initialSection || (status === "open" ? "providers" : "host"),
 	);
 	const version = useSyncExternalStore(host.subscribe, () => host.settingsVersion);
 	const [retry, setRetry] = useState(0);
@@ -218,6 +221,8 @@ export function Settings({ onClose }: { onClose: () => void }) {
 					<DialogDescription>
 						{section === "providers"
 							? "Provider keys stay in your system keychain. Changes apply to the next model request."
+							: section === "updates"
+							? "Keep Ace and Ace Helper up to date."
 							: "Tools, team connectivity, and background hosting."}
 					</DialogDescription>
 				</DialogHeader>
@@ -236,8 +241,17 @@ export function Settings({ onClose }: { onClose: () => void }) {
 					>
 						{desktop ? "This Mac" : "This host"}
 					</Button>
+					{desktop && (
+						<Button
+							variant={section === "updates" ? "secondary" : "ghost"}
+							aria-pressed={section === "updates"}
+							onClick={() => setSection("updates")}
+						>
+							Updates
+						</Button>
+					)}
 				</nav>
-				{section === "host" ? <HostStatus /> : (
+				{section === "updates" ? <UpdateSettings /> : section === "host" ? <HostStatus /> : (
 					<>
 						{status !== "open" && <p role="status">Waiting for Ace Helper to reconnect…</p>}
 						{result.settings
