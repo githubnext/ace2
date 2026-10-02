@@ -14,6 +14,16 @@ bun ace ask <channel> "what does this repo do?"
 bun ace --help
 ```
 
+The app runs in a browser against the host's gateway, or as the macOS desktop app:
+
+```sh
+bun app build && bun ace serve   # http://127.0.0.1:4140
+bun desktop dev                  # builds the app and starts its own gateway
+```
+
+If `bun desktop dev` exits silently, macOS killed Electrobun's downloaded CLI for an invalid
+signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules/electrobun/bin/electrobun`.
+
 ## Documentation
 
 - [Terms](docs/terms.md): what Ace's words mean. Binding.
