@@ -23,6 +23,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import { type Directory, messaging, Subagent } from "./agents";
 import { instructions } from "./context";
+import { changes, patch } from "./changes";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
 import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request } from "./protocol";
@@ -137,6 +138,14 @@ export class Channel {
 				return this.#share(request);
 			case "watch":
 				return this.#watch(request.chat, send);
+			case "changes": {
+				const { cwd, lane } = await this.#place(request.chat);
+				return changes(this.#options.env(cwd), cwd, this.#options.project, lane, context);
+			}
+			case "patch": {
+				const { cwd } = await this.#place(request.chat);
+				return patch(this.#options.env(cwd), cwd, this.#options.project, request.file, context);
+			}
 			case "wait": {
 				const submission = await this.#harness.submission(
 					request.submission as SubmissionId,
@@ -195,6 +204,15 @@ export class Channel {
 	close(): Promise<void> {
 		this.#log("info", "channel.close");
 		return this.#harness.close(context);
+	}
+
+	/** Where a chat works: its current lane's worktree, or the project checkout before it has one. */
+	async #place(chat: ChatId | undefined): Promise<{ cwd: string; lane?: string }> {
+		const { id } = await this.#conversation(chat);
+		const cwd = (await this.#harness.snapshot(AgentDoc, id, context))?.cwd || this.#options.project;
+		const lanes = (await this.#harness.snapshot(LanesDoc, context))?.lanes || {};
+		const lane = Object.entries(lanes).find(([, value]) => value.path === cwd)?.[0];
+		return lane ? { cwd, lane } : { cwd };
 	}
 
 	async #conversation(chat: ChatId | undefined): Promise<Conversation> {

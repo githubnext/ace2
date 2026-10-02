@@ -1,0 +1,105 @@
+import type { Context } from "@earendil-works/chord";
+import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
+
+import { git, quote } from "./git";
+import type { Change, Changes } from "./protocol";
+
+const FILES = 500;
+const PATCH = 512 * 1024;
+
+/** Reads parse stdout, so their stderr is dropped; exec combines the two streams. */
+const read = (env: ExecutionEnv, cwd: string, args: string, context: Context, ok?: number[]) =>
+	git(env, `${args} 2>/dev/null`, context, { cwd, ...(ok ? { ok } : {}) });
+
+/**
+ * The base a chat's work is measured against: where its lane branched from the project's HEAD, so
+ * commits the project made since don't show as the lane's. The checkout itself compares to HEAD.
+ */
+async function base(env: ExecutionEnv, cwd: string, project: string, context: Context) {
+	const head = (await read(env, cwd, "rev-parse HEAD", context)).trim();
+	if (cwd === project) return { base: head, head };
+	const main = (await read(env, project, "rev-parse HEAD", context)).trim();
+	const fork = (await read(env, cwd, `merge-base HEAD ${main}`, context)).trim();
+	return { base: fork, head };
+}
+
+/** `adds\tdels\tpath\0`, or `adds\tdels\t\0from\0to\0` for a rename; binary files count `-`. */
+function numstat(text: string): Change[] {
+	const fields = text.split("\0");
+	const out: Change[] = [];
+	for (let i = 0; i < fields.length - 1; i++) {
+		const [adds, dels, path] = fields[i]!.split("\t");
+		const binary = adds === "-";
+		const counts = { binary, adds: binary ? 0 : Number(adds), dels: binary ? 0 : Number(dels) };
+		if (path) out.push({ file: path, ...counts });
+		else {
+			out.push({ file: fields[i + 2]!, from: fields[i + 1]!, ...counts });
+			i += 2;
+		}
+	}
+	return out;
+}
+
+async function untracked(env: ExecutionEnv, cwd: string, context: Context): Promise<Change[]> {
+	const files = (await read(env, cwd, "ls-files --others --exclude-standard -z", context))
+		.split("\0").filter(Boolean).slice(0, FILES);
+	return Promise.all(files.map(async (file) => {
+		// --no-index exits 1 when the files differ, which they always do here.
+		const stat = await read(
+			env,
+			cwd,
+			`diff --no-index --numstat -z -- /dev/null ${quote(file)}`,
+			context,
+			[0, 1],
+		);
+		const [adds, dels] = stat.split("\t");
+		const binary = adds === "-";
+		return { file, binary, adds: binary ? 0 : Number(adds), dels: binary ? 0 : Number(dels) };
+	}));
+}
+
+export async function changes(
+	env: ExecutionEnv,
+	cwd: string,
+	project: string,
+	lane: string | undefined,
+	context: Context,
+): Promise<Changes> {
+	const range = await base(env, cwd, project, context);
+	const tracked = numstat(await read(env, cwd, `diff -M --numstat -z ${range.base}`, context));
+	const files = [...tracked, ...await untracked(env, cwd, context)].slice(0, FILES);
+	return { ...(lane ? { lane } : {}), cwd, ...range, files };
+}
+
+/** `file` must be one `changes` listed; it is passed to git only as a quoted literal path. */
+export async function patch(
+	env: ExecutionEnv,
+	cwd: string,
+	project: string,
+	file: string,
+	context: Context,
+): Promise<string> {
+	if (!file || file.startsWith("/") || file.split("/").includes("..") || file.includes("\0")) {
+		throw new Error(`Invalid path ${file}`);
+	}
+	const { base: from } = await base(env, cwd, project, context);
+	const known = await read(env, cwd, `ls-files -- ${quote(file)}`, context);
+	const historic = await read(
+		env,
+		cwd,
+		`diff -M --name-status -z ${from} -- ${quote(file)}`,
+		context,
+	);
+	let text: string;
+	if (known.trim() || historic) {
+		// A renamed file's diff needs its old path in the pathspec too.
+		const status = await read(env, cwd, `diff -M --name-status -z ${from}`, context);
+		const fields = status.split("\0");
+		const at = fields.findIndex((value, i) => value === file && fields[i - 2]?.startsWith("R"));
+		const paths = at > 0 ? `${quote(fields[at - 1]!)} ${quote(file)}` : quote(file);
+		text = await read(env, cwd, `diff -M ${from} -- ${paths}`, context);
+	} else {
+		text = await read(env, cwd, `diff --no-index -- /dev/null ${quote(file)}`, context, [0, 1]);
+	}
+	return text.length > PATCH ? `${text.slice(0, PATCH)}\n… (diff truncated)` : text;
+}
