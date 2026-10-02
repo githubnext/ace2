@@ -13,7 +13,16 @@ export type Tool = {
 
 export type Item =
 	| { kind: "message"; key: string; at: number; author: string; text: string; invoked: boolean }
-	| { kind: "reply"; key: string; at: number; model: string; text: string; tools: Tool[] };
+	| {
+		kind: "reply";
+		key: string;
+		at: number;
+		model: string;
+		text: string;
+		tools: Tool[];
+		error?: string;
+		stopped?: boolean;
+	};
 
 export type Transcript = {
 	items: Item[];
@@ -41,6 +50,8 @@ export function apply(state: Transcript, event: Event): Transcript {
 				model: event.model,
 				text: event.text,
 				tools: [],
+				...(event.error ? { error: event.error } : {}),
+				...(event.stopped ? { stopped: true } : {}),
 			};
 			return { ...state, draft: "", items: [...state.items, item] };
 		}
@@ -63,7 +74,7 @@ export function apply(state: Transcript, event: Event): Transcript {
 				kind: "reply",
 				key: `t${event.call}`,
 				at: event.at,
-				model: "",
+				model: event.model,
 				text: "",
 				tools: [tool],
 			};

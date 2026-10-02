@@ -294,6 +294,20 @@ function result(value: unknown) {
 	return { ...(submission ? { submission } : {}), ...(chat ? { created: chat } : {}) };
 }
 
+/** Providers append their JSON error body; its message is the part a person can act on. */
+function readable(error: string | undefined): string {
+	if (!error) return "The provider failed the response";
+	const start = error.indexOf("{");
+	if (start < 0) return error;
+	try {
+		const body = JSON.parse(error.slice(start));
+		const detail = body.message ?? body.error?.message;
+		return typeof detail === "string" ? `${error.slice(0, start).trim()} ${detail}` : error;
+	} catch {
+		return error;
+	}
+}
+
 function live(chat: ChatId, event: AgentEvent): Event[] {
 	if (event.type === "message_end") return events(event.entry);
 	if (event.type === "message_update") {
@@ -316,10 +330,32 @@ function events(entry: EntryRecord): Event[] {
 		const out: Event[] = [];
 		const text = room.text(message);
 		const at = message.timestamp;
-		if (text) out.push({ kind: "reply", chat, entry: entry.id, at, model: message.model, text });
+		const model = message.model;
+		const error = message.stopReason === "error";
+		const stopped = message.stopReason === "aborted";
+		if (text || error || stopped) {
+			out.push({
+				kind: "reply",
+				chat,
+				entry: entry.id,
+				at,
+				model,
+				text,
+				...(error ? { error: readable(message.errorMessage) } : {}),
+				...(stopped ? { stopped } : {}),
+			});
+		}
 		for (const block of message.content) {
 			if (block.type !== "toolCall") continue;
-			out.push({ kind: "tool", chat, at, call: block.id, name: block.name, args: block.arguments });
+			out.push({
+				kind: "tool",
+				chat,
+				at,
+				model,
+				call: block.id,
+				name: block.name,
+				args: block.arguments,
+			});
 		}
 		return out;
 	}

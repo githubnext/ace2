@@ -91,8 +91,14 @@ function render(event: Event, info: ChannelInfo) {
 	switch (event.kind) {
 		case "message":
 			return console.log(`${tag}${bold(event.author)}: ${event.text}`);
-		case "reply":
-			return console.log(`${tag}${bold(event.model)}: ${event.text}`);
+		case "reply": {
+			const ending = event.error
+				? `\x1b[31m${event.text ? "\n" : ""}Run failed: ${event.error}\x1b[0m`
+				: event.stopped
+				? dim(`${event.text ? "\n" : ""}Stopped.`)
+				: "";
+			return console.log(`${tag}${bold(event.model)}: ${event.text}${ending}`);
+		}
 		case "tool":
 			return console.log(dim(`${tag}  → ${event.name} ${clip(JSON.stringify(event.args), 100)}`));
 		case "result":

@@ -48,6 +48,8 @@ export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
 		}
 		const content: Event.Message.Agent["content"] = item.tools.map((call) => tool(call, busy));
 		if (item.text) content.push(text(item.text));
+		if (item.error) content.push(text(`Run failed: ${item.error}`));
+		if (item.stopped) content.push(text("Stopped."));
 		return {
 			...base,
 			sender: { kind: "agent", value: AGENT, display: item.model || "Agent" },

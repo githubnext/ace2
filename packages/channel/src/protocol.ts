@@ -53,10 +53,28 @@ export type Event =
 		text: string;
 		invoked: boolean;
 	}
-	| { kind: "reply"; chat: ChatId; entry: EntryId; at: number; model: string; text: string }
+	/** `error` when the provider failed the response; `stopped` when someone stopped it. */
+	| {
+		kind: "reply";
+		chat: ChatId;
+		entry: EntryId;
+		at: number;
+		model: string;
+		text: string;
+		error?: string;
+		stopped?: boolean;
+	}
 	/** Streamed text of the reply being generated; the next `reply` replaces it. */
 	| { kind: "delta"; chat: ChatId; text: string }
-	| { kind: "tool"; chat: ChatId; at: number; call: string; name: string; args: unknown }
+	| {
+		kind: "tool";
+		chat: ChatId;
+		at: number;
+		model: string;
+		call: string;
+		name: string;
+		args: unknown;
+	}
 	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string }
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
 	/** The replayed transcript has been sent; later events are live. */

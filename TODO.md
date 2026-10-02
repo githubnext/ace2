@@ -14,10 +14,6 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.
   Rebuilding and reinstalling it must not lose channels or runs in progress; check an update
   during a run.
-- **Show why a run failed.** A provider error or refusal ends the run with "stopped before
-  answering" in the CLI and nothing in the app; the reason is only in the stored transcript.
-- **Show the model on agent replies.** Replies are labelled `ace`; switching models mid-chat is
-  invisible in the timeline and to later runs.
 - **Diff tab** for the selected chat's lane.
 - **Images in the composer.** pi accepts image content; the app doesn't send it.
 - **Terminals** per channel, opened in a chat's lane.

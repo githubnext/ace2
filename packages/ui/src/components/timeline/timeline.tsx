@@ -632,9 +632,7 @@ function frame(
 	let workingSettling = settlingWorking.has(group.id);
 	let label = group.role === "user"
 		? group.display || String(group.sender || "User")
-		: group.run
-		? group.display || "Ace"
-		: "ace";
+		: group.display || (group.run ? "Ace" : "ace");
 	let name = label;
 	let hasByline = group.rows.length > 0;
 	let own = !!currentUser && group.role === "user"
