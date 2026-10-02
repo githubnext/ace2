@@ -5,10 +5,13 @@
 	"license": "MIT",
 	"version": "0.0.1",
 	"scripts": {
-		"dev": "ACE_ROOT=$PWD/../.. electrobun dev",
+		"stage": "bun scripts/stage.ts",
+		"dev": "bun run stage && electrobun dev",
+		"build": "bun run stage && electrobun build --env=stable",
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@ace/host": "workspace:*",
 		"electrobun": "catalog:desktop"
 	},
 	"devDependencies": {

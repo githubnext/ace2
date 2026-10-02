@@ -12,7 +12,8 @@ import * as peers from "./peers";
 import type { HostEnvelope, HostFrame, HostRequest, Listing } from "./protocol";
 import { self, whois } from "./tailnet";
 
-const app = new URL("../../app/dist", import.meta.url).pathname;
+/** The built app; a packaged app points this at its bundled copy. */
+const app = () => process.env.ACE_APP_DIR || new URL("../../app/dist", import.meta.url).pathname;
 
 type Client = {
 	/** The participant this socket speaks for: the owner on loopback, a verified login on the tailnet. */
@@ -181,12 +182,13 @@ function owner(port: number): Server<Client> {
 					? undefined
 					: new Response("Upgrade failed", { status: 400 });
 			}
-			if (!existsSync(app)) {
+			const dir = app();
+			if (!existsSync(dir)) {
 				return new Response("The app is not built; run bun app build", { status: 404 });
 			}
-			const file = Bun.file(join(app, url.pathname));
+			const file = Bun.file(join(dir, url.pathname));
 			if (url.pathname !== "/" && await file.exists()) return new Response(file);
-			return new Response(Bun.file(join(app, "index.html")));
+			return new Response(Bun.file(join(dir, "index.html")));
 		},
 		websocket: websocket(),
 	});

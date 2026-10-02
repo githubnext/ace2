@@ -21,6 +21,8 @@
 	"exports": {
 		".": "./src/cli.ts",
 		"./protocol": "./src/protocol.ts",
-		"./gateway-client": "./src/gateway-client.ts"
+		"./gateway-client": "./src/gateway-client.ts",
+		"./gateway": "./src/gateway.ts",
+		"./keys": "./src/keys.ts"
 	}
 }

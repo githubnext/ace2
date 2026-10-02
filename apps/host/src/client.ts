@@ -7,11 +7,12 @@ import type { Event, Frame, Request } from "@ace/channel/protocol";
 import * as catalog from "./catalog";
 import { lines } from "./lines";
 
-const worker = new URL("./worker.ts", import.meta.url).pathname;
+/** The worker's entry; a packaged app points this at its bundled copy. */
+const worker = () => process.env.ACE_WORKER || new URL("./worker.ts", import.meta.url).pathname;
 
 function start(id: string): void {
 	const log = openSync(catalog.paths(id).log, "a");
-	const child = spawn(process.execPath, [worker, id], {
+	const child = spawn(process.execPath, [worker(), id], {
 		detached: true,
 		stdio: ["ignore", log, log],
 	});

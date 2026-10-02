@@ -2,19 +2,18 @@
 
 Move these into issues once the repository has a remote.
 
-- **Keys from the OS keychain.** Resolve each provider credential in order: `ACE_<NAME>`,
-  `<NAME>`, then the keychain item `<NAME>` under service `ace`, read with `Bun.secrets`
-  (Keychain on macOS, libsecret on Linux, Credential Manager on Windows). Add
-  `ace key set|rm <name>` so keys never live in shell profiles or `.env`. The host resolves keys
-  and passes them to workers; the desktop app then needs no `.env`.
+- **Keys in the app.** Keys resolve from `ACE_<NAME>`, `<NAME>`, then the keychain, and
+  `ace key set` stores them; the app has no settings view to add or see which providers are set.
 - **Show the model on agent replies.** Replies are labelled `ace`; switching models mid-chat is
   invisible in the timeline and to later runs.
 - **Diff tab** for the selected chat's lane.
 - **Two-machine check** of the tailnet gateway: proxying and discovery have only run against
   this machine's own tailnet listener.
 - **Projects across hosts**: identify a project by its repository, not a local path.
-- **Desktop bundle.** The desktop app runs the host from the checkout (`ACE_ROOT`); bundle the
-  host and worker so it runs standalone. Electrobun's downloaded CLI needs an ad-hoc re-sign.
+- **Desktop release.** `bun desktop build` makes an unsigned, un-notarized app; signing,
+  notarization, an icon, and updates (Electrobun needs a `baseUrl`) remain. Electrobun's
+  downloaded CLI needs an ad-hoc re-sign. Closing the window ends the host, so channels stop
+  while the app is closed.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
 - **Lobby cell** in `services/team`: presence, notifications, channel lifecycle.

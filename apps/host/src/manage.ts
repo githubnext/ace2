@@ -1,12 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
-
 import type { ModelRef } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { request } from "./client";
+import { models as providers } from "./keys";
 
 const PREFERRED = ["anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
 
@@ -18,7 +17,7 @@ export function parseModel(value: string): ModelRef {
 
 /** Models with credentials on this machine. */
 export async function models(): Promise<ModelRef[]> {
-	return (await builtinModels().getAvailable()).map((m) => ({
+	return (await providers().getAvailable()).map((m) => ({
 		provider: m.provider,
 		modelId: m.id,
 	}));

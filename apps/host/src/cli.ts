@@ -7,6 +7,7 @@ import type { ChannelInfo, ChatId, Event } from "@ace/channel/protocol";
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";
 import { serve } from "./gateway";
+import { forget, store } from "./keys";
 import {
 	archive,
 	defaultModel,
@@ -31,11 +32,14 @@ const HELP = `ace — channels on this host
   ace kill <channel>                             stop all work in the channel now
   ace share <channel> on|off                     let others invoke agents
   ace models
+  ace key set <NAME>                             store a key in the OS keychain, read from stdin
+  ace key rm <NAME>
   ace serve [--port 4140]                         serve the app and its WebSocket gateway
   ace archive <channel> | unarchive <channel> | delete <channel>
 
 Models are provider/id, such as openai/gpt-6-astra or anthropic/claude-opus-5-5.
-Credentials come from provider environment variables such as OPENAI_API_KEY.`;
+A credential such as OPENAI_API_KEY comes from ACE_OPENAI_API_KEY, then OPENAI_API_KEY, then the
+keychain. Store keys there for the desktop app, which starts without your shell's environment.`;
 
 const { values: flags, positionals } = parseArgs({
 	allowPositionals: true,
@@ -129,6 +133,22 @@ async function main() {
 		}
 		case "serve":
 			return serve(Number(flags.port || 4140));
+		case "key": {
+			const name = rest[0];
+			if (!name || !/^[A-Z][A-Z0-9_]*$/.test(name)) {
+				throw new Error("ace key set|rm <NAME>, such as OPENAI_API_KEY");
+			}
+			if (ref === "rm") {
+				return console.log(await forget(name) ? `Removed ${name}` : `No ${name} in the keychain`);
+			}
+			if (ref !== "set") throw new Error("ace key set|rm <NAME>");
+			// From stdin so the key stays out of shell history and the process list.
+			if (process.stdin.isTTY) process.stderr.write(`${name} (end with Ctrl-D): `);
+			const value = (await new Response(Bun.stdin.stream()).text()).trim();
+			if (!value) throw new Error("No key on stdin");
+			await store(name, value);
+			return console.log(`Stored ${name} in the keychain`);
+		}
 	}
 
 	if (!ref) throw new Error(`ace ${command} needs a channel`);

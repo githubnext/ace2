@@ -2,7 +2,6 @@ import { closeSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 
@@ -10,6 +9,7 @@ import { Channel, type Envelope, type Frame } from "@ace/channel";
 
 import * as catalog from "./catalog";
 import { request } from "./client";
+import { models } from "./keys";
 import { lines } from "./lines";
 
 const RETIRE_AFTER = 10 * 60_000;
@@ -55,7 +55,7 @@ const channel = await Channel.open({
 	lanes: paths.lanes,
 	model: record.model,
 	storage: await openNodeSqliteStorage(paths.storage),
-	models: builtinModels(),
+	models: models(),
 	env(cwd) {
 		let env = envs.get(cwd);
 		if (!env) envs.set(cwd, env = new NodeExecutionEnv({ cwd }));
