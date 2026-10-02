@@ -73,7 +73,8 @@ export function isRunning(id: string): boolean {
 
 /** Create a channel on a hosting service, with this host as its workspace. */
 export async function host(dir: string, model: ModelRef, name: string | undefined, url: string) {
-	const record = catalog.create(dir, model, name, url.replace(/\/$/, ""));
+	// Saving the record starts the workspace link, so the service must have the channel first.
+	const record = catalog.draft(dir, model, name, url.replace(/\/$/, ""));
 	const response = await fetch(`${record.hosted}/channels/${record.id}`, {
 		method: "POST",
 		headers: await hostedAuth(),
@@ -88,10 +89,9 @@ export async function host(dir: string, model: ModelRef, name: string | undefine
 		}),
 	}).catch((error: Error) => new Response(error.message, { status: 502 }));
 	if (!response.ok) {
-		catalog.remove(record.id);
 		throw new Error(`The hosting service refused the channel: ${await response.text()}`);
 	}
-	return record;
+	return catalog.save(record);
 }
 
 export async function kill(id: string): Promise<void> {

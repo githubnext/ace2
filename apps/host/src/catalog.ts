@@ -81,7 +81,8 @@ function pick(words: string[]): string {
 	return words[randomBytes(1)[0] % words.length];
 }
 
-export function create(project: string, model: ModelRef, name?: string, hosted?: string): Listing {
+/** A new channel's record, not yet saved: a hosted channel saves it once the service has it. */
+export function draft(project: string, model: ModelRef, name?: string, hosted?: string): Listing {
 	const names = new Set(list().map((record) => record.name));
 	const random = () => `${pick(WORDS[0])}-${pick(WORDS[1])}`;
 	let chosen = name || random();
@@ -99,6 +100,14 @@ export function create(project: string, model: ModelRef, name?: string, hosted?:
 		created: Date.now(),
 		...(hosted ? { hosted } : {}),
 	};
+	return record;
+}
+
+export function create(project: string, model: ModelRef, name?: string): Listing {
+	return save(draft(project, model, name));
+}
+
+export function save(record: Listing): Listing {
 	const { base, record: file } = paths(record.id);
 	mkdirSync(base, { recursive: true });
 	writeFileSync(file, JSON.stringify(record, null, "\t"));
