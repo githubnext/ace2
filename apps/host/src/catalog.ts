@@ -13,6 +13,8 @@ export type Listing = {
 	model: ModelRef;
 	created: number;
 	archived?: boolean;
+	/** Base URL of the service hosting the channel; this host serves its workspace. */
+	hosted?: string;
 };
 
 export const home = process.env.ACE_HOME || join(homedir(), ".local", "state", "ace");
@@ -83,7 +85,7 @@ function pick(words: string[]): string {
 	return words[randomBytes(1)[0] % words.length];
 }
 
-export function create(project: string, model: ModelRef, name?: string): Listing {
+export function create(project: string, model: ModelRef, name?: string, hosted?: string): Listing {
 	const names = new Set(list().map((record) => record.name));
 	const random = () => `${pick(WORDS[0])}-${pick(WORDS[1])}`;
 	let chosen = name || random();
@@ -99,6 +101,7 @@ export function create(project: string, model: ModelRef, name?: string): Listing
 		project,
 		model,
 		created: Date.now(),
+		...(hosted ? { hosted } : {}),
 	};
 	const { base, record: file } = paths(record.id);
 	mkdirSync(base, { recursive: true });

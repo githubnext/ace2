@@ -1,19 +1,21 @@
 {
-	"name": "@ace/channel",
+	"name": "@ace/channel-service",
 	"private": true,
 	"type": "module",
 	"license": "MIT",
-	"exports": {
-		".": "./src/index.ts",
-		"./protocol": "./src/protocol.ts",
-		"./workspace": "./src/workspace.ts"
-	},
 	"scripts": {
+		"dev": "wrangler dev",
+		"deploy": "wrangler deploy",
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@ace/channel": "workspace:*",
 		"@earendil-works/chord": "catalog:pi",
 		"@earendil-works/pi-ai": "catalog:pi",
 		"@earendil-works/pi-durable": "catalog:pi"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:cloudflare",
+		"wrangler": "catalog:cloudflare"
 	}
 }

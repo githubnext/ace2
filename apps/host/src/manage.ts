@@ -1,10 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
+import { hostname } from "node:os";
 
 import type { ModelRef } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
-import { request } from "./client";
+import { hostedAuth, request } from "./client";
 import { models as providers } from "./keys";
 
 const PREFERRED = ["anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
@@ -44,8 +45,32 @@ export function project(dir: string): string {
 	return result.stdout.trim();
 }
 
+/** Hosted channels are always reachable; local ones run while their worker does. */
 export function isRunning(id: string): boolean {
-	return existsSync(catalog.paths(id).socket);
+	return !!catalog.read(id).hosted || existsSync(catalog.paths(id).socket);
+}
+
+/** Create a channel on a hosting service, with this host as its workspace. */
+export async function host(dir: string, model: ModelRef, name: string | undefined, url: string) {
+	const record = catalog.create(dir, model, name, url.replace(/\/$/, ""));
+	const response = await fetch(`${record.hosted}/channels/${record.id}`, {
+		method: "POST",
+		headers: await hostedAuth(),
+		body: JSON.stringify({
+			id: record.id,
+			name: record.name,
+			owner: record.owner,
+			project: record.project,
+			lanes: catalog.paths(record.id).lanes,
+			model,
+			workspace: `host:${hostname()}`,
+		}),
+	}).catch((error: Error) => new Response(error.message, { status: 502 }));
+	if (!response.ok) {
+		catalog.remove(record.id);
+		throw new Error(`The hosting service refused the channel: ${await response.text()}`);
+	}
+	return record;
 }
 
 export async function kill(id: string): Promise<void> {
@@ -62,7 +87,16 @@ export async function archive(id: string, archived: boolean): Promise<catalog.Li
 /** Removes the channel and its lane worktrees; lane branches stay in the project. */
 export async function remove(id: string): Promise<void> {
 	await kill(id);
-	const { project } = catalog.read(id);
+	const { project, hosted } = catalog.read(id);
+	if (hosted) {
+		const response = await fetch(`${hosted}/channels/${id}`, {
+			method: "DELETE",
+			headers: await hostedAuth(),
+		});
+		if (!response.ok && response.status !== 404) {
+			throw new Error(`The hosting service did not delete the channel: ${response.status}`);
+		}
+	}
 	const lanes = catalog.paths(id).lanes;
 	for (const lane of existsSync(lanes) ? readdirSync(lanes) : []) {
 		spawnSync("git", ["-C", project, "worktree", "remove", "--force", `${lanes}/${lane}`]);

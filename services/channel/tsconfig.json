@@ -1,0 +1,10 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"types": ["@cloudflare/workers-types"],
+		"lib": ["esnext"],
+		// pi-ai pulls in provider SDK declarations that assume DOM and optional packages.
+		"skipLibCheck": true
+	},
+	"include": ["src"]
+}

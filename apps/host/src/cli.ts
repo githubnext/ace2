@@ -11,6 +11,7 @@ import { forget, store } from "./keys";
 import {
 	archive,
 	defaultModel,
+	host,
 	isRunning,
 	kill,
 	models,
@@ -21,7 +22,7 @@ import {
 
 const HELP = `ace — channels on this host
 
-  ace new [--project <dir>] [--name <name>] [--model <provider/id>]
+  ace new [--project <dir>] [--name <name>] [--model <provider/id>] [--hosted <url>]
   ace ls [--all]
   ace info <channel>
   ace say <channel> [--chat <id>] <text…>        post without invoking the agent
@@ -47,6 +48,7 @@ const { values: flags, positionals } = parseArgs({
 		project: { type: "string" },
 		name: { type: "string" },
 		model: { type: "string" },
+		hosted: { type: "string" },
 		chat: { type: "string" },
 		port: { type: "string" },
 		all: { type: "boolean" },
@@ -103,11 +105,11 @@ async function main() {
 	if (flags.help || !command) return console.log(HELP);
 	switch (command) {
 		case "new": {
-			const record = catalog.create(
-				project(resolve(flags.project || ".")),
-				await defaultModel(),
-				flags.name,
-			);
+			const dir = project(resolve(flags.project || "."));
+			const model = flags.model ? parseModel(flags.model) : await defaultModel();
+			const record = flags.hosted
+				? await host(dir, model, flags.name, flags.hosted)
+				: catalog.create(dir, model, flags.name);
 			return console.log(`${record.name}\t${record.id}`);
 		}
 		case "ls": {

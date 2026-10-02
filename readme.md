@@ -26,6 +26,16 @@ bun desktop build                # a standalone Ace.app and .dmg in apps/desktop
 With Tailscale running, the host also shares its channels with the tailnet, and the app shows
 teammates' channels. See [the team](docs/architecture.md#the-team).
 
+A hosted channel lives in a Durable Object and runs its tools on the host that created it, while
+that host runs `ace serve` or the desktop app. To try one locally, put `ACE_SECRET` and a model key
+in `services/channel/.dev.vars`, then:
+
+```sh
+bun --filter @ace/channel-service dev                     # http://localhost:8787
+printf %s "$SECRET" | bun ace key set ACE_HOSTED_SECRET   # the same value as ACE_SECRET
+bun ace new --hosted http://localhost:8787 --project ~/code/my-repo
+```
+
 If `bun desktop dev` or `build` exits silently, macOS killed Electrobun's downloaded CLI for an invalid
 signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules/electrobun/bin/electrobun`.
 

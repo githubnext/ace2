@@ -12,7 +12,8 @@ Words in this document have the meanings in [terms](terms.md).
 | ------------------ | ------------------------------ | -------------------------------------------------------------------- |
 | `packages/channel` | inside a channel worker        | The channel: chats, agents, lanes, and the client protocol types     |
 | `apps/host`        | on every machine (Bun)         | The `ace` CLI, channel workers, the channel catalog, local transport |
-| `apps/desktop`     | on every machine (planned)     | The desktop client                                                   |
+| `apps/desktop`     | on every machine               | The desktop client, with the host built in                           |
+| `services/channel` | Cloudflare Workers             | Hosted channels: one Durable Object per channel                      |
 | `services/team`    | hosted, one per team (planned) | The directory and lobby cells                                        |
 
 Clients (the CLI, later the desktop app) attach to channels; a channel is not a client.
@@ -41,7 +42,9 @@ injects storage, models, and the execution environment. This keeps hosted channe
 inside a Durable Object, with tools served from a team machine) an adapter rather than a rewrite.
 
 Process per channel gives isolation and instant kill, and lets thousands of channels exist as
-files: a dormant channel is a closed SQLite file with no process.
+files: a dormant channel is a closed SQLite file with no process. It is process isolation, not a
+boundary: every worker runs as the host's user and can read the others' files. Agents have full
+access by design, so the boundary that would matter is around tool execution, not the store.
 
 ## Host
 
@@ -50,14 +53,37 @@ directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clien
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
 
-Model credentials come from the provider environment variables pi-ai reads, such as
-`OPENAI_API_KEY` and `ANTHROPIC_API_KEY`.
+Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
+for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment and anyone admitted to
+a channel can invoke its agent, so processes that run tools first move credential-like variables
+out of the environment; only the key lookup can read them.
+
+## Hosted channels
+
+`services/channel` runs the same `packages/channel` core in a Durable Object, one per channel.
+The object provides what the host's worker provides locally (single ownership of the store,
+isolation, and routing by channel ID) and adds hibernation and placement off any one machine.
+pi's portable SQLite core runs on the object's own SQL through `storage.ts`.
+
+A Durable Object has no file system or shell, so a hosted channel's tools run on a **workspace**:
+the host that created it. That host dials out to the object and serves each chat's file and shell
+calls from its lanes, using the same execution environment as a local worker
+(`packages/channel/src/workspace.ts`). The project checkout stays the source of truth. While the
+workspace is disconnected, the channel stays reachable for chat, tools report the workspace as
+offline, and a call in flight when it drops is reported to the model as failed.
+
+- The workspace socket hibernates, so an idle hosted channel costs nothing while its host stays
+  connected. Client sockets carry live pi event streams and keep the object awake.
+- An alarm re-wakes the object while a run is active, so an evicted object resumes the run.
+- Hosts share the team's secret with the service (`ACE_HOSTED_SECRET` on hosts, `ACE_SECRET` on the
+  Worker) and state each message's author. They verify their own users over the tailnet, so the
+  service trusts hosts, not individual people.
+- Model keys are Worker secrets.
 
 ## Shared services
 
 Shared state that must outlive any one machine (the directory and each project's lobby) lives in
-cells: Durable Objects deployed to Cloudflare, or celld on a team machine. Channels never live in
-cells.
+cells: Durable Objects deployed to Cloudflare, or celld on a team machine.
 
 ## The team
 
@@ -75,6 +101,7 @@ or kills.
 
 ## Not yet built
 
-Terminals and previews, attachments, lobby and directory cells, external harnesses (Claude Code,
-Codex), and hosted channels. Projects are still a local path, so a teammate's checkout of the same
+Terminals and previews, attachments, lobby and directory cells, and external harnesses (Claude
+Code, Codex). Hosted channels cannot message other channels yet, and only their workspace host
+lists them. Projects are still a local path, so a teammate's checkout of the same
 repository shows as a separate project.

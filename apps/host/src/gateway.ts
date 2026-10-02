@@ -7,10 +7,12 @@ import type { Server, ServerWebSocket } from "bun";
 import * as catalog from "./catalog";
 import { Connection } from "./client";
 import { GatewayClient } from "./gateway-client";
+import { seal } from "./keys";
 import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
 import type { HostEnvelope, HostFrame, HostRequest, Listing } from "./protocol";
 import { self, whois } from "./tailnet";
+import * as workspace from "./workspace";
 
 /** The built app; a packaged app points this at its bundled copy. */
 const app = () => process.env.ACE_APP_DIR || new URL("../../app/dist", import.meta.url).pathname;
@@ -224,6 +226,8 @@ function team(port: number, address: string): Server<Client> {
 }
 
 export async function serve(port: number): Promise<never> {
+	// Hosted channels run tools in this process.
+	seal();
 	const server = owner(port);
 	console.log(`Ace on http://${server.hostname}:${server.port}`);
 	const machine = await self();
@@ -239,6 +243,8 @@ export async function serve(port: number): Promise<never> {
 	// Workers create and remove their sockets; tell clients when a channel starts or retires.
 	watch(join(catalog.home, "channels"), { recursive: true }, (_, file) => {
 		if (file?.endsWith("channel.sock") || file?.endsWith("channel.json")) broadcast();
+		if (file?.endsWith("channel.json")) workspace.sync();
 	});
+	workspace.sync();
 	return new Promise(() => {});
 }
