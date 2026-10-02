@@ -40,6 +40,16 @@ The team's directory lists every host's channels, so they stay visible while the
 Run `services/directory` the same way (`bun --filter @ace/directory dev --port 8788`), then point
 each host at it with `bun ace directory http://localhost:8788`.
 
+To deploy both to your Cloudflare account, give the Workers and every host the same secret:
+
+```sh
+SECRET=$(openssl rand -hex 32)
+printf %s "$SECRET" | bun ace key set ACE_SECRET
+for s in channel directory; do (cd services/$s && bunx wrangler deploy && printf %s "$SECRET" | bunx wrangler secret put ACE_SECRET); done
+(cd services/channel && bunx wrangler secret put ANTHROPIC_API_KEY)   # and any other model keys
+bun ace directory https://ace-directory.<your-subdomain>.workers.dev
+```
+
 If `bun desktop dev` or `build` exits silently, macOS killed Electrobun's downloaded CLI for an invalid
 signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules/electrobun/bin/electrobun`.
 

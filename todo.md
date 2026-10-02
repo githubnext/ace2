@@ -18,8 +18,6 @@ Move these into issues once the repository has a remote.
   while the app is closed.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
-- **Deploy** `services/channel` and `services/directory`. Both run under `wrangler dev`; deploying
-  needs `ACE_SECRET` (and model keys for channels) as Worker secrets.
 - **Hosted channels**: create them from the app; let them message other channels; let browsers
   reach them, which needs per-person sign-in rather than the hosts' shared secret.
 - **Directory freshness**: hosts re-read every 30 seconds, so a new channel can take that long to
