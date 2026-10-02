@@ -18,7 +18,7 @@ const sealed = new Map<string, string>();
  * `env` through its agent. Credentials leave `process.env` before any tool runs and stay
  * readable only through `key`.
  */
-const secret = /^ACE_|(_API_KEY|_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDENTIALS?)$/;
+const secret = /(_KEY|_TOKEN|_SECRET|_PASSWORD|_CREDENTIALS?)$/;
 
 export function seal(): void {
 	for (const [name, value] of Object.entries(process.env)) {
