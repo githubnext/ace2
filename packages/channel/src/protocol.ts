@@ -35,13 +35,31 @@ export type Change = { file: string; from?: string; binary: boolean; adds: numbe
  */
 export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
 
+/** An image as base64. Clients downscale before sending; see `MAX_IMAGES` in room.ts. */
+export type Image = { mimeType: string; data: string };
+
 export type Request =
 	| { op: "info" }
 	| { op: "models" }
 	/** Post to the chat without invoking its agent. */
-	| { op: "say"; chat?: ChatId; author: string; text: string; requestId?: string }
+	| {
+		op: "say";
+		chat?: ChatId;
+		author: string;
+		text: string;
+		images?: Image[];
+		requestId?: string;
+	}
 	/** Post to the chat and invoke its agent; a busy chat takes the message as steering. */
-	| { op: "ask"; chat?: ChatId; author: string; text: string; model?: ModelRef; requestId?: string }
+	| {
+		op: "ask";
+		chat?: ChatId;
+		author: string;
+		text: string;
+		images?: Image[];
+		model?: ModelRef;
+		requestId?: string;
+	}
 	| { op: "chat"; author: string; model?: ModelRef }
 	| { op: "stop"; chat?: ChatId }
 	| { op: "kill" }
@@ -63,6 +81,7 @@ export type Event =
 		at: number;
 		author: string;
 		text: string;
+		images?: Image[];
 		invoked: boolean;
 	}
 	/** `error` when the provider failed the response; `stopped` when someone stopped it. */

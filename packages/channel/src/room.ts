@@ -1,10 +1,12 @@
-import type { Message, UserMessage } from "@earendil-works/pi-ai";
+import type { ImageContent, Message, TextContent, UserMessage } from "@earendil-works/pi-ai";
 import {
 	defineEntry,
 	type EntryRecord,
 	type JsonObject,
 	type PromptSection,
 } from "@earendil-works/pi-durable";
+
+import type { Image } from "./protocol";
 
 /** A human message that did not invoke an agent. */
 export const MessageEntry = defineEntry<{ author: string; text: string }>("ace.message");
@@ -19,20 +21,54 @@ export function isAuthor(value: string): boolean {
  * Agents see every participant's messages as `author: text`. Invocations are pi inputs, which carry
  * only content, so the author prefix is also how an input's author is recovered.
  */
-export function content(author: string, text: string): string {
-	return `${author}: ${text}`;
+export function content(
+	author: string,
+	text: string,
+	images: Image[] = [],
+): UserMessage["content"] {
+	const body = `${author}: ${text}`;
+	if (!images.length) return body;
+	return [
+		{ type: "text", text: body },
+		...images.map(({ mimeType, data }): ImageContent => ({ type: "image", mimeType, data })),
+	];
 }
 
-export function message(author: string, text: string, timestamp: number): UserMessage {
-	return { role: "user", content: content(author, text), timestamp };
+/**
+ * Images live in the transcript so every model sees them. A hosted channel stores an entry in one
+ * SQLite row, which Durable Objects cap at 2 MB, so a message's images must fit under that.
+ */
+export const MAX_IMAGES = 4;
+const MAX_BYTES = 1_500_000;
+const TYPES = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
+
+export function checkImages(images: Image[] = []) {
+	if (images.length > MAX_IMAGES) throw new Error(`At most ${MAX_IMAGES} images per message`);
+	let size = 0;
+	for (const image of images) {
+		if (!TYPES.has(image.mimeType)) throw new Error(`Unsupported image type ${image.mimeType}`);
+		if (!/^[A-Za-z0-9+/]*={0,2}$/.test(image.data)) throw new Error("Images must be base64");
+		size += image.data.length;
+	}
+	if (size > MAX_BYTES) throw new Error("Images are too large; send smaller or fewer images");
 }
 
-export function draft(author: string, text: string, timestamp: number) {
+export function draft(author: string, text: string, timestamp: number, images?: Image[]) {
 	return {
 		kind: MessageEntry.kind,
 		data: { author, text } satisfies JsonObject,
-		model: [message(author, text, timestamp)],
+		model: [
+			{ role: "user", content: content(author, text, images), timestamp } satisfies UserMessage,
+		],
 	};
+}
+
+function images(message: UserMessage): Image[] | undefined {
+	if (typeof message.content === "string") return;
+	const found = message.content.flatMap((block: TextContent | ImageContent) =>
+		block.type === "image" ? [{ mimeType: block.mimeType, data: block.data }] : []
+	);
+	return found.length ? found : undefined;
 }
 
 export function text(message: Message): string {
@@ -40,21 +76,31 @@ export function text(message: Message): string {
 	return message.content.flatMap((block) => (block.type === "text" ? [block.text] : [])).join("");
 }
 
-export type Human = { author: string; text: string; at: number; invoked: boolean };
+export type Human = {
+	author: string;
+	text: string;
+	images?: Image[];
+	at: number;
+	invoked: boolean;
+};
 
 /** A human entry's author, text, and time, or undefined for any other entry. */
 export function human(entry: EntryRecord): Human | undefined {
 	const user = entry.model?.[0];
 	if (user?.role !== "user") return;
-	if (MessageEntry.is(entry)) return { ...entry.data, at: user.timestamp, invoked: false };
+	const attached = images(user);
+	const extra = attached ? { images: attached } : {};
+	if (MessageEntry.is(entry)) {
+		return { ...entry.data, ...extra, at: user.timestamp, invoked: false };
+	}
 	if (entry.kind !== "pi.user") return;
 	const body = text(user);
 	const split = body.indexOf(": ");
 	const author = body.slice(0, split);
 	if (split < 1 || !isAuthor(author)) {
-		return { author: "unknown", text: body, at: user.timestamp, invoked: true };
+		return { author: "unknown", text: body, ...extra, at: user.timestamp, invoked: true };
 	}
-	return { author, text: body.slice(split + 2), at: user.timestamp, invoked: true };
+	return { author, text: body.slice(split + 2), ...extra, at: user.timestamp, invoked: true };
 }
 
 export type Room = { name: string; project: string };

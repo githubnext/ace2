@@ -231,7 +231,8 @@ export class Channel {
 	async #say(request: Extract<Request, { op: "say" }>) {
 		this.#author(request.author);
 		const conversation = await this.#conversation(request.chat);
-		const entry = room.draft(request.author, request.text, Date.now());
+		room.checkImages(request.images);
+		const entry = room.draft(request.author, request.text, Date.now(), request.images);
 		const submission = await conversation.submit({
 			type: "write",
 			entry,
@@ -242,6 +243,7 @@ export class Channel {
 
 	async #ask(request: Extract<Request, { op: "ask" }>) {
 		this.#author(request.author);
+		room.checkImages(request.images);
 		const settings = await this.#harness.snapshot(SettingsDoc, context);
 		const isOwner = request.author === this.#options.owner;
 		if (!isOwner && settings?.shared === false) {
@@ -251,7 +253,7 @@ export class Channel {
 		if (request.model) await this.#select(conversation, request.model);
 		const submission = await conversation.submit({
 			type: "input",
-			content: room.content(request.author, request.text),
+			content: room.content(request.author, request.text, request.images),
 			whenBusy: "steer",
 			...(request.requestId ? { requestId: request.requestId } : {}),
 		}, context);
