@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 
 import type { ChannelInfo, Event } from "@ace/host/protocol";
 
-import { host } from "./host";
+import { host, onOpen } from "./host";
 
 export type Tool = {
 	call: string;
@@ -130,11 +130,10 @@ export function useTranscript(channel: string | undefined, chat?: number) {
 			});
 		};
 		start();
-		const previous = host.onOpen;
-		host.onOpen = start;
+		const off = onOpen(start);
 		return () => {
 			active = false;
-			host.onOpen = previous;
+			off();
 			host.request({ op: "release", channel }).catch(() => {});
 		};
 	}, [channel, chat]);
