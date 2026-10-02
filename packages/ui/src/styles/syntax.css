@@ -1,0 +1,37 @@
+/* Shared syntax highlighting palette.
+   Seeded from Vitesse, tinted toward the warm/green theme so code, diffs,
+   and the rich-text editor all share one source of truth. */
+
+:root {
+	/* Active Shiki tokens (switch on .dark below) */
+	--syntax-foreground: var(--color-foreground);
+	--syntax-background: var(--color-code);
+	--syntax-token-comment: oklch(0.62 0.015 130);
+	--syntax-token-keyword: oklch(0.5 0.1 155);
+	--syntax-token-string: oklch(0.55 0.12 32);
+	--syntax-token-constant: oklch(0.5 0.1 250);
+	--syntax-token-parameter: var(--color-foreground);
+	--syntax-token-function: oklch(0.58 0.11 140);
+	--syntax-token-string-expression: oklch(0.58 0.1 42);
+	--syntax-token-punctuation: var(--color-muted-foreground);
+	--syntax-token-link: var(--color-primary);
+
+	/* @pierre/diffs paired slots — picked via light-dark() */
+	--diffs-light-bg: oklch(0.97 0.006 90);
+	--diffs-dark-bg: oklch(0.207 0 0);
+	--diffs-light: oklch(0.153 0.006 107.1);
+	--diffs-dark: oklch(0.988 0.003 106.5);
+	--diffs-light-addition-color: oklch(0.5 0.1 155);
+	--diffs-dark-addition-color: oklch(0.72 0.11 155);
+	--diffs-light-deletion-color: oklch(0.55 0.14 22);
+	--diffs-dark-deletion-color: oklch(0.7 0.13 22);
+}
+
+.dark {
+	--syntax-token-comment: oklch(0.58 0.015 130);
+	--syntax-token-keyword: oklch(0.72 0.11 155);
+	--syntax-token-string: oklch(0.75 0.1 32);
+	--syntax-token-constant: oklch(0.72 0.09 250);
+	--syntax-token-function: oklch(0.75 0.11 140);
+	--syntax-token-string-expression: oklch(0.75 0.09 42);
+}

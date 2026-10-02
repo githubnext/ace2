@@ -1,0 +1,115 @@
+@keyframes timeline-stream-in {
+	0% {
+		opacity: 0;
+		filter: blur(6px);
+	}
+
+	100% {
+		opacity: 1;
+		filter: blur(0);
+	}
+}
+
+@keyframes timeline-tools-expand-in {
+	0% {
+		transform: translate3d(0, -4px, 0) scaleY(0.985);
+	}
+
+	100% {
+		transform: translate3d(0, 0, 0) scaleY(1);
+	}
+}
+
+@keyframes timeline-working-context-open {
+	0% {
+		opacity: 0.92;
+		transform: translate3d(0, -2px, 0) scaleY(0.985);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scaleY(1);
+	}
+}
+
+@keyframes timeline-working-context-closing {
+	0% {
+		opacity: 1;
+		transform: translate3d(0, 0, 0) scaleY(1);
+	}
+
+	100% {
+		opacity: 0.96;
+		transform: translate3d(0, -1px, 0) scaleY(0.995);
+	}
+}
+
+@keyframes timeline-working-rollup-in {
+	0% {
+		opacity: 0;
+		transform: translate3d(0, -3px, 0);
+	}
+
+	100% {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+}
+
+@keyframes timeline-working-rollup-out {
+	0% {
+		opacity: 1;
+		transform: translate3d(0, 0, 0);
+	}
+
+	100% {
+		opacity: 0;
+		transform: translate3d(0, -4px, 0);
+	}
+}
+
+.timeline-stream-in {
+	animation: timeline-stream-in 260ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	will-change: opacity, filter;
+}
+
+.timeline-tools-expand-in {
+	animation: timeline-tools-expand-in 200ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	transform-origin: top;
+	will-change: transform;
+}
+
+.timeline-working-context-open {
+	animation: timeline-working-context-open 220ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	transform-origin: top left;
+	will-change: opacity, transform;
+}
+
+.timeline-working-context-closing {
+	animation: timeline-working-context-closing 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	transform-origin: top left;
+	will-change: opacity, transform;
+}
+
+.timeline-working-rollup-in {
+	animation: timeline-working-rollup-in 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	will-change: opacity, transform;
+}
+
+.timeline-working-rollup-out {
+	animation: timeline-working-rollup-out 180ms cubic-bezier(0.23, 1, 0.32, 1) both;
+	pointer-events: none;
+	will-change: opacity, transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.timeline-stream-in,
+	.timeline-tools-expand-in,
+	.timeline-working-context-open,
+	.timeline-working-context-closing,
+	.timeline-working-rollup-in,
+	.timeline-working-rollup-out {
+		animation: none;
+		will-change: auto;
+	}
+}

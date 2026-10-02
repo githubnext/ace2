@@ -1,0 +1,60 @@
+{
+	"name": "@ace/ui",
+	"private": true,
+	"type": "module",
+	"license": "MIT",
+	"exports": {
+		".": "./src/index.ts",
+		"./css": "./src/shadcn.css",
+		"./icons": "./src/icons.tsx"
+	},
+	"scripts": {
+		"types": "tsgo --noEmit --skipLibCheck"
+	},
+	"dependencies": {
+		"@base-ui/react": "catalog:ui",
+		"@chenglou/pretext": "catalog:ui",
+		"@emoji-mart/data": "catalog:ui",
+		"@fontsource-variable/inter": "catalog:ui",
+		"@pierre/diffs": "catalog:ui",
+		"@pierre/trees": "catalog:ui",
+		"@shikijs/langs": "catalog:ui",
+		"class-variance-authority": "catalog:ui",
+		"clsx": "catalog:ui",
+		"comark": "catalog:ui",
+		"emoji-mart": "catalog:ui",
+		"fuzzysort": "catalog:ui",
+		"lucide-react": "catalog:ui",
+		"lucide-static": "catalog:ui",
+		"markdown-it": "catalog:ui",
+		"motion": "catalog:ui",
+		"prosemirror-commands": "catalog:ui",
+		"prosemirror-highlight": "catalog:ui",
+		"prosemirror-history": "catalog:ui",
+		"prosemirror-inputrules": "catalog:ui",
+		"prosemirror-keymap": "catalog:ui",
+		"prosemirror-markdown": "catalog:ui",
+		"prosemirror-model": "catalog:ui",
+		"prosemirror-schema-list": "catalog:ui",
+		"prosemirror-state": "catalog:ui",
+		"prosemirror-view": "catalog:ui",
+		"shadcn": "catalog:ui",
+		"shiki": "catalog:ui",
+		"sonner": "catalog:ui",
+		"tailwind-merge": "catalog:ui",
+		"tailwindcss": "catalog:ui",
+		"tw-animate-css": "catalog:ui"
+	},
+	"peerDependencies": {
+		"react": "catalog:ui",
+		"react-dom": "catalog:ui"
+	},
+	"devDependencies": {
+		"@types/markdown-it": "catalog:ui",
+		"@types/react": "catalog:ui",
+		"@types/react-dom": "catalog:ui",
+		"@webgpu/types": "catalog:ui",
+		"react": "catalog:ui",
+		"react-dom": "catalog:ui"
+	}
+}

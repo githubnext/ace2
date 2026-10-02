@@ -1,0 +1,740 @@
+import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
+import { measureRichInlineStats } from "@chenglou/pretext/rich-inline";
+
+import type { Block } from "../../lib/block";
+
+import { INLINE_CODE_PADDING, LIST_INDENT, QUOTE_BORDER, QUOTE_INDENT } from "./constants";
+import { image as imageBlock } from "./image";
+import {
+	type BlockNode,
+	fallback,
+	type FontConfig,
+	fonts as blockFonts,
+	type Line,
+	type Mention,
+	type TableCell,
+	type TableRow,
+} from "./parse";
+import "./blocks.css";
+
+const CELL_PAD_X = 8;
+const CELL_PAD_Y = 5;
+const TABLE_BORDER = 1;
+const TABLE_WIDTH = 100000;
+const BLOCK_GAP = 6;
+
+function codeStyle(fonts: FontConfig): CSSProperties {
+	return {
+		paddingInline: INLINE_CODE_PADDING,
+		borderRadius: "var(--radius-sm)",
+		background: "var(--color-muted)",
+		font: fonts.codeFont,
+		lineHeight: `${fonts.lineHeight}px`,
+		whiteSpace: "nowrap",
+	};
+}
+
+function pieces(text: string): string[] {
+	return text.match(/\S+\s*|\s+/g) || [];
+}
+
+type Track = {
+	raw: string;
+	edge: number;
+	cursor: number;
+	active: boolean;
+};
+
+function emojiStyle(fonts: FontConfig): CSSProperties {
+	return {
+		display: "inline-block",
+		blockSize: `${fonts.emojiSize}px`,
+		inlineSize: `${fonts.emojiSize}px`,
+		verticalAlign: "text-bottom",
+		objectFit: "contain",
+	};
+}
+
+function avatarStyle(src: string): CSSProperties {
+	return { backgroundImage: `url(${JSON.stringify(src)})` };
+}
+
+type ReferenceProps =
+	| { kind: "document"; uid: string; name: string }
+	| { kind: "plan"; prefix: boolean };
+
+function LocalReference(props: ReferenceProps) {
+	return (
+		<button
+			type="button"
+			className="document-reference"
+			data-document-uid={props.kind === "document" ? props.uid : undefined}
+			data-document-name={props.kind === "document" ? props.name : undefined}
+			data-plan-reference={props.kind === "plan" ? "" : undefined}
+		>
+			{(props.kind === "document" || props.prefix) && (
+				<span className="document-reference-copy">&amp;</span>
+			)}
+			{props.kind === "plan" ? "plan.md" : props.name}
+		</button>
+	);
+}
+
+function inline(node: Line["nodes"][number], index: number): string {
+	switch (node.kind) {
+		case "mention":
+			return `${index}:mention:${node.name}:${node.avatar || ""}`;
+		case "document":
+			return `${index}:document:${node.uid}:${node.name}:${node.reference}`;
+		case "plan":
+			return `${index}:plan:${node.reference}`;
+		case "emoji":
+			return `${index}:emoji:${node.name}:${node.src || ""}`;
+		case "code":
+		case "text":
+			return `${index}:${node.kind}:${node.text}`;
+		case "link":
+			return `${index}:link:${node.href}:${node.text}`;
+	}
+}
+
+function lineid(line: Line, index: number): string {
+	let key = `${index}:line`;
+	for (let i = 0; i < line.nodes.length; i++) key += ":" + inline(line.nodes[i]!, i);
+	return key;
+}
+
+function nodeid(node: BlockNode, index: number): string {
+	switch (node.kind) {
+		case "paragraph":
+		case "heading":
+			return `${index}:${node.kind}:${node.lines.map(lineid).join("|")}`;
+		case "list":
+			return `${index}:list:${node.items.length}:${node.ordered ? "1" : "0"}`;
+		case "blockquote":
+			return `${index}:blockquote:${node.children.length}`;
+		case "table":
+			return `${index}:table:${node.rows.map(rowid).join("|")}`;
+		case "image":
+			return `${index}:image:${node.src}:${node.alt}`;
+		case "hr":
+			return `${index}:hr`;
+	}
+}
+
+function itemid(item: BlockNode[], index: number): string {
+	let key = `${index}:item`;
+	for (let i = 0; i < item.length; i++) key += ":" + nodeid(item[i]!, i);
+	return key;
+}
+
+function pathid(path: string, index: number): string {
+	return `${path}.${index}`;
+}
+
+function cellid(cell: TableCell, index: number): string {
+	return `${index}:cell:${cell.align || ""}:${cell.header ? "1" : "0"}:${
+		cell.lines.map(lineid).join("|")
+	}`;
+}
+
+function rowid(row: TableRow, index: number): string {
+	return `${index}:row:${row.cells.map(cellid).join("|")}`;
+}
+
+function fresh(track: Track, text: string): boolean {
+	if (!track.active) return false;
+	if (!text.trim()) return false;
+	let index = track.raw.indexOf(text, track.cursor);
+	if (index < 0) index = track.cursor;
+	track.cursor = index + text.length;
+	return index >= track.edge;
+}
+
+/** Measure height and widest line across `lines` in a single Pretext walk. */
+function measureLines(
+	lines: Line[],
+	width: number,
+	lineHeight: number,
+): { height: number; fit: number } {
+	let h = 0, f = 0;
+	for (let line of lines) {
+		if (!line.prepared) {
+			h += lineHeight;
+			continue;
+		}
+		let stats = measureRichInlineStats(line.prepared, width);
+		h += Math.max(1, stats.lineCount) * lineHeight;
+		if (stats.maxLineWidth > f) f = stats.maxLineWidth;
+	}
+	return { height: h, fit: f };
+}
+
+/** Measure a block node tree; returns rendered height and narrowest width that preserves the wrap. */
+function measureNode(
+	node: BlockNode,
+	width: number,
+	lineHeight: number,
+): { height: number; fit: number } {
+	switch (node.kind) {
+		case "paragraph":
+		case "heading":
+			return measureLines(node.lines, width, lineHeight);
+		case "list": {
+			let inner = width - LIST_INDENT;
+			let h = 0, f = 0;
+			for (let item of node.items) {
+				for (let child of item) {
+					let m = measureNode(child, inner, lineHeight);
+					h += m.height;
+					if (m.fit > f) f = m.fit;
+				}
+			}
+			return { height: h, fit: f + LIST_INDENT };
+		}
+		case "blockquote": {
+			let inner = width - QUOTE_INDENT - QUOTE_BORDER;
+			let h = 0, f = 0;
+			for (let child of node.children) {
+				let m = measureNode(child, inner, lineHeight);
+				h += m.height;
+				if (m.fit > f) f = m.fit;
+			}
+			return { height: h, fit: f + QUOTE_INDENT + QUOTE_BORDER };
+		}
+		case "table":
+			return measureTable(node.rows, lineHeight);
+		case "image":
+			return imageBlock(node.src, 0, 0, node.alt).measure(width);
+		case "hr":
+			return { height: lineHeight, fit: 0 };
+	}
+}
+
+function measureTable(rows: TableRow[], lineHeight: number): { height: number; fit: number } {
+	let cols = rows.reduce((max, row) => Math.max(max, row.cells.length), 0);
+	let widths = Array.from({ length: cols }, () => 0);
+	let height = TABLE_BORDER * 2;
+
+	for (let row of rows) {
+		let h = lineHeight + CELL_PAD_Y * 2;
+		for (let i = 0; i < row.cells.length; i++) {
+			let cell = row.cells[i]!;
+			let m = measureLines(cell.lines, TABLE_WIDTH, lineHeight);
+			widths[i] = Math.max(widths[i]!, m.fit);
+			h = Math.max(h, m.height + CELL_PAD_Y * 2);
+		}
+		height += h;
+	}
+
+	let fit = widths.reduce(
+		(sum, width) => sum + Math.ceil(width) + CELL_PAD_X * 2,
+		TABLE_BORDER * 2,
+	);
+	if (cols > 1) fit += cols - 1;
+	return { height, fit };
+}
+
+function measureBlocks(
+	blocks: BlockNode[],
+	width: number,
+	lineHeight: number,
+): { height: number; fit: number } {
+	let h = 0, f = 0;
+	for (let node of blocks) {
+		let m = measureNode(node, width, lineHeight);
+		h += m.height;
+		if (m.fit > f) f = m.fit;
+	}
+	if (blocks.length > 1) h += (blocks.length - 1) * BLOCK_GAP;
+	return { height: h, fit: Math.ceil(f) };
+}
+
+/** Render inline nodes for a single line. */
+function LineView({ line, fonts }: { line: Line; fonts: FontConfig }) {
+	let es = emojiStyle(fonts);
+	let cs = codeStyle(fonts);
+	return (
+		<>
+			{line.nodes.map((node, i) => {
+				let key = inline(node, i);
+				switch (node.kind) {
+					case "mention":
+						return (
+							<span key={key} className="mention">
+								<span className="mention-copy">@</span>
+								{node.avatar && (
+									<span className="mention-avatar" style={avatarStyle(node.avatar)} />
+								)}
+								{node.name}
+							</span>
+						);
+					case "emoji":
+						return node.src
+							? <img key={key} src={node.src} alt={node.name} style={es} />
+							: <span key={key}>:{node.name}:</span>;
+					case "document":
+						return <LocalReference key={key} kind="document" uid={node.uid} name={node.name} />;
+					case "plan":
+						return <LocalReference key={key} kind="plan" prefix={node.reference.startsWith("&")} />;
+					case "code":
+						return <code key={key} style={cs}>{node.text}</code>;
+					case "link":
+						return (
+							<a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
+								{node.text}
+							</a>
+						);
+					case "text": {
+						let el: ReactNode = node.text;
+						if (node.strike) {
+							el = <s>{el}</s>;
+						}
+						if (node.underline) {
+							el = <u>{el}</u>;
+						}
+						if (node.italic) {
+							el = <em>{el}</em>;
+						}
+						if (node.bold) {
+							el = <strong>{el}</strong>;
+						}
+						return <Fragment key={key}>{el}</Fragment>;
+					}
+				}
+			})}
+		</>
+	);
+}
+
+/** Render multiple lines within a block, joined by `<br>`. */
+function LinesView({ lines, fonts }: { lines: Line[]; fonts: FontConfig }) {
+	return (
+		<>
+			{lines.map((line, i) => (
+				<Fragment key={lineid(line, i)}>
+					{i > 0 && <br />}
+					<LineView line={line} fonts={fonts} />
+				</Fragment>
+			))}
+		</>
+	);
+}
+
+function animate(node: ReactNode, key: string, active: boolean) {
+	return (
+		<span key={key} className={active ? "stream-token stream-token-new" : "stream-token"}>
+			{node}
+		</span>
+	);
+}
+
+function adorn(node: ReactNode, source: Line["nodes"][number]) {
+	let el = node;
+	if (source.kind !== "text") return el;
+	if (source.strike) el = <s>{el}</s>;
+	if (source.underline) el = <u>{el}</u>;
+	if (source.italic) el = <em>{el}</em>;
+	if (source.bold) el = <strong>{el}</strong>;
+	return el;
+}
+
+function LineStream({ line, fonts, path, track }: {
+	line: Line;
+	fonts: FontConfig;
+	path: string;
+	track: Track;
+}) {
+	let es = emojiStyle(fonts);
+	let cs = codeStyle(fonts);
+
+	return (
+		<>
+			{line.nodes.map((node, i) => {
+				let key = pathid(path, i);
+				switch (node.kind) {
+					case "mention":
+						return animate(
+							<span className="mention">
+								<span className="mention-copy">@</span>
+								{node.avatar && (
+									<span className="mention-avatar" style={avatarStyle(node.avatar)} />
+								)}
+								{node.name}
+							</span>,
+							key,
+							fresh(track, "@" + node.name),
+						);
+					case "emoji":
+						return animate(
+							node.src
+								? <img src={node.src} alt={node.name} style={es} />
+								: <span>:{node.name}:</span>,
+							key,
+							fresh(track, ":" + node.name + ":"),
+						);
+					case "document":
+						return animate(
+							<LocalReference kind="document" uid={node.uid} name={node.name} />,
+							key,
+							fresh(track, "&" + node.reference),
+						);
+					case "plan":
+						return animate(
+							<LocalReference kind="plan" prefix={node.reference.startsWith("&")} />,
+							key,
+							fresh(track, node.reference),
+						);
+					case "code":
+						return (
+							<code key={key} style={cs}>
+								{pieces(node.text).map((part, j) =>
+									animate(part, pathid(key, j), fresh(track, part))
+								)}
+							</code>
+						);
+					case "link":
+						return (
+							<a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
+								{pieces(node.text).map((part, j) =>
+									animate(part, pathid(key, j), fresh(track, part))
+								)}
+							</a>
+						);
+					case "text":
+						return (
+							<Fragment key={key}>
+								{pieces(node.text).map((part, j) =>
+									animate(adorn(part, node), pathid(key, j), fresh(track, part))
+								)}
+							</Fragment>
+						);
+				}
+			})}
+		</>
+	);
+}
+
+function LinesStream({ lines, fonts, path, track }: {
+	lines: Line[];
+	fonts: FontConfig;
+	path: string;
+	track: Track;
+}) {
+	return (
+		<>
+			{lines.map((line, i) => (
+				<Fragment key={pathid(path, i)}>
+					{i > 0 && <br />}
+					<LineStream line={line} fonts={fonts} path={pathid(path, i)} track={track} />
+				</Fragment>
+			))}
+		</>
+	);
+}
+
+function NodeStream({ node, fonts, path, track, width }: {
+	node: BlockNode;
+	fonts: FontConfig;
+	path: string;
+	track: Track;
+	width: number;
+}) {
+	switch (node.kind) {
+		case "paragraph":
+			return (
+				<p>
+					<LinesStream lines={node.lines} fonts={fonts} path={path} track={track} />
+				</p>
+			);
+		case "heading":
+			return (
+				<p>
+					<strong>
+						<LinesStream lines={node.lines} fonts={fonts} path={path} track={track} />
+					</strong>
+				</p>
+			);
+		case "list": {
+			let inner = Math.max(0, width - LIST_INDENT);
+			let items = node.items.map((item, i) => (
+				<li key={pathid(path, i)}>
+					{item.map((child, j) => (
+						<NodeStream
+							key={pathid(pathid(path, i), j)}
+							node={child}
+							fonts={fonts}
+							path={pathid(pathid(path, i), j)}
+							track={track}
+							width={inner}
+						/>
+					))}
+				</li>
+			));
+			return node.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
+		}
+		case "blockquote":
+			let inner = Math.max(0, width - QUOTE_INDENT - QUOTE_BORDER);
+			return (
+				<blockquote>
+					{node.children.map((child, i) => (
+						<NodeStream
+							key={pathid(path, i)}
+							node={child}
+							fonts={fonts}
+							path={pathid(path, i)}
+							track={track}
+							width={inner}
+						/>
+					))}
+				</blockquote>
+			);
+		case "table":
+			return <TableView rows={node.rows} fonts={fonts} />;
+		case "image":
+			return <ImageNodeView node={node} width={width} />;
+		case "hr":
+			return <hr className="stream-token" />;
+	}
+}
+
+function Stream({ blocks, fonts, compact, raw, active, height, width }: {
+	blocks: BlockNode[];
+	fonts: FontConfig;
+	compact: boolean;
+	raw: string;
+	active: boolean;
+	height: number;
+	width: number;
+}) {
+	let edge = useRef(raw.length);
+	let track = { raw, edge: edge.current, cursor: 0, active };
+	let cls = compact ? "content thinking streaming" : "content streaming";
+	if (active) cls += " streaming-live";
+
+	useEffect(() => {
+		edge.current = raw.length;
+	}, [raw]);
+
+	return (
+		<div
+			className={cls}
+			style={{
+				blockSize: height,
+				boxSizing: "border-box",
+				display: "flex",
+				flexDirection: "column",
+				gap: BLOCK_GAP,
+				font: fonts.font,
+				lineHeight: `${fonts.lineHeight}px`,
+				overflow: "hidden",
+			}}
+		>
+			{blocks.map((node, i) => (
+				<NodeStream
+					key={pathid("node", i)}
+					node={node}
+					fonts={fonts}
+					path={pathid("node", i)}
+					track={track}
+					width={width}
+				/>
+			))}
+		</div>
+	);
+}
+
+function TextView({ blocks, fonts, compact, raw, streaming, height, width }: {
+	blocks: BlockNode[];
+	fonts: FontConfig;
+	compact: boolean;
+	raw: string;
+	streaming: boolean;
+	height: number;
+	width: number;
+}) {
+	let [live, set] = useState(false);
+
+	useEffect(() => {
+		if (streaming) {
+			set(true);
+			return;
+		}
+		if (!live) return;
+		let id = setTimeout(() => set(false));
+		return () => clearTimeout(id);
+	}, [streaming, live]);
+
+	let active = streaming || live;
+	if (active) {
+		return (
+			<Stream
+				blocks={blocks}
+				fonts={fonts}
+				compact={compact}
+				raw={raw}
+				active={streaming}
+				height={height}
+				width={width}
+			/>
+		);
+	}
+
+	return (
+		<div
+			className={compact ? "content thinking" : "content"}
+			style={{
+				blockSize: height,
+				boxSizing: "border-box",
+				display: "flex",
+				flexDirection: "column",
+				gap: BLOCK_GAP,
+				font: fonts.font,
+				lineHeight: `${fonts.lineHeight}px`,
+				overflow: "hidden",
+			}}
+		>
+			{blocks.map((node, i) => (
+				<NodeView key={nodeid(node, i)} node={node} fonts={fonts} width={width} />
+			))}
+		</div>
+	);
+}
+
+/** Render a block node as semantic HTML. */
+function NodeView({ node, fonts, width }: { node: BlockNode; fonts: FontConfig; width: number }) {
+	switch (node.kind) {
+		case "paragraph":
+			return (
+				<p>
+					<LinesView lines={node.lines} fonts={fonts} />
+				</p>
+			);
+		case "heading":
+			return (
+				<p>
+					<strong>
+						<LinesView lines={node.lines} fonts={fonts} />
+					</strong>
+				</p>
+			);
+		case "list": {
+			let inner = Math.max(0, width - LIST_INDENT);
+			let items = node.items.map((item, i) => (
+				<li key={itemid(item, i)}>
+					{item.map((child, j) => (
+						<NodeView key={nodeid(child, j)} node={child} fonts={fonts} width={inner} />
+					))}
+				</li>
+			));
+			return node.ordered ? <ol>{items}</ol> : <ul>{items}</ul>;
+		}
+		case "blockquote":
+			let inner = Math.max(0, width - QUOTE_INDENT - QUOTE_BORDER);
+			return (
+				<blockquote>
+					{node.children.map((child, i) => (
+						<NodeView key={nodeid(child, i)} node={child} fonts={fonts} width={inner} />
+					))}
+				</blockquote>
+			);
+		case "table":
+			return <TableView rows={node.rows} fonts={fonts} />;
+		case "image":
+			return <ImageNodeView node={node} width={width} />;
+		case "hr":
+			return <hr />;
+	}
+}
+
+function ImageNodeView(
+	{ node, width }: { node: Extract<BlockNode, { kind: "image" }>; width: number },
+) {
+	return imageBlock(node.src, 0, 0, node.alt).render(width);
+}
+
+function TableView({ rows, fonts }: { rows: TableRow[]; fonts: FontConfig }) {
+	let height = measureTable(rows, fonts.lineHeight).height;
+
+	return (
+		<div className="table-wrap" style={{ blockSize: height, boxSizing: "border-box" }}>
+			<table>
+				<tbody>
+					{rows.map((row, i) => (
+						<tr key={rowid(row, i)}>
+							{row.cells.map((cell, j) => {
+								let style = {
+									paddingBlock: CELL_PAD_Y,
+									paddingInline: CELL_PAD_X,
+									textAlign: cell.align,
+								};
+								return cell.header
+									? (
+										<th
+											key={cellid(cell, j)}
+											style={style}
+										>
+											<LinesView lines={cell.lines} fonts={fonts} />
+										</th>
+									)
+									: (
+										<td
+											key={cellid(cell, j)}
+											style={style}
+										>
+											<LinesView lines={cell.lines} fonts={fonts} />
+										</td>
+									);
+							})}
+						</tr>
+					))}
+				</tbody>
+			</table>
+		</div>
+	);
+}
+
+/** Rich text block with full markdown support (paragraphs, lists, quotes, inline formatting). */
+function text(
+	raw: string,
+	mentions?: Mention[],
+	compact = false,
+	streaming = false,
+	parsed?: BlockNode[],
+	plan = false,
+): Block {
+	let fonts = blockFonts(compact);
+	let blocks = parsed || fallback(raw, mentions, fonts, plan);
+	let sizes = new Map<number, { height: number; fit: number }>();
+	let size = (width: number) => {
+		let hit = sizes.get(width);
+		if (hit) return hit;
+		let value = measureBlocks(blocks, width, fonts.lineHeight);
+		sizes.set(width, value);
+		return value;
+	};
+
+	let block: Block & { streaming: boolean } = {
+		streaming,
+		measure(width) {
+			return size(width);
+		},
+		render(width) {
+			let height = size(width).height;
+			return (
+				<TextView
+					blocks={blocks}
+					fonts={fonts}
+					compact={compact}
+					raw={raw}
+					streaming={block.streaming}
+					height={height}
+					width={width}
+				/>
+			);
+		},
+	};
+	return block;
+}
+
+export { text };

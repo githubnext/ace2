@@ -1,0 +1,248 @@
+/* Shared content styles — chat blocks + rich-text editor.
+   Syntax highlighting tokens (--syntax-*) live in `../styles/syntax.css`. */
+
+@reference "../../shadcn.css";
+
+.content {
+	--content-table-border: color-mix(
+		in oklch,
+		var(--color-border) 82%,
+		var(--color-muted-foreground)
+	);
+
+	&,
+	& * {
+		user-select: text;
+	}
+
+	&.thinking {
+		color: var(--color-muted-foreground);
+	}
+
+	p {
+		margin: 0;
+	}
+
+	strong {
+		font-weight: 700;
+	}
+
+	em {
+		font-style: italic;
+	}
+
+	u {
+		text-decoration: underline;
+	}
+
+	s {
+		text-decoration: line-through;
+		opacity: 0.6;
+	}
+
+	a {
+		color: var(--color-primary);
+		text-decoration: underline;
+		text-underline-offset: 0.125rem;
+	}
+
+	ul,
+	ol {
+		margin: 0;
+		padding-inline-start: 1.25rem; /* LIST_INDENT */
+		list-style-position: outside;
+	}
+
+	ul {
+		list-style-type: disc;
+	}
+
+	ol {
+		list-style-type: decimal;
+	}
+
+	blockquote {
+		margin: 0;
+		padding-inline-start: 0.5rem; /* QUOTE_INDENT */
+		border-inline-start: 2px solid var(--color-border); /* QUOTE_BORDER */
+		color: var(--color-muted-foreground);
+		font: inherit;
+		line-height: inherit;
+	}
+
+	.table-wrap {
+		@apply scrollbar-none;
+
+		overflow-x: auto;
+		overflow-y: hidden;
+		border-radius: var(--radius-sm);
+		border: 1px solid var(--content-table-border);
+	}
+
+	table {
+		inline-size: max-content;
+		min-inline-size: 100%;
+		border-collapse: separate;
+		border-spacing: 0;
+	}
+
+	th,
+	td {
+		white-space: nowrap;
+		vertical-align: top;
+		box-shadow:
+			inset -1px 0 0 var(--content-table-border),
+			inset 0 -1px 0 var(--content-table-border);
+	}
+
+	th {
+		font-weight: 600;
+		color: var(--color-foreground);
+		background: color-mix(in oklch, var(--color-muted) 40%, transparent);
+	}
+
+	tr:last-child > th,
+	tr:last-child > td {
+		box-shadow: inset -1px 0 0 var(--content-table-border);
+	}
+
+	tr > :last-child {
+		box-shadow: inset 0 -1px 0 var(--content-table-border);
+	}
+
+	tr:last-child > :last-child {
+		box-shadow: none;
+	}
+
+	hr {
+		display: block;
+		block-size: 1lh;
+		inline-size: 100%;
+		margin: 0;
+		border: 0;
+		background: linear-gradient(
+			to bottom,
+			transparent calc(50% - 0.5px),
+			color-mix(in oklch, var(--color-border) 70%, transparent) calc(50% - 0.5px),
+			color-mix(in oklch, var(--color-border) 70%, transparent) calc(50% + 0.5px),
+			transparent calc(50% + 0.5px)
+		);
+	}
+
+	code {
+		@apply squircle;
+		padding-inline: 2px;
+		border-radius: var(--r-sm);
+		background: var(--color-code);
+		font-family: ui-monospace, monospace;
+	}
+
+	li > p {
+		margin: 0;
+	}
+
+	.mention {
+		display: inline-flex;
+		align-items: center;
+		gap: 0.1875rem;
+		border-radius: 9999px;
+		padding: 0.0625rem 0.375rem 0.0625rem 0.0625rem;
+		font-size: 0.75rem;
+		line-height: 1;
+		font-weight: 600;
+		background: color-mix(in oklch, var(--color-primary) 15%, transparent);
+		color: var(--color-primary);
+		vertical-align: middle;
+		translate: 0 -0.0625rem;
+		user-select: text;
+	}
+
+	.mention-copy {
+		position: absolute;
+		inline-size: 1px;
+		block-size: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.document-reference {
+		display: inline-flex;
+		align-items: center;
+		appearance: none;
+		margin: 0;
+		padding: 0.0625rem 0.375rem;
+		border: 0;
+		border-radius: var(--radius-sm);
+		background: color-mix(in oklch, var(--color-primary) 12%, transparent);
+		color: var(--color-primary);
+		font-family: inherit;
+		font-size: 0.75rem;
+		font-weight: 600;
+		line-height: 1;
+		white-space: nowrap;
+		vertical-align: middle;
+		translate: 0 -0.0625rem;
+		user-select: text;
+	}
+
+	button.document-reference {
+		cursor: pointer;
+		transition: background-color 150ms;
+
+		&:hover {
+			background: color-mix(in oklch, var(--color-primary) 20%, transparent);
+		}
+
+		&:focus-visible {
+			outline: 2px solid var(--color-ring);
+			outline-offset: 1px;
+		}
+	}
+
+	.document-reference-copy {
+		position: absolute;
+		inline-size: 1px;
+		block-size: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+
+	.mention-avatar {
+		inline-size: 0.875rem;
+		block-size: 0.875rem;
+		border-radius: 9999px;
+		background-size: cover;
+		background-position: center;
+		background-repeat: no-repeat;
+		user-select: none;
+	}
+}
+
+.stream-token {
+	display: inline;
+}
+
+hr.stream-token {
+	display: block;
+}
+
+.streaming-live .stream-token-new {
+	animation: stream-token-in 520ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes stream-token-in {
+	from {
+		opacity: 0;
+	}
+	to {
+		opacity: 1;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.streaming-live .stream-token-new {
+		animation: none;
+	}
+}

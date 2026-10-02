@@ -1,0 +1,17 @@
+export const FONT = "14px 'Inter Variable', sans-serif";
+export const SMALL_FONT = "12px 'Inter Variable', sans-serif";
+export const CODE_FONT = "14px ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";
+export const SMALL_CODE_FONT = "12px ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace";
+export const LINE_HEIGHT = 22;
+export const SMALL_LINE_HEIGHT = 18;
+export const EMOJI_SIZE = 18;
+export const SMALL_EMOJI_SIZE = 14;
+export const CODE_LINE_HEIGHT = 20;
+export const CODE_PADDING = 12;
+export const CODE_LABEL_HEIGHT = 16;
+export const INLINE_CODE_PADDING = 2;
+export const FILE_HEIGHT = 48;
+export const SYSTEM_HEIGHT = 32;
+export const LIST_INDENT = 20;
+export const QUOTE_INDENT = 8;
+export const QUOTE_BORDER = 2;
