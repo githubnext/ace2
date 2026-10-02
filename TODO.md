@@ -11,7 +11,8 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 
 - **Rebuild Ace from Ace.** The installed Ace is a separate build from the checkout agents edit.
   Rebuilding and reinstalling it must not lose channels or runs in progress; check an update
-  during a run.
+  during a run. Use the same Apple signing identity for installed development builds; ad-hoc
+  signatures can leave macOS rejecting the updated helper.
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.

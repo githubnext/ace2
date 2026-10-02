@@ -99,8 +99,11 @@ and Ace's grouped permission in macOS background-item settings.
 - Replacing the helper in place inside an installed ad-hoc test bundle triggered a macOS launch
   constraint rejection. A later smoke check verified unregistering the old helper and replacing
   the whole bundle with fresh files at the same path: the existing app and service identity,
-  projects, and channels survived. Signing and the signed upgrade path still need validation.
-  Startup dialogs include the full failure message.
+  projects, and channels survived. Updating the existing Ace-dev install still hit the rejection,
+  so fresh files alone do not make ad-hoc upgrades reliable. Development builds accept an
+  Apple-issued identity through `ACE_CODESIGN_IDENTITY`. Startup dialogs include the full failure
+  message. The signed 0.0.2 update passed authenticated helper startup after refreshing the app's
+  LaunchServices registration, preserving the existing channel and both provider Keychain items.
 - The final fresh install under `/Applications` passed authenticated startup and native Settings,
   ignored the unrelated `.env`, and kept the helper available after the UI exited. Removed the
   temporary apps, service registrations, Keychain entries, and channel data.
@@ -145,6 +148,14 @@ Use the development `Ace-dev.app` from `apps/desktop/dist/dev-macos-arm64`, copi
 plus `~/Library/Application Support/Ace-dev` for preferences. Build it with `bun run stage` then
 `ACE_BUILD_CHANNEL=dev bunx electrobun build --env=dev` from `apps/desktop`.
 
+For an installed development build, set `ACE_CODESIGN_IDENTITY` to the SHA-1 identity reported by
+`security find-identity -v -p codesigning` when building. Use the same valid Apple Development
+identity for subsequent builds. The hook signs every native executable and the app with that
+identity. Without it, the build uses ad-hoc signing for isolated checks. Apple recommends an
+[Apple-issued identity for both the app and helper](https://developer.apple.com/forums/thread/799910)
+when testing service management; ad-hoc updates can fail macOS launch constraints.
+Increment the desktop package version before distributing another installed build.
+
 On first launch, enable Ace Helper, then press Cmd+O to open a project folder. Verify that the
 dashboard opens with no provider key and that opening a folder creates no channel. Add a provider
 key in Settings before starting an agent. Check the Dashboard and Channels navigation, project
@@ -156,8 +167,12 @@ required to run the installed bundle. This build is signed locally, not notarize
 When replacing a development install, stop Ace Helper in Settings → This Mac and quit Ace first.
 Move the old bundle aside and copy the new bundle into `/Applications` as a complete directory;
 do not overwrite executables inside the installed bundle. Start Ace and enable Ace Helper again.
-Keep the `ace-dev` data, preferences, and Keychain service. A changed ad-hoc signature may require
-approving Keychain access again. Signed updates still need their own distribution validation.
+For a scripted copy, refresh the app's LaunchServices registration with
+`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Ace-dev.app`
+before registering its helper.
+Keep the `ace-dev` data, preferences, and Keychain service. Changing the signing identity may
+require approving Keychain access again. Signed distribution updates still need their own
+validation.
 
 ## Browser development
 

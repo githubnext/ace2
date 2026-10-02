@@ -32,7 +32,7 @@
     },
     "apps/desktop": {
       "name": "@ace/desktop",
-      "version": "0.0.1",
+      "version": "0.0.2",
       "dependencies": {
         "@ace/host": "workspace:*",
         "electrobun": "catalog:desktop",
