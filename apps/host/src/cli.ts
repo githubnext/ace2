@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import type { ChannelInfo, ChatId, Event } from "@ace/channel/protocol";
 
 import { appUrl, token } from "./auth";
+import { backup } from "./backup";
 import * as catalog from "./catalog";
 import { Connection, request } from "./client";
 import { config } from "./config";
@@ -34,6 +35,7 @@ const HELP = `ace — channels on this host
   ace new [--project <dir>] [--name <name>] [--model <provider/id>] [--hosted <url>]
   ace ls [--all]
   ace info <channel>
+  ace backup <channel> <directory>              snapshot local channel data into a new directory
   ace say <channel> [--chat <id>] <text…>        post without invoking the agent
   ace ask <channel> [--chat <id>] [--model <provider/id>] [--detach] <text…>
   ace watch <channel> [--chat <id>]
@@ -240,6 +242,11 @@ async function main() {
 	const record = catalog.find(ref);
 	const text = rest.join(" ");
 	switch (command) {
+		case "backup":
+			if (rest.length !== 1) throw new Error("ace backup <channel> <new-directory>");
+			console.log(await backup(record, rest[0]!));
+			console.log("Channel data saved. Back up project files and lane worktrees separately.");
+			return;
 		case "info":
 			return console.log(JSON.stringify(await request(record.id, { op: "info" }), null, 2));
 		case "say":

@@ -16,6 +16,9 @@ to change.
 - Client protocol types live in `@ace/channel/protocol`. Clients import them; don't copy them.
 - Durable channel state belongs to pi-durable. Don't add a second store for messages, runs, or
   chats.
+- Existing channels are permanent data. Stored format changes need versioned migrations and a
+  check against a backup of an existing channel; never reset a store to make an upgrade work.
+  See [channel data](docs/data.md) for storage locations, backups, and recovery.
 
 ## Coding
 
@@ -46,6 +49,7 @@ to change.
 ```sh
 bun install
 bun ace --help   # CLI
+bun ace backup <channel> <new-directory>  # local channel data, including committed WAL entries
 bun types        # type checks
 bun run ci       # dprint + oxlint
 bun run fix      # apply formatting and lint fixes

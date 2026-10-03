@@ -53,6 +53,10 @@ directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clien
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
 
+Channel data survives app replacement and upgrades. `ace backup` takes a verified SQLite snapshot
+of a local channel while it runs, alongside its catalog record. Project files and lane worktrees
+have their own repository backup. Stored format changes require migrations; see [data](data.md).
+
 Opening a folder adds a project to the host's `projects.json`, independently of channel creation
 or model credentials. This is a list of local folders, not channel history. Existing catalog
 channels also contribute their project paths. Only local owner connections can read or change

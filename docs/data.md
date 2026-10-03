@@ -1,0 +1,75 @@
+# Channel data
+
+Channel data is permanent from the first dogfood channel. Updating or replacing Ace must preserve
+it. pi-durable owns the database format, messages, runs, tool results, chats, and their state.
+
+## Locations
+
+| Data                                         | Location                                              |
+| -------------------------------------------- | ----------------------------------------------------- |
+| Stable channel catalog, databases, and lanes | `~/.local/state/ace/channels/<id>/`                   |
+| Canary channel catalog, databases, and lanes | `~/.local/state/ace-canary/channels/<id>/`            |
+| Development channels                         | `~/.local/state/ace-dev/channels/<id>/`               |
+| Opened projects                              | `<ACE_HOME>/projects.json`                            |
+| Preferences on macOS                         | `~/Library/Application Support/Ace/settings.json`     |
+| Provider credentials                         | OS Keychain; never in channel metadata or preferences |
+
+`ACE_HOME` overrides the host data directory. Canary and development preferences have the same
+`-canary` and `-dev` suffixes. A source CLI uses the stable profile unless given `ACE_HOME`; target
+the installed app's profile explicitly when backing it up.
+
+Each channel directory holds `channel.json`, pi's `channel.sqlite`, and `lanes/`. SQLite may have
+committed data in `channel.sqlite-wal`, so copying only a live `channel.sqlite` is not a backup.
+The socket, worker PID, and logs are process state, not durable channel content.
+
+## Back up a local channel
+
+Run `bun ace backup <channel> <new-directory>` from the checkout, or `ace backup` from an installed
+CLI. The destination's parent must exist; the destination itself must be new. Backups include
+archived channels and work without starting dormant workers or loading provider credentials.
+
+The command uses SQLite's [VACUUM INTO](https://www.sqlite.org/lang_vacuum.html#vacuum_with_an_into_clause)
+to capture a consistent snapshot, including committed WAL entries, while a worker continues
+running. It opens the source read-only, checks the output's integrity, and writes:
+
+- `channel.json`: the channel's identity, owner, project, and model.
+- `channel.sqlite`: all pi state at the snapshot point, if the channel has been opened before.
+- `backup.json`: format version, source paths, creation time, and SHA-256 checksums. This file is
+  written last to mark a complete backup. Failed backups remove only their newly created output.
+
+The directory and files are private to the current OS user. Store backups with the same care as
+the original chats and tool output. Hosted channels need backups from their hosting service;
+their local catalog entry is insufficient.
+
+Project files, lane worktrees (including uncommitted and untracked changes), repository Git data,
+opened-project preferences, and Keychain items need their own backups. A channel snapshot keeps
+the original working-directory paths; it is not a way to move lanes to another machine.
+
+## Recover on the same machine
+
+1. Keep the backup untouched and verify its files against the SHA-256 values in `backup.json`.
+2. Stop Ace Helper in Settings and stop any command-line host for this profile. Ensure the
+   affected worker has exited. Quitting only the desktop window leaves the helper running.
+3. Preserve the current channel directory and its lane worktrees before changing anything. Keep
+   the repositories and lanes at the paths recorded by the channel.
+4. In the original channel directory, move the current `channel.json`, `channel.sqlite`, and any
+   `channel.sqlite-wal` or `channel.sqlite-shm` aside together. Copy the backup's catalog record
+   and database into their place. A never-opened channel backup has no database. Do not restore
+   sockets or worker PID files, or leave old SQLite sidecars next to the restored database.
+5. Start the helper again and open the channel. An unfinished run in the snapshot can resume;
+   pi reports interrupted tools that cannot safely be rerun. Do not run a second copy of the same
+   snapshot against the same lane paths.
+
+Automated restore and moving backups across machines are not implemented.
+
+## Upgrade contract
+
+Keep existing channel IDs, entry kinds, document kinds, and path meanings stable. A format change
+must include a versioned migration and a check using a copy of an existing channel. Preserve the
+source backup until the new version has reopened its chats and resumed real model work.
+
+pi-durable applies its SQLite schema migrations transactionally and refuses databases from a
+newer schema. Ace must use those migrations rather than rewrite pi tables or replace a database.
+For Ace-owned catalog or preference format changes, migrate old records explicitly before using
+the new form. An unreadable or newer store must produce an actionable error, never an empty
+replacement channel. Release validation must exercise existing data as well as fresh installs.

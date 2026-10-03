@@ -17,8 +17,6 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
-- **Durable data.** Settle where channel data lives, add backup or export, and from the first
-  dogfood channel on, never break existing channels without a migration.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
   confirm this one does.
 
