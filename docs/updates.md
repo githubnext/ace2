@@ -105,6 +105,28 @@ bytes at an existing archive URL. It uploads and downloads the archive to verify
 then uploads and reads back the feed. The feed is the final commit point. Channel releases are
 serialized by the workflow.
 
+## Building from Ace
+
+An agent in an Ace channel can use its shell tool to run `bun desktop ci canary` from its lane.
+The machine needs Bun, Git, and an authenticated GitHub CLI (`gh auth login`) with permission to
+run this repository's workflows. Commit and push the lane first. The command refuses uncommitted
+changes or a remote branch that differs from the lane, and pins the build to that exact commit.
+Apple, Sparkle, and R2 credentials stay in the GitHub release environment.
+
+The command returns immediately with the workflow URL and run ID. Use `bun desktop ci status
+<run-id>` to follow progress, then `bun desktop ci download <run-id>` to retrieve the successful
+build. Downloads go under `apps/desktop/artifacts/ci/<run-id>/`; the command checks the DMG's
+SHA-256 against its release manifest and reports the source revision.
+
+Use `stable` instead of `canary` for the main app. Building does not publish; add `--publish`
+explicitly to build and publish a release. New builds are refused during 22:00–02:00 UTC, and
+the workflow checks that window again before loading credentials. Status and downloads work at
+any time. Native app inspection is still a separate dogfooding gap.
+
+Keep the same Developer ID identity for installed development builds with
+`ACE_CODESIGN_IDENTITY`; replacing one with an ad-hoc signature can invalidate Ace Helper's
+macOS background permission.
+
 ## Credentials and first release
 
 Release credentials are backed up in **1Password → Dev → Ace desktop releases**. Both GitHub

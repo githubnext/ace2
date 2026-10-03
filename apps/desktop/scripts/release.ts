@@ -24,6 +24,7 @@ export function signedTool(command: string[]): void {
 
 export type Release = {
 	version: string;
+	revision: string;
 	channel: string;
 	archive: string;
 	url: string;
@@ -36,6 +37,13 @@ async function release(): Promise<void> {
 	if (!/^\d+\.\d+\.\d+$/.test(version)) {
 		throw new Error("Use an incrementing x.y.z desktop version");
 	}
+	const changes = Bun.spawnSync(["git", "status", "--porcelain"], { cwd: root });
+	if (!changes.success || changes.stdout.length) {
+		throw new Error("Commit the lane's changes before making a release");
+	}
+	const source = Bun.spawnSync(["git", "rev-parse", "HEAD"], { cwd: root });
+	if (!source.success) throw new Error("Cannot determine the release's source revision");
+	const revision = source.stdout.toString().trim();
 	const identity = required("ACE_CODESIGN_IDENTITY");
 	const origin = new URL(required("ACE_UPDATE_URL"));
 	if (
@@ -170,7 +178,7 @@ async function release(): Promise<void> {
 		writeFileSync(
 			join(output, "release.json"),
 			JSON.stringify(
-				{ version, channel, archive: filename, url, sha256 } satisfies Release,
+				{ version, revision, channel, archive: filename, url, sha256 } satisfies Release,
 				null,
 				"\t",
 			),

@@ -3,12 +3,13 @@
 	"private": true,
 	"type": "module",
 	"license": "MIT",
-	"version": "0.0.3",
+	"version": "0.0.4",
 	"exports": { "./protocol": "./src/protocol.ts" },
 	"scripts": {
 		"stage": "bun scripts/stage.ts",
 		"dev": "bun scripts/build.ts dev --run",
 		"build": "bun scripts/build.ts",
+		"ci": "bun scripts/ci.ts",
 		"release": "bun scripts/release.ts",
 		"publish": "bun scripts/publish.ts",
 		"types": "tsgo --noEmit"

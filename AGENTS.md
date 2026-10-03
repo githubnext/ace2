@@ -49,7 +49,11 @@ bun ace --help   # CLI
 bun types        # type checks
 bun run ci       # dprint + oxlint
 bun run fix      # apply formatting and lint fixes
+bun desktop ci canary  # signed desktop build from a clean, pushed lane
 ```
+
+An Ace channel can build releases with its shell tool; see [desktop updates](docs/updates.md)
+for status, downloads, and explicit publishing. Signing credentials stay in GitHub.
 
 ## Commits
 

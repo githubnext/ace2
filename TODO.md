@@ -9,10 +9,11 @@ Dogfooding means everyone who works on Ace does all Ace development in Ace. If A
 surface (channels, diffs, terminals), use Ace's. When something forces another tool, the PR says
 so (see [the PR template](.github/pull_request_template.md)) and the gap goes here.
 
-- **Rebuild Ace from Ace.** Connect the signed release workflow to Ace so development agents can
-  build and publish updates. The updater lane used Codex's local tools because Ace does not yet
-  expose packaging or native app inspection. Keep the same Apple signing identity for installed
-  development builds; ad-hoc signatures can leave macOS rejecting the updated helper.
+- **Rebuild Ace from Ace.** Verify the first signed build through an Ace channel using
+  `bun desktop ci canary`, including status and artifact download. The command pins the pushed
+  lane's commit and keeps signing credentials in GitHub; publishing requires `--publish`.
+  Keep the same Apple signing identity for installed development builds; ad-hoc signatures can
+  leave macOS rejecting the updated helper.
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
