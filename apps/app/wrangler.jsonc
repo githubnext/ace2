@@ -1,0 +1,11 @@
+{
+	"$schema": "../../node_modules/wrangler/config-schema.json",
+	// The web app for devices away from their host, e.g. a phone. It holds no data and no
+	// credentials: it reaches the person's own host over the tailnet (see apps/host/src/web.ts).
+	"name": "ace-app",
+	"compatibility_date": "2026-09-25",
+	"assets": {
+		"directory": "./dist-web",
+		"not_found_handling": "single-page-application",
+	},
+}

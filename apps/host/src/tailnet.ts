@@ -21,7 +21,8 @@ type Node = {
 	Tags?: string[];
 };
 
-export type Machine = { name: string; login: string; address: string };
+/** `dns` is the full MagicDNS name, which browsers and certificates use. */
+export type Machine = { name: string; login: string; address: string; dns: string };
 
 function executable(): string | undefined {
 	const path = Bun.which("tailscale");
@@ -62,6 +63,7 @@ async function run(args: string[]): Promise<unknown> {
 function machine(node: Node, status: Status): Machine {
 	return {
 		name: node.DNSName.split(".")[0] || node.HostName,
+		dns: node.DNSName.replace(/\.$/, ""),
 		login: status.User?.[node.UserID]?.LoginName ?? "",
 		address: node.TailscaleIPs.find((ip) => isIP(ip) === 4) ?? node.TailscaleIPs[0]!,
 	};
@@ -110,6 +112,24 @@ export function tailnet(ip: string): string | undefined {
 		return a === 100 && b! >= 64 && b! <= 127 ? plain : undefined;
 	}
 	return plain.toLowerCase().startsWith("fd7a:115c:a1e0:") ? plain : undefined;
+}
+
+/** A certificate for this machine's MagicDNS name, when the tailnet has HTTPS enabled. */
+export async function certificate(
+	dns: string,
+	dir: string,
+): Promise<{ cert: string; key: string }> {
+	if (!binary) throw new Error("Tailscale is not installed");
+	const cert = join(dir, "tailnet.crt");
+	const key = join(dir, "tailnet.key");
+	const child = Bun.spawn([binary, "cert", "--cert-file", cert, "--key-file", key, dns], {
+		env: options().env,
+		stdout: "ignore",
+		stderr: "pipe",
+	});
+	const [error, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+	if (code !== 0) throw new Error(error.trim().split("\n").at(-1) || "tailscale cert failed");
+	return { cert, key };
 }
 
 /** The person behind an inbound TCP connection, as Tailscale verified it. Tagged nodes are refused. */

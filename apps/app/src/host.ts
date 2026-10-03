@@ -1,5 +1,7 @@
 import { GatewayClient } from "@ace/host/gateway-client";
 
+import { gateway } from "./address";
+
 declare global {
 	interface Window {
 		__ACE_TOKEN__?: string;
@@ -21,11 +23,15 @@ if (fragment.has("token")) {
 	);
 }
 
-const scheme = location.protocol === "https:" ? "wss:" : "ws:";
-export const host = new GatewayClient(
-	import.meta.env.VITE_ACE_HOST || `${scheme}//${location.host}/ws`,
-	token,
-);
+// main.tsx loads the app only once there is a gateway to reach.
+export const host = new GatewayClient(gateway!, token);
+
+// Phones suspend backgrounded pages; reconnect as soon as the person comes back.
+for (const event of ["visibilitychange", "online", "pageshow"]) {
+	window.addEventListener(event, () => {
+		if (document.visibilityState === "visible") host.wake();
+	});
+}
 
 const opens = new Set<() => void>();
 host.onOpen = () => {

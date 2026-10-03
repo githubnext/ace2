@@ -14,6 +14,8 @@ export const config = {
 	user: process.env.ACE_USER,
 	model: process.env.ACE_MODEL,
 	port: Number(process.env.ACE_PORT || 4140),
+	/** HTTPS for browsers on the tailnet; defaults to port + 1000. */
+	webPort: process.env.ACE_WEB_PORT ? Number(process.env.ACE_WEB_PORT) : undefined,
 	peerPort: process.env.ACE_PEER_PORT ? Number(process.env.ACE_PEER_PORT) : undefined,
 	app: process.env.ACE_APP_DIR || fileURLToPath(new URL("../../app/dist", import.meta.url)),
 	appUrl: process.env.ACE_APP_URL,

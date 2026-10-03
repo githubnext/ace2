@@ -24,10 +24,11 @@ import {
 	type HostRequest,
 	type Listing,
 } from "./protocol";
-import { self, whois } from "./tailnet";
+import { type Machine, self, whois } from "./tailnet";
 import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
 import { resume, shutdown } from "./shutdown";
 import * as terminals from "./terminals";
+import * as web from "./web";
 import * as workspace from "./workspace";
 
 type Client = {
@@ -377,6 +378,23 @@ function client(user: string, peer: boolean, local = false): Client {
 	return { user, peer, local, channels: new Map(), remotes: new Map(), terminals: new Map() };
 }
 
+async function serveApp(url: URL): Promise<Response> {
+	const dir = config.app;
+	if (!existsSync(dir)) {
+		return new Response("The app is not built; run bun app build", { status: 404 });
+	}
+	const file = Bun.file(join(dir, url.pathname));
+	const headers = {
+		"Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
+		"Referrer-Policy": "no-referrer",
+		"X-Content-Type-Options": "nosniff",
+	};
+	if (url.pathname !== "/" && !url.pathname.includes("..") && await file.exists()) {
+		return new Response(file, { headers });
+	}
+	return new Response(Bun.file(join(dir, "index.html")), { headers });
+}
+
 /** The owner's listener: loopback only, serving the app. */
 function owner(port: number): Server<Client> {
 	const access = auth.owner(port);
@@ -417,18 +435,7 @@ function owner(port: number): Server<Client> {
 					? undefined
 					: new Response("Upgrade failed", { status: 400 });
 			}
-			const dir = config.app;
-			if (!existsSync(dir)) {
-				return new Response("The app is not built; run bun app build", { status: 404 });
-			}
-			const file = Bun.file(join(dir, url.pathname));
-			const headers = {
-				"Content-Security-Policy": "frame-ancestors 'none'; object-src 'none'; base-uri 'none'",
-				"Referrer-Policy": "no-referrer",
-				"X-Content-Type-Options": "nosniff",
-			};
-			if (url.pathname !== "/" && await file.exists()) return new Response(file, { headers });
-			return new Response(Bun.file(join(dir, "index.html")), { headers });
+			return serveApp(url);
 		},
 		websocket: websocket(),
 	});
@@ -436,16 +443,26 @@ function owner(port: number): Server<Client> {
 
 /**
  * The team's listener on this machine's tailnet address. Tailscale names the person behind each
- * connection. It serves only host-to-host sockets: browsers always send an Origin, and a page on
- * a teammate's machine must not act as them.
+ * connection. Sockets without an Origin are peer hosts. Browser sockets are the owner's own
+ * devices, and only from a page this host or the configured web app served (see web.ts).
  */
-function team(port: number, address: string): Server<Client> {
+function team(machine: Machine, listener: web.Listener, tls?: Bun.TLSOptions): Server<Client> {
+	const hosts = web.hosts(machine, listener);
 	return Bun.serve<Client>({
-		port,
-		hostname: address,
+		port: listener.port,
+		hostname: machine.address,
+		...(tls ? { tls } : {}),
 		async fetch(request, server) {
-			if (new URL(request.url).pathname !== "/ws" || request.headers.has("origin")) {
-				return new Response("Not found", { status: 404 });
+			const url = new URL(request.url);
+			const origin = request.headers.get("origin");
+			if (url.pathname !== "/ws") {
+				if (request.method !== "GET" || !hosts.has(request.headers.get("host") ?? "")) {
+					return new Response("Not found", { status: 404 });
+				}
+				return serveApp(url);
+			}
+			if (origin === null ? listener.secure : !web.origins(machine, listener).has(origin)) {
+				return new Response("Forbidden", { status: 403 });
 			}
 			const ip = server.requestIP(request);
 			if (!ip) return new Response("Forbidden", { status: 403 });
@@ -456,7 +473,12 @@ function team(port: number, address: string): Server<Client> {
 				log("warn", "gateway.whois", { address: ip.address, ...failure(error) });
 				return new Response("Forbidden", { status: 403 });
 			}
-			return server.upgrade(request, { data: client(user, true) })
+			const browser = origin !== null;
+			if (browser && user !== catalog.user) {
+				log("warn", "gateway.browser.refused", { user, origin });
+				return new Response("Open Ace from your own host", { status: 403 });
+			}
+			return server.upgrade(request, { data: client(user, !browser) })
 				? undefined
 				: new Response("Upgrade failed", { status: 400 });
 		},
@@ -500,9 +522,16 @@ export async function serve(port: number): Promise<never> {
 	log("info", "host.tailnet", machine ? { name, address: machine.address } : { tailscale: false });
 	cleanup.push(publish.stop);
 	if (machine) {
-		servers.push(team(port, machine.address));
+		servers.push(team(machine, { port, secure: false }));
 		console.log(`Sharing with the tailnet on ${machine.address}:${port} as ${machine.login}`);
+		console.log(`Your devices can open http://${machine.dns}:${port}`);
 		cleanup.push(peers.watch(broadcast));
+		const tls = await web.tls(machine);
+		if (tls && !closing) {
+			const listener = { port: config.webPort ?? port + 1000, secure: true };
+			servers.push(team(machine, listener, tls));
+			console.log(`and https://${machine.dns}:${listener.port}`);
+		}
 	} else {
 		console.log("Tailscale is not running; channels stay on this machine");
 	}

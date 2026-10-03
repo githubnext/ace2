@@ -43,6 +43,10 @@ Driven by what the team hits. Known so far:
 - **Previews**: on a local host this is mostly running the app; open a lane's dev server from
   the channel.
 - **Lobbies**: presence, notifications, channel lifecycle.
+- **Phones**: checked only in Chrome's iPhone emulation, not on a real phone. Terminals have no
+  Esc/Ctrl/arrow key row, so they're limited to typing commands. Diffs scroll sideways on long
+  lines. Chrome asks for local-network permission before the deployed web app can reach a host
+  (Safari doesn't). Push notifications need HTTPS and a service worker.
 
 ## Release
 
