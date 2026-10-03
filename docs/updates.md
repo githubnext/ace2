@@ -78,7 +78,14 @@ version. The initial pipeline uses complete disk images; delta generation is def
 ## Hosting and publishing
 
 Keep the source repository private. Only signed release artifacts go to a public Cloudflare R2
-bucket with a custom HTTPS domain. The app contains no GitHub or Cloudflare credential.
+bucket over HTTPS. The app contains no GitHub or Cloudflare credential. Publishing uses R2's
+bucket-scoped S3 credentials through Bun; it does not need an account-wide Cloudflare API token.
+
+The initial canary uses the existing `luau-updates` bucket under its own `/ace` prefix, at
+`https://pub-5bdeb2efd19f42f09df9efad8b20c91e.r2.dev/ace`. Luau's feed and signing key are separate.
+Move to a custom download domain before wider stable distribution: Cloudflare's
+[public development URL](https://developers.cloudflare.com/r2/buckets/public-buckets/#public-development-url)
+is rate-limited and intended for development traffic.
 
 ```text
 stable/macos-arm64/appcast.xml
@@ -98,8 +105,10 @@ serialized by the workflow.
 
 ## Credentials and first release
 
-Create GitHub environments `desktop-canary` and `desktop-stable`. They may share the Apple identity
-and Sparkle key. Configure each environment:
+Release credentials are backed up in **1Password → Dev → Ace desktop releases**. Both GitHub
+environments, `desktop-canary` and `desktop-stable`, are configured from that item. They share
+Nate's existing Developer ID identity and notarization key, and a dedicated Ace Sparkle key.
+The item contains the following values for rebuilding either environment:
 
 | Kind     | Name                       | Value                                                        |
 | -------- | -------------------------- | ------------------------------------------------------------ |
@@ -114,17 +123,10 @@ and Sparkle key. Configure each environment:
 | Variable | `ACE_UPDATE_URL`           | Public HTTPS base URL, without a channel suffix              |
 | Variable | `ACE_UPDATE_BUCKET`        | R2 bucket name                                               |
 | Variable | `CLOUDFLARE_ACCOUNT_ID`    | Account containing the bucket                                |
-| Secret   | `CLOUDFLARE_API_TOKEN`     | Token permitted to write objects in the bucket               |
+| Secret   | `R2_ACCESS_KEY_ID`         | R2 S3 access key scoped to the download bucket               |
+| Secret   | `R2_SECRET_ACCESS_KEY`     | Matching R2 S3 secret key                                    |
 
-Generate the production update key once with the pinned SDK:
-
-```sh
-bun apps/desktop/scripts/sparkle.ts
-apps/desktop/.tmp/sparkle/2.10.0/bin/generate_keys --account ace-desktop
-apps/desktop/.tmp/sparkle/2.10.0/bin/generate_keys --account ace-desktop -x /secure/path/ace-update-key
-```
-
-Securely back up both signing keys. Never commit exports. Follow Sparkle's
+Use the backed-up signing keys for subsequent releases. Never commit exports. Follow Sparkle's
 [key rotation guidance](https://sparkle-project.org/documentation/#rotating-signing-keys): change
 the Apple identity or Ed25519 key in one release, never both together. Signed disk images provide
 a key recovery route when archive validation is required before extraction.
@@ -155,8 +157,15 @@ Corrupted feeds and archives were rejected. Download cancellation restored hosti
 preparation could not stop workers after a delayed request drained, and preparation waited for a
 real terminal shell to exit. Canary packaging and workflow syntax checks passed, as did repository
 type, formatting, and lint checks. A real host accepted update coordination over authenticated
-loopback and rejected both operations over its tailnet listener.
+loopback and rejected both operations from tailnet peers and the owner's tailnet browser.
 
-Production notarization and R2 publishing await the credentials above. Review the native Updates
-screen manually and verify the first notarized upgrade on another Mac; the local computer-use
-tool could not inspect this app's window. No production release was published by these checks.
+The first Developer ID canary, 0.0.3, passed Apple's notarization for both the app and disk image;
+both tickets were stapled and verified. The app extracted from the image passed Gatekeeper as
+`Notarized Developer ID`. Real R2 uploads, public downloads, cache headers, and cleanup passed.
+Both GitHub release environments contain the verified configuration; the workflow has not run yet.
+
+The notarized app is installed at `/Applications/Ace Canary.app`. Native checks covered first-launch
+Ace Helper registration, opening a folder with Cmd+O before provider setup, the project dashboard,
+and Updates settings. Opening the folder added a project and created no channel. The initial feed
+has not been published, so an update check currently reports a feed retrieval error. Verify the
+first published notarized upgrade on another Mac before wider distribution.

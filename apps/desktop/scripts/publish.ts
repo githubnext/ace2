@@ -2,15 +2,23 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { S3Client } from "bun";
+
 import { root } from "./build";
 import { type Release, required, signedTool } from "./release";
-import { run, sparkle } from "./sparkle";
+import { sparkle } from "./sparkle";
 
 const output = join(root, "artifacts", "sparkle");
 const release = await Bun.file(join(output, "release.json")).json() as Release;
 const bucket = required("ACE_UPDATE_BUCKET");
-required("CLOUDFLARE_ACCOUNT_ID");
-required("CLOUDFLARE_API_TOKEN");
+const account = required("CLOUDFLARE_ACCOUNT_ID");
+const storage = new S3Client({
+	bucket,
+	endpoint: `https://${account}.r2.cloudflarestorage.com`,
+	region: "auto",
+	accessKeyId: required("R2_ACCESS_KEY_ID"),
+	secretAccessKey: required("R2_SECRET_ACCESS_KEY"),
+});
 const sdk = await sparkle();
 const feed = join(output, "appcast.xml");
 const verify = (path: string) =>
@@ -45,23 +53,19 @@ if (digest(await Bun.file(archive).arrayBuffer()) !== release.sha256) {
 	throw new Error("The release archive changed after signing");
 }
 const target = decodeURIComponent(new URL(release.url).pathname).replace(/^\/|\/$/g, "");
-const wrangler = join(root, "node_modules", ".bin", "wrangler");
 
-function upload(file: string, type: string, cache: string) {
-	run([
-		wrangler,
-		"r2",
-		"object",
-		"put",
-		`${bucket}/${target}/${file}`,
-		"--remote",
-		"--file",
-		join(output, file),
-		"--content-type",
-		type,
-		"--cache-control",
-		cache,
-	], { cwd: root });
+async function upload(file: string, type: string, cache: string) {
+	const url = storage.presign(`${target}/${file}`, { method: "PUT", expiresIn: 900 });
+	const response = await fetch(url, {
+		method: "PUT",
+		body: Bun.file(join(output, file)),
+		headers: { "content-type": type, "cache-control": cache },
+		signal: AbortSignal.timeout(300_000),
+	}).catch(() => {
+		// A fetch error can contain the signed URL, which grants temporary write access.
+		throw new Error(`Could not upload ${file} to R2`);
+	});
+	if (!response.ok) throw new Error(`R2 refused ${file}: ${response.status}`);
 }
 
 const current = await fetch(`${release.url}${release.archive}?check=${crypto.randomUUID()}`, {
@@ -72,7 +76,11 @@ if (current.ok) {
 		throw new Error("That release version already exists with different bytes. Bump the version.");
 	}
 } else if (current.status === 404) {
-	upload(release.archive, "application/x-apple-diskimage", "public, max-age=31536000, immutable");
+	await upload(
+		release.archive,
+		"application/x-apple-diskimage",
+		"public, max-age=31536000, immutable",
+	);
 } else throw new Error(`Could not check the existing archive: ${current.status}`);
 
 const downloaded = await fetch(`${release.url}${release.archive}`, {
@@ -84,7 +92,7 @@ if (!downloaded.ok || digest(await downloaded.arrayBuffer()) !== release.sha256)
 	);
 }
 // The feed is the commit point: all downloads must already exist and remain immutable.
-upload("appcast.xml", "application/rss+xml", "no-store");
+await upload("appcast.xml", "application/rss+xml", "no-store");
 const published = await fetch(`${release.url}appcast.xml?check=${crypto.randomUUID()}`, {
 	signal: AbortSignal.timeout(30_000),
 });

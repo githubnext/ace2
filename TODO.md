@@ -50,12 +50,12 @@ Driven by what the team hits. Known so far:
 
 ## Release
 
-- **First desktop release.** Supply the Apple certificate, notarization API key, Sparkle key, and
-  public R2 download domain described in [updates](docs/updates.md); run the notarized canary
-  workflow and verify Updates settings and an upgrade on another Mac. Add the application icon.
-  Signed ZIP and hardened-runtime DMG upgrades resumed real model work in the isolated local
-  check. The updater, loopback-only helper handoff, resume receipts, and release/publish scripts
-  are implemented.
+- **First desktop release.** Publish the notarized canary and verify an upgrade on another Mac.
+  Move to a custom download domain before wider stable distribution, and add the application
+  icon. The 0.0.3 canary app and DMG passed Apple notarization; native Settings, helper startup,
+  and Cmd+O project opening passed from `/Applications`. Credentials are backed up in 1Password
+  and configured in both GitHub release environments. See [updates](docs/updates.md) for the
+  release procedure and the earlier checks that resumed real model work after updates.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
 - **Review the public tree** for internal material and run a secret scan before publishing.

@@ -19,7 +19,6 @@
 	},
 	"devDependencies": {
 		"@types/bun": "catalog:bun",
-		"@types/three": "catalog:desktop",
-		"wrangler": "catalog:cloudflare"
+		"@types/three": "catalog:desktop"
 	}
 }
