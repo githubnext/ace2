@@ -22,7 +22,6 @@ Driven by what the team hits. Known so far:
 - **Teammates' terminals**: terminals are owner-only and don't reach peers' or hosted channels'
   workspaces through the gateway.
 - **Notify when an agent finishes.**
-- **Token and cost display.**
 - **Hosted channels**: create them from the app; let them message other channels; let browsers
   reach them, which needs per-person sign-in rather than the hosts' shared secret.
 - **Directory freshness**: hosts re-read every 30 seconds, so a new channel can take that long to

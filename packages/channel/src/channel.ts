@@ -17,6 +17,8 @@ import {
 	type Storage,
 	type SubmissionId,
 	ToolResultEntry,
+	UsageDoc,
+	type UsageState,
 	watchEvents,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
@@ -27,7 +29,7 @@ import { instructions } from "./context";
 import { changes, patch } from "./changes";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
-import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request } from "./protocol";
+import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request, Usage } from "./protocol";
 import * as room from "./room";
 
 const SettingsDoc = defineDoc<{ shared: boolean }>({
@@ -174,10 +176,13 @@ export class Channel {
 		const lanes = (await this.#harness.snapshot(LanesDoc, context))?.lanes || {};
 		const byPath = new Map(Object.entries(lanes).map(([lane, { path }]) => [path, lane]));
 		const chats: Chat[] = await Promise.all(records.map(async (record) => {
-			const agent = await this.#harness.snapshot(AgentDoc, record.id, context);
-			const live = await this.#harness.snapshot(LiveDoc, record.id, context);
+			const [agent, live, spent] = await Promise.all([
+				this.#harness.snapshot(AgentDoc, record.id, context),
+				this.#harness.snapshot(LiveDoc, record.id, context),
+				this.#harness.snapshot(UsageDoc, record.id, context),
+			]);
 			const lane = agent?.cwd && byPath.get(agent.cwd);
-			const chat: Chat = { id: record.id, busy: !!live?.run };
+			const chat: Chat = { id: record.id, busy: !!live?.run, usage: usage(spent) };
 			if (record.owner) chat.parent = record.owner.conversationId;
 			if (agent?.model) chat.model = agent.model;
 			if (lane) chat.lane = lane;
@@ -303,6 +308,29 @@ export class Channel {
 		});
 		return stream;
 	}
+}
+
+function usage(state: Readonly<UsageState> | undefined): Usage {
+	const total: Usage = {
+		input: 0,
+		output: 0,
+		cacheRead: 0,
+		cacheWrite: 0,
+		totalTokens: 0,
+		cost: 0,
+	};
+	if (!state) return total;
+	for (const bucket of [state.models, state.tools]) {
+		for (const value of Object.values(bucket)) {
+			total.input += value.input;
+			total.output += value.output;
+			total.cacheRead += value.cacheRead;
+			total.cacheWrite += value.cacheWrite;
+			total.totalTokens += value.totalTokens;
+			total.cost += value.cost.total;
+		}
+	}
+	return total;
 }
 
 /** Submission and chat ids a request produced, so later lines can be traced back to it. */

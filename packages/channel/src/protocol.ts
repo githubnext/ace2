@@ -2,6 +2,17 @@
 
 export type ModelRef = { provider: string; modelId: string };
 
+/** Cumulative usage for one chat, including compaction and usage reported by tools. */
+export type Usage = {
+	input: number;
+	output: number;
+	cacheRead: number;
+	cacheWrite: number;
+	totalTokens: number;
+	/** Estimated USD at the model catalog's prices. */
+	cost: number;
+};
+
 /** pi conversation and entry IDs. */
 export type ChatId = number;
 export type EntryId = number;
@@ -24,6 +35,8 @@ export type Chat = {
 	busy: boolean;
 	model?: ModelRef;
 	lane?: string;
+	/** Older hosts may not report usage. */
+	usage?: Usage;
 };
 
 /** A file the chat's work changed, relative to `Changes.cwd`. */

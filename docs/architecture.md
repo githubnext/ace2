@@ -36,6 +36,9 @@ Session stored in one SQLite file. A chat is one pi conversation in that Session
   directory is its current lane.
 - **Kill is durable.** Killing records pi's abort marks before the worker exits, so reopening the
   channel does not resume the killed work.
+- **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
+  `UsageDoc`, including compaction. The app shows input, output, cache tokens, and estimated USD
+  at model catalog prices. Reopening the chat reads the same totals; Ace keeps no second ledger.
 
 `packages/channel` must stay runtime-neutral: no `node:*`, `bun:*`, or Workers imports. The host
 injects storage, models, and the execution environment. This keeps hosted channels (a channel

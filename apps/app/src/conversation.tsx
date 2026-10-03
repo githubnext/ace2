@@ -16,6 +16,7 @@ import { host } from "./host";
 import { images } from "./images";
 import { toEvents } from "./timeline";
 import { useTranscript } from "./transcript";
+import { Usage } from "./usage";
 
 const MODES = [
 	{ id: "chat", name: "Chat", placeholder: "Mention @ace to ask the agent" },
@@ -146,6 +147,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 					canSend={!archived && transcript.live && status === "open"}
 					onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 				/>
+				{chat?.usage && <Usage value={chat.usage} />}
 			</div>
 		</>
 	);
