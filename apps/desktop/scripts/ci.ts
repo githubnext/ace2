@@ -13,8 +13,7 @@ const help = `Signed desktop builds from an Ace channel or terminal. Requires gh
   bun desktop ci status <run-id>           show progress and failed steps
   bun desktop ci download <run-id>         download and verify a successful build
 
-Signing credentials stay in GitHub. Publishing is off unless --publish is supplied.
-New builds are refused during 22:00–02:00 UTC. Status and downloads remain available.`;
+Signing credentials stay in GitHub. Publishing is off unless --publish is supplied.`;
 
 function output(command: string[]): string {
 	const result = Bun.spawnSync(command, {
@@ -45,10 +44,6 @@ function start(repo: string, channel: string, publish: boolean): void {
 	};
 	if (remote.commit.sha !== revision) {
 		throw new Error(`Push this lane so ${repo}'s ${branch} matches ${revision}`);
-	}
-	const hour = new Date().getUTCHours();
-	if (hour >= 22 || hour < 2) {
-		throw new Error("Release builds are deferred during 22:00–02:00 UTC. Retry after 02:00 UTC.");
 	}
 	const run = JSON.parse(api(
 		`repos/${repo}/actions/workflows/${workflow}/dispatches`,

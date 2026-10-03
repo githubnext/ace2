@@ -119,9 +119,8 @@ build. Downloads go under `apps/desktop/artifacts/ci/<run-id>/`; the command che
 SHA-256 against its release manifest and reports the source revision.
 
 Use `stable` instead of `canary` for the main app. Building does not publish; add `--publish`
-explicitly to build and publish a release. New builds are refused during 22:00–02:00 UTC, and
-the workflow checks that window again before loading credentials. Status and downloads work at
-any time. Native app inspection is still a separate dogfooding gap.
+explicitly to build and publish a release. Manual builds may run at any time. Native app
+inspection is still a separate dogfooding gap.
 
 Keep the same Developer ID identity for installed development builds with
 `ACE_CODESIGN_IDENTITY`; replacing one with an ad-hoc signature can invalidate Ace Helper's
@@ -155,7 +154,7 @@ Use the backed-up signing keys for subsequent releases. Never commit exports. Fo
 the Apple identity or Ed25519 key in one release, never both together. Signed disk images provide
 a key recovery route when archive validation is required before extraction.
 
-Manually run **Desktop release** on the intended commit outside 22:00–02:00 UTC. It defaults to
+Manually run **Desktop release** on the intended commit. It defaults to
 canary and publishing off, so the notarized artifact is reviewable before the first public release.
 With publishing enabled, it uploads and verifies the release. There is no recurring schedule.
 CI uses a temporary signing keychain and removes credentials even when the build fails.
