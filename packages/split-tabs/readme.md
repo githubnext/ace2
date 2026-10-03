@@ -50,6 +50,7 @@ All mutations return `false` when nothing changed.
 ```ts
 api.open({ tab: "notes" });
 api.open({ to: { pane: "pane-1", side: "right" }, fit });
+api.open({ tab: "notes", to: { pane: "pane-1" }, background: true });
 api.move({ tab: "notes", to: { pane: "pane-2" }, fit });
 api.move({ tab: "notes", to: { pane: "pane-2", before: "logs" }, fit });
 api.move({ tab: "notes", to: { pane: "pane-2", side: "bottom" }, fit });
@@ -59,7 +60,7 @@ api.close({ tab: "notes" });
 api.resize({ axis: "col", line: "C1", ratio: 0.5, size: width });
 ```
 
-- `open` creates a tab, optionally into a pane or split.
+- `open` creates a tab, optionally into a pane or split. `background` leaves active tabs and focus as they were.
 - `move` reorders, moves between panes, or creates a split.
 - `select` activates a tab and focuses its host pane.
 - `focus` changes the focused pane.

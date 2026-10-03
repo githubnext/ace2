@@ -20,9 +20,10 @@ export type Content =
 export type Kind = Content["type"];
 export type Meta = Record<string, Content>;
 
-type Layout = { state: Split.State; meta: Meta };
+/** `diff` records that a Diff tab already opened for the chat's current changes. */
+type Layout = { state: Split.State; meta: Meta; diff: boolean };
 
-type Saved = { version: typeof VERSION; state: Split.Data; tabs: Meta };
+type Saved = { version: typeof VERSION; state: Split.Data; tabs: Meta; diff?: boolean };
 
 function object(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null;
@@ -68,20 +69,21 @@ export function read(id: string): Layout {
 		try {
 			const data = JSON.parse(raw) as Saved;
 			const state = Split.restore(data.state);
-			return { state, meta: clean(state, data.tabs) };
+			return { state, meta: clean(state, data.tabs), diff: data.diff === true };
 		} catch {
 			localStorage.removeItem(`${STORAGE}:${id}`);
 		}
 	}
 	const state = Split.initial(CHAT);
-	return { state, meta: clean(state) };
+	return { state, meta: clean(state), diff: false };
 }
 
-export function write(id: string, state: Split.State, meta: Meta) {
+export function write(id: string, state: Split.State, meta: Meta, diff: boolean) {
 	const data = {
 		version: VERSION,
 		state: Split.save(state),
 		tabs: clean(state, meta),
+		diff,
 	} satisfies Saved;
 	localStorage.setItem(`${STORAGE}:${id}`, JSON.stringify(data));
 }

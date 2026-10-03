@@ -82,6 +82,8 @@ export type Open = {
 	tab?: Tab;
 	to?: Target;
 	fit?: Fit;
+	/** Keeps every pane's active tab and the focused pane. */
+	background?: boolean;
 };
 
 export type Move = {
@@ -720,7 +722,20 @@ function open(state: State, data: Open = {}): State {
 		{ ...state, seq, tabs: [...state.tabs, tab] },
 		{ tab, to: data.to },
 	);
+	if (data.background) next = behind(state, next);
 	return data.fit ? constrain(next, data.fit) : next;
+}
+
+function behind(prev: State, next: State): State {
+	let active = new Map(prev.panes.map(pane => [pane.uid, pane.active]));
+	return {
+		...next,
+		focus: next.panes.some(pane => pane.uid === prev.focus) ? prev.focus : next.focus,
+		panes: next.panes.map(pane => {
+			let tab = active.get(pane.uid);
+			return tab && pane.tabs.includes(tab) ? { ...pane, active: tab } : pane;
+		}),
+	};
 }
 
 function select(state: State, data: Select): State {
