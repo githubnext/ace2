@@ -203,3 +203,17 @@ Native checks covered Ace Helper registration, opening a folder with Cmd+O befor
 the project dashboard, and Updates settings showing 0.0.5. Opening the folder created no channel.
 The initial feed has not been published, so an update check currently reports a feed retrieval
 error. Verify the first published notarized upgrade on another Mac before wider distribution.
+
+[Canary 0.0.6](https://github.com/githubnext/ace2/actions/runs/37135810035), from `76435b8`, defers
+provider setup until agent invocation and includes the context-usage ring. An Ace channel dispatched
+and downloaded the signed CI build. Both the app and DMG passed local Gatekeeper and stapled-ticket
+checks before replacing 0.0.5 in `/Applications`.
+
+The packaged helper and workers created a channel and accepted human messages with zero available
+providers; rejected agent requests added no input or run. They also reopened a backed-up legacy
+channel without changing its history or model. The installed app preserved all 55 backed-up entries
+in its existing channel, created a new channel in Chat mode, and sent a human message with no model
+selected or agent tokens used. The temporary channel was archived with its history retained.
+Settings showed 0.0.6 and the existing provider keys; the authenticated helper used protocol 5 and
+ran from the installed bundle. Source UI checks also retained a failed dashboard agent draft through
+reload and successfully retried it after adding a real key, without recreating the channel or worker.
