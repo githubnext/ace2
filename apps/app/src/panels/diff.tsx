@@ -13,15 +13,19 @@ type Loaded = { stamp: string; patch?: string; signature?: string; error?: strin
 const POLL = 2000;
 const LIMIT = 4;
 
-function stamp(change: Change) {
-	return `${change.from || ""}>${change.adds},${change.dels},${change.binary}`;
+function stamp(change: Change, changes: Changes) {
+	return `${changes.cwd}\0${changes.base}\0${
+		change.from || ""
+	}\0${change.version}\0${change.adds},${change.dels},${change.binary}`;
 }
 
 function same(a: Changes | undefined, b: Changes) {
-	if (!a || a.lane !== b.lane || a.base !== b.base || a.head !== b.head) return false;
+	if (!a || a.cwd !== b.cwd || a.lane !== b.lane || a.base !== b.base || a.head !== b.head) {
+		return false;
+	}
 	if (a.files.length !== b.files.length) return false;
 	return a.files.every((change, i) =>
-		change.file === b.files[i]!.file && stamp(change) === stamp(b.files[i]!)
+		change.file === b.files[i]!.file && stamp(change, a) === stamp(b.files[i]!, b)
 	);
 }
 
@@ -92,14 +96,14 @@ export function Diff({ channel, chat, active }: Props) {
 	useEffect(() => {
 		if (!changes || status !== "open") return;
 		const wanted = changes.files.filter((change) =>
-			!change.binary && loaded.get(change.file)?.stamp !== stamp(change)
+			!change.binary && loaded.get(change.file)?.stamp !== stamp(change, changes)
 		);
 		const index = wanted.findIndex((change) => change.file === first);
 		if (index > 0) wanted.unshift(...wanted.splice(index, 1));
 
 		for (const change of wanted) {
 			if (inflight.current.size >= LIMIT) return;
-			const version = stamp(change);
+			const version = stamp(change, changes);
 			const key = `${change.file}\0${version}`;
 			if (inflight.current.has(key)) continue;
 			inflight.current.add(key);
@@ -120,10 +124,11 @@ export function Diff({ channel, chat, active }: Props) {
 	}, [channel, chat, changes, loaded, first, status]);
 
 	const files = useMemo(
-		() =>
-			(changes?.files || []).map((change): DiffViewFile => {
+		() => {
+			if (!changes) return [];
+			return changes.files.map((change): DiffViewFile => {
 				const value = loaded.get(change.file);
-				const current = value?.stamp === stamp(change) ? value : undefined;
+				const current = value?.stamp === stamp(change, changes) ? value : undefined;
 				return {
 					file: change.file,
 					from: change.from,
@@ -135,7 +140,8 @@ export function Diff({ channel, chat, active }: Props) {
 					error: current?.error,
 					pending: !change.binary && !current,
 				};
-			}),
+			});
+		},
 		[changes, loaded],
 	);
 

@@ -27,7 +27,15 @@ export type Chat = {
 };
 
 /** A file the chat's work changed, relative to `Changes.cwd`. */
-export type Change = { file: string; from?: string; binary: boolean; adds: number; dels: number };
+export type Change = {
+	file: string;
+	from?: string;
+	binary: boolean;
+	adds: number;
+	dels: number;
+	/** The worktree file's version, independent of its diff's line counts. */
+	version: string;
+};
 
 /**
  * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus

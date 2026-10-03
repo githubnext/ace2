@@ -30,8 +30,6 @@ Driven by what the team hits. Known so far:
 - **Loading states**: opening a dormant channel shows an empty timeline while its worker starts.
 - **Run summaries**: a stopped run shows its aborted tool call but no "Stopped" line, and the
   timeline overstated a 3-second run as "Worked for 1 minute".
-- **Diff freshness**: a patch reloads only when a file's line counts change; an edit that keeps
-  them shows the old patch until reopened. Add a per-file version to `changes`.
 - **Teammates' terminals**: terminals are owner-only and don't reach peers' or hosted channels'
   workspaces through the gateway.
 - **Notify when an agent finishes.**

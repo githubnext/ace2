@@ -6,6 +6,7 @@ import type { Change, Changes } from "./protocol";
 
 const FILES = 500;
 const PATCH = 512 * 1024;
+type Stat = Omit<Change, "version">;
 
 /** Reads parse stdout, so their stderr is dropped; exec combines the two streams. */
 const read = (env: ExecutionEnv, cwd: string, args: string, context: Context, ok?: number[]) =>
@@ -24,9 +25,9 @@ async function base(env: ExecutionEnv, cwd: string, project: string, context: Co
 }
 
 /** `adds\tdels\tpath\0`, or `adds\tdels\t\0from\0to\0` for a rename; binary files count `-`. */
-function numstat(text: string): Change[] {
+function numstat(text: string): Stat[] {
 	const fields = text.split("\0");
-	const out: Change[] = [];
+	const out: Stat[] = [];
 	for (let i = 0; i < fields.length - 1; i++) {
 		const [adds, dels, path] = fields[i]!.split("\t");
 		const binary = adds === "-";
@@ -40,7 +41,7 @@ function numstat(text: string): Change[] {
 	return out;
 }
 
-async function untracked(env: ExecutionEnv, cwd: string, context: Context): Promise<Change[]> {
+async function untracked(env: ExecutionEnv, cwd: string, context: Context): Promise<Stat[]> {
 	const files = (await read(env, cwd, "ls-files --others --exclude-standard -z", context))
 		.split("\0").filter(Boolean).slice(0, FILES);
 	return Promise.all(files.map(async (file) => {
@@ -67,7 +68,16 @@ export async function changes(
 ): Promise<Changes> {
 	const range = await base(env, cwd, project, context);
 	const tracked = numstat(await read(env, cwd, `diff -M --numstat -z ${range.base}`, context));
-	const files = [...tracked, ...await untracked(env, cwd, context)].slice(0, FILES);
+	const files = await Promise.all(
+		[...tracked, ...await untracked(env, cwd, context)].slice(0, FILES).map(async (change) => {
+			const info = await env.fileInfo(`${cwd}/${change.file}`, context);
+			if (!info.ok && info.error.code !== "not_found") throw info.error;
+			const version = info.ok
+				? `${info.value.kind}:${info.value.size}:${info.value.mtimeMs}`
+				: "deleted";
+			return Object.assign(change, { version });
+		}),
+	);
 	return { ...(lane ? { lane } : {}), cwd, ...range, files };
 }
 
