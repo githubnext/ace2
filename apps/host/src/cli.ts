@@ -18,17 +18,7 @@ import { type Filter, follow, print } from "./logs";
 import { health } from "./health";
 import { preference } from "./preferences";
 import { setModel } from "./settings";
-import {
-	archive,
-	defaultModel,
-	host,
-	isRunning,
-	kill,
-	models,
-	parseModel,
-	project,
-	remove,
-} from "./manage";
+import { archive, host, isRunning, kill, models, parseModel, project, remove } from "./manage";
 
 const HELP = `ace — channels on this host
 
@@ -44,7 +34,7 @@ const HELP = `ace — channels on this host
   ace kill <channel>                             stop all work in the channel now
   ace share <channel> on|off                     let others invoke agents
   ace models
-  ace model [provider/id|auto]                   show or set the default model for new channels
+  ace model [provider/id|auto]                   show or set the model for a chat's first agent run
   ace key set <NAME>                             store a key in the OS keychain, read from stdin
   ace key rm <NAME>
   ace directory [<url> | off]                    the team's directory, which lists every host's channels
@@ -164,7 +154,7 @@ async function main() {
 		}
 		case "new": {
 			const dir = project(resolve(flags.project || "."));
-			const model = flags.model ? parseModel(flags.model) : await defaultModel();
+			const model = flags.model ? parseModel(flags.model) : undefined;
 			const record = flags.hosted
 				? await host(dir, model, flags.name, flags.hosted)
 				: catalog.create(dir, model, flags.name);
@@ -180,7 +170,7 @@ async function main() {
 						record.name,
 						record.id,
 						state,
-						`${record.model.provider}/${record.model.modelId}`,
+						record.model ? `${record.model.provider}/${record.model.modelId}` : "automatic",
 						record.project,
 					].join("\t"),
 				);

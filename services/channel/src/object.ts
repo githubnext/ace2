@@ -15,12 +15,13 @@ export type Env = {
 
 /** Paths are on the workspace host, whose file namespace is `workspace`. */
 export type Config = {
+	version: 1;
 	id: string;
 	name: string;
 	owner: string;
 	project: string;
 	lanes: string;
-	model: ModelRef;
+	model?: ModelRef;
 	workspace: string;
 };
 
@@ -44,7 +45,15 @@ export class HostedChannel extends DurableObject<Env> {
 	#channel?: Promise<Channel>;
 
 	#config(): Config | undefined {
-		return this.ctx.storage.kv.get<Config>("config");
+		const config = this.ctx.storage.kv.get<Omit<Config, "version"> & { version?: number }>(
+			"config",
+		);
+		if (!config) return;
+		if (config.version !== undefined && config.version !== 1) {
+			throw new Error(`Unsupported channel config version ${config.version}`);
+		}
+		// Legacy configurations keep their model; new channels can choose one on first invocation.
+		return { ...config, version: 1 };
 	}
 
 	#attach(socket: WebSocket) {

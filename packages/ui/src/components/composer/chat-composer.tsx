@@ -660,6 +660,7 @@ function useComposer({
 	let [emoji, setEmoji] = useState<EmojiState>(EMPTY_EMOJI);
 
 	let draft = useDraft(scope);
+	let restoredMode = useRef(draft.defaultValue ? curMode : undefined);
 	let history = useHistory(scope);
 	let analyser = useMic(mic && recording);
 
@@ -842,6 +843,9 @@ function useComposer({
 		let v = view.current;
 		if (!v || !mentions?.length) return;
 		if (latest.current.editing) return;
+		// Preserve restored mentions until their inferred mode reaches the controlled prop.
+		if (restoredMode.current === curMode) return;
+		restoredMode.current = undefined;
 
 		for (let m of modes) {
 			if (m.id === curMode || !m.mention) continue;

@@ -173,7 +173,7 @@ function DefaultModel({ settings, disabled }: { settings: HostSettings; disabled
 			<p className="text-muted-foreground">
 				{settings.modelOverride
 					? "ACE_MODEL overrides this preference. Remove it and restart Ace Helper to use your saved choice."
-					: "Used for new channels in the app and CLI. Existing chats keep their model."}
+					: "Used for a chat's first agent run. Existing chats keep their model."}
 			</p>
 			{action.busy && <p role="status">Saving default model…</p>}
 			{action.error && <p role="alert" className="text-destructive">{action.error}</p>}

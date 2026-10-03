@@ -9,11 +9,12 @@ import { config } from "./config";
 import { login } from "./tailnet";
 
 export type Listing = {
+	version: 1;
 	id: string;
 	name: string;
 	owner: string;
 	project: string;
-	model: ModelRef;
+	model?: ModelRef;
 	created: number;
 	archived?: boolean;
 	/** Base URL of the service hosting the channel; this host serves its workspace. */
@@ -82,7 +83,7 @@ function pick(words: string[]): string {
 }
 
 /** A new channel's record, not yet saved: a hosted channel saves it once the service has it. */
-export function draft(project: string, model: ModelRef, name?: string, hosted?: string): Listing {
+export function draft(project: string, model?: ModelRef, name?: string, hosted?: string): Listing {
 	const names = new Set(list().map((record) => record.name));
 	const random = () => `${pick(WORDS[0])}-${pick(WORDS[1])}`;
 	let chosen = name || random();
@@ -92,6 +93,7 @@ export function draft(project: string, model: ModelRef, name?: string, hosted?: 
 		throw new Error("A channel name must be lowercase kebab-case");
 	}
 	const record: Listing = {
+		version: 1,
 		id: randomBytes(8).toString("hex"),
 		name: chosen,
 		owner: user,
@@ -103,7 +105,7 @@ export function draft(project: string, model: ModelRef, name?: string, hosted?: 
 	return record;
 }
 
-export function create(project: string, model: ModelRef, name?: string): Listing {
+export function create(project: string, model?: ModelRef, name?: string): Listing {
 	return save(draft(project, model, name));
 }
 
@@ -120,7 +122,16 @@ export function owns(id: string): boolean {
 }
 
 export function read(id: string): Listing {
-	return JSON.parse(readFileSync(paths(id).record, "utf8"));
+	const record = JSON.parse(readFileSync(paths(id).record, "utf8")) as
+		& Omit<Listing, "version">
+		& { version?: number };
+	if (record.version !== undefined && record.version !== 1) {
+		throw new Error(
+			`Channel ${id} uses catalog version ${record.version}. Open it with a compatible Ace build.`,
+		);
+	}
+	// Version 0 required a model. Preserve that choice; version 1 also permits unset models.
+	return { ...record, version: 1 };
 }
 
 export function write(record: Listing): void {

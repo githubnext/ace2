@@ -4,14 +4,13 @@ import { homedir, hostname } from "node:os";
 import { resolve } from "node:path";
 
 import type { ModelRef } from "@ace/channel/protocol";
+import { available, choose } from "@ace/channel/models";
 
 import * as catalog from "./catalog";
 import { hostedAuth, request } from "./client";
 import { config } from "./config";
 import { models as providers } from "./keys";
 import { preference } from "./preferences";
-
-const PREFERRED = ["anthropic/claude-opus-5-5", "openai/gpt-6-astra"];
 
 export function parseModel(value: string): ModelRef {
 	const split = value.indexOf("/");
@@ -21,38 +20,12 @@ export function parseModel(value: string): ModelRef {
 
 /** Models with credentials on this machine. */
 export async function models(): Promise<ModelRef[]> {
-	const registry = providers();
-	const results = await Promise.allSettled(
-		registry.getProviders().map((provider) => registry.getAvailable(provider.id)),
-	);
-	const available = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-	const failed = results.find((result) => result.status === "rejected");
-	if (!available.length && failed?.status === "rejected") throw failed.reason;
-	return available.map((m) => ({
-		provider: m.provider,
-		modelId: m.id,
-	}));
+	return available(providers());
 }
 
 export async function defaultModel(): Promise<ModelRef> {
 	if (config.model) return parseModel(config.model);
-	const available = new Set((await models()).map((m) => `${m.provider}/${m.modelId}`));
-	const selected = preference();
-	if (selected) {
-		if (!available.has(`${selected.provider}/${selected.modelId}`)) {
-			throw new Error(
-				"The default model is unavailable. Open Settings to check its provider or choose another model.",
-			);
-		}
-		return selected;
-	}
-	const chosen = PREFERRED.find((candidate) => available.has(candidate));
-	if (!chosen) {
-		throw new Error(
-			"No model credentials found. Open Settings to add a provider key, or use ace key set.",
-		);
-	}
-	return parseModel(chosen);
+	return preference() || choose(providers());
 }
 
 /** The Git top level containing `dir`. */
@@ -72,13 +45,19 @@ export function isRunning(id: string): boolean {
 }
 
 /** Create a channel on a hosting service, with this host as its workspace. */
-export async function host(dir: string, model: ModelRef, name: string | undefined, url: string) {
+export async function host(
+	dir: string,
+	model: ModelRef | undefined,
+	name: string | undefined,
+	url: string,
+) {
 	// Saving the record starts the workspace link, so the service must have the channel first.
 	const record = catalog.draft(dir, model, name, url.replace(/\/$/, ""));
 	const response = await fetch(`${record.hosted}/channels/${record.id}`, {
 		method: "POST",
 		headers: await hostedAuth(),
 		body: JSON.stringify({
+			version: 1,
 			id: record.id,
 			name: record.name,
 			owner: record.owner,

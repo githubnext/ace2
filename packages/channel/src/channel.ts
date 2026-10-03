@@ -29,6 +29,7 @@ import { instructions } from "./context";
 import { changes, patch } from "./changes";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
+import { available, choose } from "./models";
 import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request, Usage } from "./protocol";
 import * as room from "./room";
 
@@ -46,7 +47,9 @@ export type Options = {
 	/** Paths inside the execution environment's file system. */
 	project: string;
 	lanes: string;
-	model: ModelRef;
+	model?: ModelRef;
+	/** The host's current preference, consulted only for a chat's first agent invocation. */
+	defaultModel?(): Promise<ModelRef>;
 	storage: Storage;
 	models: Models;
 	env(cwd: string): ExecutionEnv;
@@ -123,10 +126,7 @@ export class Channel {
 			case "info":
 				return this.info();
 			case "models":
-				return (await this.#options.models.getAvailable()).map(({ provider, id }) => ({
-					provider,
-					modelId: id,
-				}));
+				return available(this.#options.models);
 			case "say":
 				return this.#say(request);
 			case "ask":
@@ -274,7 +274,7 @@ export class Channel {
 			throw new Error("Only the owner can invoke agents here");
 		}
 		const conversation = await this.#conversation(request.chat);
-		if (request.model) await this.#select(conversation, request.model);
+		await this.#select(conversation, request.model);
 		const submission = await conversation.submit({
 			type: "input",
 			content: room.content(request.author, request.text, request.images),
@@ -285,14 +285,26 @@ export class Channel {
 	}
 
 	/** A model applies to a whole run, so it cannot change while one is active. */
-	async #select(conversation: Conversation, model: ModelRef) {
+	async #select(conversation: Conversation, requested: ModelRef | undefined) {
 		const current = (await conversation.agent(context)).model;
-		if (current?.provider === model.provider && current.modelId === model.modelId) return;
+		const model = requested || current || await (
+			this.#options.defaultModel?.() || choose(this.#options.models)
+		);
 		if (!this.#options.models.getModel(model.provider, model.modelId)) {
 			throw new Error(`Unknown model ${model.provider}/${model.modelId}`);
 		}
+		const same = current?.provider === model.provider && current.modelId === model.modelId;
 		const live = await this.#harness.snapshot(LiveDoc, conversation.id, context);
-		if (live?.run) throw new Error("The chat is busy; stop it or wait before changing its model");
+		if (!same && live?.run) {
+			throw new Error("The chat is busy; stop it or wait before changing its model");
+		}
+		const available = await this.#options.models.getAvailable(model.provider);
+		if (!available.some((value) => value.id === model.modelId)) {
+			throw new Error(
+				`Configure ${model.provider} for this channel before invoking an agent. Chat is still available.`,
+			);
+		}
+		if (same) return;
 		await conversation.configure({ model }, context);
 	}
 

@@ -22,7 +22,7 @@ import { IconHash, IconPlus } from "@ace/ui/icons";
 import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 
 import { chosen, deployed, remember } from "./address";
-import { Channel } from "./channel";
+import { Channel, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
@@ -102,6 +102,7 @@ export function App() {
 	);
 	const [adding, setAdding] = useState(false);
 	const [settings, setSettings] = useState<boolean | "updates">(false);
+	const [draft, setDraft] = useState<ChannelDraft>();
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
 	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
@@ -205,12 +206,19 @@ export function App() {
 				op: "create",
 				project: current.path,
 			});
-			try {
-				if (text) await host.channel(value.id, { op: "ask", author: hello.user, text });
-				onCreated?.();
-			} finally {
-				select({ ...value, host: hello.host });
+			if (text) {
+				try {
+					await host.channel(value.id, { op: "ask", author: hello.user, text });
+				} catch (error) {
+					setDraft({ channel: value.id, text });
+					toast.error("Could not invoke agent", {
+						description: (error as Error).message,
+						action: { label: "Settings", onClick: () => setSettings(true) },
+					});
+				}
 			}
+			onCreated?.();
+			select({ ...value, host: hello.host });
 		} catch (error) {
 			toast.error("Could not start channel", {
 				description: (error as Error).message,
@@ -340,6 +348,9 @@ export function App() {
 									channel={channel}
 									user={hello.user}
 									remote={!local}
+									draft={draft}
+									onDraftLoaded={() => setDraft(undefined)}
+									onSettings={() => setSettings(true)}
 								/>
 							)
 							: (

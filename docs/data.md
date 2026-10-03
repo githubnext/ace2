@@ -32,7 +32,7 @@ The command uses SQLite's [VACUUM INTO](https://www.sqlite.org/lang_vacuum.html#
 to capture a consistent snapshot, including committed WAL entries, while a worker continues
 running. It opens the source read-only, checks the output's integrity, and writes:
 
-- `channel.json`: the channel's identity, owner, project, and model.
+- `channel.json`: the channel's identity, owner, project, and optional initial model.
 - `channel.sqlite`: all pi state at the snapshot point, if the channel has been opened before.
 - `backup.json`: format version, source paths, creation time, and SHA-256 checksums. This file is
   written last to mark a complete backup. Failed backups remove only their newly created output.
@@ -73,3 +73,15 @@ newer schema. Ace must use those migrations rather than rewrite pi tables or rep
 For Ace-owned catalog or preference format changes, migrate old records explicitly before using
 the new form. An unreadable or newer store must produce an actionable error, never an empty
 replacement channel. Release validation must exercise existing data as well as fresh installs.
+
+Catalog records and hosted-channel configurations use version 1, which permits an unset initial
+model. Unversioned records are version 0: readers migrate them in memory, preserving their model
+and all other fields. They are written as version 1 on the next save; unknown versions are refused.
+pi's existing optional agent-model field needs no database migration, and channel history is unchanged.
+
+The October 3, 2026 credential-deferral check opened a backed-up version 0 channel with no keys:
+its pi entries and selected model were unchanged. Fresh channels accepted human messages before
+provider setup and retained their history through a worker restart. Adding a real Anthropic key
+enabled the same worker to answer using the earlier human messages; removing it blocked only agent
+invocation. The local Workers runtime also accepted new model-free hosted configurations and legacy
+configurations with their original model.

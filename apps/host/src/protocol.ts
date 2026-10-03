@@ -1,7 +1,7 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 4;
+export const HOST_PROTOCOL = 5;
 
 export type HostInfo = {
 	app: "ace";
@@ -34,7 +34,7 @@ export type Listing = {
 	name: string;
 	owner: string;
 	project: string;
-	model: ModelRef;
+	model?: ModelRef;
 	created: number;
 	state: ChannelState;
 	/** The hosting service's base URL, for a hosted channel; `host` is then its workspace. */

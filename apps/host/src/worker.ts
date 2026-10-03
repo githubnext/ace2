@@ -10,6 +10,7 @@ import { Channel, type Envelope, type Frame } from "@ace/channel";
 import * as catalog from "./catalog";
 import { request } from "./client";
 import { models, seal } from "./keys";
+import { defaultModel } from "./manage";
 import { lines } from "./lines";
 import { log, open } from "./log";
 import type { WorkerInfo, WorkerRequest } from "./protocol";
@@ -63,6 +64,7 @@ const channel = await Channel.open({
 	project: record.project,
 	lanes: paths.lanes,
 	model: record.model,
+	defaultModel,
 	storage: await openNodeSqliteStorage(paths.storage),
 	models: models(),
 	env(cwd) {

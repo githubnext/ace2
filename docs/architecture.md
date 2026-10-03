@@ -28,6 +28,11 @@ Session stored in one SQLite file. A chat is one pi conversation in that Session
   safe to rerun report an interruption to the model instead.
 - **The model sees the whole room.** A human message that does not invoke an agent is a pi
   `write`: it enters the transcript without starting a run. Invoking an agent is a pi `input`.
+- **Providers are optional until invocation.** Creating a channel or chat, posting human messages,
+  and using its workspace require no model or provider credentials. A chat without a model resolves
+  its runtime's default on its first invocation: the local host's current preference, or an available
+  model on the hosting service. Availability is checked before admitting the input, so a rejected
+  invocation queues no work and leaves its draft editable.
 - **Model per run.** The chat's model is set when a run is admitted. Changing it while a run is
   active is rejected rather than changing the active run's later turns.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
@@ -75,9 +80,11 @@ key through the app or CLI takes effect without restarting workers. Keychain acc
 distinct from missing keys. Settings exposes provider status and environment overrides, never
 stored key values; it validates new keys against the provider before saving them.
 
-The default model for new channels is a nonsecret preference in `settings.json` under
+The default model for a chat's first agent run is a nonsecret preference in `settings.json` under
 `~/Library/Application Support/Ace` on macOS, or `$XDG_CONFIG_HOME/ace` on Linux. The app and CLI
 read the same preference; `ACE_MODEL` and an explicit per-channel model still take precedence.
+Existing chats keep their chosen model. Adding credentials later makes an unconfigured channel's
+agent available without recreating the channel or restarting its worker.
 
 Host configuration is captured before credential cleanup. A worker receives the host's launch
 environment, then seals credentials again before running tools. Source workers disable automatic

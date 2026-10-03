@@ -44,6 +44,8 @@ Driven by what the team hits. Known so far:
   and Cmd+O project opening passed from `/Applications`. Credentials are backed up in 1Password
   and configured in both GitHub release environments. See [updates](docs/updates.md) for the
   release procedure and the earlier checks that resumed real model work after updates.
+  The next canary defers provider setup until agent invocation. Creation and human chat passed on
+  local and hosted runtimes; a retained draft succeeded after adding a real key to the local host.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki
   grammars, and the provenance of `packages/ui`'s WebGPU shader and dither code.
 - **Review the public tree** for internal material and run a secret scan before publishing.

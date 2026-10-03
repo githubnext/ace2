@@ -13,7 +13,7 @@ import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
-import { archive, defaultModel, isRunning, models, project, remove } from "./manage";
+import { archive, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
 import * as projects from "./projects";
 import {
@@ -243,8 +243,11 @@ async function handle(
 			}
 			return models();
 		case "create": {
-			const model = request.model || await defaultModel();
-			const record = catalog.create(project(request.project), model, request.name || undefined);
+			const record = catalog.create(
+				project(request.project),
+				request.model,
+				request.name || undefined,
+			);
 			broadcast();
 			return record;
 		}
