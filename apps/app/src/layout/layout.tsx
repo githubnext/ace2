@@ -84,6 +84,8 @@ type Props = {
 	name: string;
 	/** The chat new Diff and Terminal tabs show. */
 	chat: number;
+	/** Whether the chat's lane has changes, once known. */
+	changed?: boolean;
 	render: Render;
 	/** Notified when a tab is closed, so owners can release its resources. */
 	onTabClose?: (uid: string, data: Content) => void;
@@ -640,10 +642,11 @@ function Pane(props: PaneProps) {
 	);
 }
 
-function useLayout({ id, name, chat, onTabClose }: Props) {
+function useLayout({ id, name, chat, changed, onTabClose }: Props) {
 	const [data] = useState(() => read(id));
 	const [api] = useState(() => Split.create(data.state, { min: minimum }));
 	const [meta, setMeta] = useState<Meta>(data.meta);
+	const [diff, setDiff] = useState(data.diff);
 	const state = useSyncExternalStore(api.subscribe, api.get, api.get);
 	const { view, css, grips, grid, flat, desktop, box, start: resize } = useResize(
 		api,
@@ -657,8 +660,22 @@ function useLayout({ id, name, chat, onTabClose }: Props) {
 	const drag = ghost ? items.get(ghost.uid) || item(ghost.uid, name, meta[ghost.uid]) : undefined;
 
 	useEffect(() => {
-		write(id, state, meta);
-	}, [id, state, meta]);
+		write(id, state, meta, diff);
+	}, [id, state, meta, diff]);
+
+	// New changes open a Diff tab behind the Chat tab once; closing it keeps it closed until the
+	// changes clear and new ones appear.
+	useEffect(() => {
+		if (changed === undefined) return;
+		if (!changed) return setDiff(false);
+		if (diff) return;
+		setDiff(true);
+		if (Object.values(meta).some((value) => value.type === "diff" && value.chat === chat)) return;
+		const uid = `tab-${api.get().seq + 1}`;
+		const pane = Split.host(api.get(), CHAT)?.uid;
+		if (!api.open({ tab: uid, to: { pane }, background: true })) return;
+		setMeta((meta) => ({ ...meta, [uid]: content("diff", chat) }));
+	}, [api, chat, changed, diff, meta]);
 
 	function nav(event: KeyboardEvent<HTMLElement>, pane: Split.Pane) {
 		const tabs = pane.tabs;

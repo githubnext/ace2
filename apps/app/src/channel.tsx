@@ -1,3 +1,6 @@
+import { useCallback, useRef, useState } from "react";
+
+import type { Changes } from "@ace/channel/protocol";
 import type { Listing } from "@ace/host/protocol";
 
 import { Conversation } from "./conversation";
@@ -22,11 +25,34 @@ type Props = {
 
 /** A channel's tabs: its chat, plus Diff and Terminal views of that chat's lane. */
 export function Channel({ channel, user, remote, draft, onDraftLoaded, onSettings }: Props) {
+	const [changed, setChanged] = useState<boolean>();
+	const check = useRef({ busy: false, again: false });
+
+	// One check at a time; work that lands during a check asks for one more after it.
+	const inspect = useCallback(() => {
+		const run = check.current;
+		if (run.busy) {
+			run.again = true;
+			return;
+		}
+		run.busy = true;
+		host.channel<Changes>(channel.id, { op: "changes", chat }).then(
+			(value) => setChanged(value.files.length > 0),
+			() => {},
+		).finally(() => {
+			run.busy = false;
+			if (!run.again) return;
+			run.again = false;
+			inspect();
+		});
+	}, [channel.id]);
+
 	return (
 		<Layout
 			id={channel.id}
 			name={remote ? `${channel.name} · ${channel.host}` : channel.name}
 			chat={chat}
+			changed={changed}
 			render={(data, uid, active, update) => {
 				if (uid === CHAT) {
 					return (
@@ -37,6 +63,7 @@ export function Channel({ channel, user, remote, draft, onDraftLoaded, onSetting
 							draft={draft?.channel === channel.id ? draft.text : undefined}
 							onDraftLoaded={onDraftLoaded}
 							onSettings={!remote && !channel.hosted ? onSettings : undefined}
+							onWork={inspect}
 						/>
 					);
 				}

@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 
 import { Button, Timeline } from "@ace/ui";
 import type { Listing } from "@ace/host/protocol";
@@ -15,10 +15,14 @@ type Props = {
 	draft?: string;
 	onDraftLoaded: () => void;
 	onSettings?: () => void;
+	/** Called once the chat loads and whenever its agent may have changed files since. */
+	onWork?: () => void;
 };
 
 /** One chat's timeline and composer over its transcript; the content of a Chat tab. */
-export function Conversation({ channel, chat: id, user, draft, onDraftLoaded, onSettings }: Props) {
+export function Conversation(
+	{ channel, chat: id, user, draft, onDraftLoaded, onSettings, onWork }: Props,
+) {
 	const transcript = useTranscript(channel.id, id);
 	const chat = transcript.info?.chats.find((value) => value.id === id);
 	const events = useMemo(() => toEvents(transcript.items, channel.id, transcript.busy), [
@@ -26,6 +30,19 @@ export function Conversation({ channel, chat: id, user, draft, onDraftLoaded, on
 		channel.id,
 		transcript.busy,
 	]);
+	const results = useMemo(
+		() =>
+			transcript.items.reduce(
+				(sum, item) =>
+					item.kind === "reply" ? sum + item.tools.filter((tool) => tool.result).length : sum,
+				0,
+			),
+		[transcript.items],
+	);
+
+	useEffect(() => {
+		if (transcript.live) onWork?.();
+	}, [transcript.live, transcript.busy, results, onWork]);
 	return (
 		<>
 			<div className="relative min-h-0 flex-1">
