@@ -37,6 +37,11 @@ export type Chat = {
 	lane?: string;
 	/** Older hosts may not report usage. */
 	usage?: Usage;
+	/**
+	 * How full the model's context window is: the latest response's tokens, as its provider
+	 * reported them. Absent before the first response.
+	 */
+	context?: { used: number; window: number };
 };
 
 /** A file the chat's work changed, relative to `Changes.cwd`. */

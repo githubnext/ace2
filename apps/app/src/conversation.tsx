@@ -147,7 +147,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 					canSend={!archived && transcript.live && status === "open"}
 					onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 				/>
-				{chat?.usage && <Usage value={chat.usage} />}
+				{chat?.usage && <Usage value={chat.usage} context={chat.context} />}
 			</div>
 		</>
 	);

@@ -183,12 +183,30 @@ export class Channel {
 			]);
 			const lane = agent?.cwd && byPath.get(agent.cwd);
 			const chat: Chat = { id: record.id, busy: !!live?.run, usage: usage(spent) };
+			const window = agent?.model
+				&& this.#options.models.getModel(agent.model.provider, agent.model.modelId)?.contextWindow;
+			const used = window && await this.#used(record.id);
+			if (window && used) chat.context = { used, window };
 			if (record.owner) chat.parent = record.owner.conversationId;
 			if (agent?.model) chat.model = agent.model;
 			if (lane) chat.lane = lane;
 			return chat;
 		}));
 		return { id, name, project, owner, shared: settings?.shared ?? true, chats };
+	}
+
+	/** The newest response's own token count; providers report what that request carried. */
+	async #used(id: ConversationId): Promise<number | undefined> {
+		const conversation = await this.#harness.conversation(id, context);
+		const { messages } = await conversation!.context(context);
+		for (let index = messages.length - 1; index >= 0; index--) {
+			const message = messages[index]!;
+			if (message.role !== "assistant") continue;
+			const { input, output, cacheRead, cacheWrite } = message.usage;
+			const total = input + output + cacheRead + cacheWrite;
+			// A failed or aborted request reports nothing; the context is what the last real one carried.
+			if (total) return total;
+		}
 	}
 
 	async isIdle(): Promise<boolean> {
