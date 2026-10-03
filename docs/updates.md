@@ -185,7 +185,13 @@ loopback and rejected both operations from tailnet peers and the owner's tailnet
 The first Developer ID canary, 0.0.3, passed Apple's notarization for both the app and disk image;
 both tickets were stapled and verified. The app extracted from the image passed Gatekeeper as
 `Notarized Developer ID`. Real R2 uploads, public downloads, cache headers, and cleanup passed.
-Both GitHub release environments contain the verified configuration; the workflow has not run yet.
+Both GitHub release environments contain the verified configuration.
+
+An Ace channel completed the first signed CI build on October 3, 2026:
+[canary 0.0.4, run 37088236918](https://github.com/githubnext/ace2/actions/runs/37088236918).
+Its agent invoked `bun desktop ci canary`, checked status, and downloaded the artifact through
+`bun desktop ci download`. The workflow built, signed, notarized, and verified the release;
+the download matched the requested source commit and DMG checksum. Publishing was off.
 
 The notarized app is installed at `/Applications/Ace Canary.app`. Native checks covered first-launch
 Ace Helper registration, opening a folder with Cmd+O before provider setup, the project dashboard,
