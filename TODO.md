@@ -35,6 +35,42 @@ Driven by what the team hits. Known so far:
   lines. Chrome asks for local-network permission before the deployed web app can reach a host
   (Safari doesn't). Push notifications need HTTPS and a service worker.
 
+## Port from old Ace
+
+Features the original Ace (githubnext/ace) had that this one doesn't yet. Plan and Document tabs
+are deliberately left out.
+
+- **Several chats in the UI**: the channel view is fixed to chat 1; start another chat and open
+  a subagent's chat.
+- **Git actions in the UI**: commit, push, publish, merge, rebase, Create PR (`CreatePrMenu` is
+  unused), PR review and state, and the lane's git state.
+- **Questions**: an agent tool that asks the room and waits on a question card (`Question` in
+  `@ace/ui` is unused).
+- **File tab**: a file tree with open, edit, save, create, and delete (`FileTree` and `FileView`
+  are unused).
+- **Channel names**: rename a channel, and let the agent name it and keep a rolling summary.
+- **Queued messages**: edit, delete, or steer a message waiting on a busy chat.
+- **Edit, delete, and react to messages**: the timeline accepts `onEdit`, `onDelete`, and
+  `onReact`, but the app passes none.
+- **Non-image uploads** in the composer.
+- **Skills and custom agents in the composer**: list the checkout's skills and agents for people
+  to pick.
+- **Work items**: issue and PR pickers, issue and PR routes, `ace://` links, and taking over an
+  existing branch or PR.
+- **CI tools**: PR checks, workflow runs and logs, rerun, cancel, dispatch, and fix failing
+  checks.
+- **Issue and PR tools**: create, comment, label, update, and review. Agents can use `gh` from
+  the shell today.
+- **Command palette and switchers**: channels, tabs, and actions (`CommandPalette` is unused).
+- **Pinned channels**: the sidebar hardcodes `pinned: false`.
+- **Fork a channel.**
+- **Channel info dialog.**
+- **Typing and who's here** inside a chat (`Facepile` and `TypingDots` are unused); lobbies cover
+  presence across a project.
+- **Dashboard**: briefing, pick back up, and team pulse.
+- **Sounds and window glow** for attention, beyond notifying when an agent finishes.
+- **Dictation** in the composer (`useMic` is unused).
+
 ## Release
 
 - **First desktop release.** Publish the notarized canary and verify an upgrade on another Mac.
