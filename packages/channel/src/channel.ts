@@ -16,6 +16,7 @@ import {
 	ROOT_CONVERSATION_ID,
 	type Storage,
 	type SubmissionId,
+	ToolResultEntry,
 	watchEvents,
 } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
@@ -295,6 +296,7 @@ export class Channel {
 		const conversation = await this.#conversation(chat);
 		const stream = await watchEvents(this.#harness, conversation.id, context);
 		for (const entry of stream.snapshot.entries) for (const event of events(entry)) send(event);
+		if (stream.snapshot.run) send({ kind: "run", chat: conversation.id, state: "start" });
 		send({ kind: "live", chat: conversation.id });
 		stream.start(async (batch) => {
 			for (const event of batch) for (const mapped of live(conversation.id, event)) send(mapped);
@@ -380,12 +382,15 @@ function events(entry: EntryRecord): Event[] {
 		return out;
 	}
 	if (message?.role === "toolResult") {
+		const stopped = ToolResultEntry.is(entry)
+			&& entry.data.diagnostics.some(({ code }) => code === "aborted");
 		return [{
 			kind: "result",
 			chat,
 			call: message.toolCallId,
 			error: message.isError,
 			text: room.text(message),
+			...(stopped ? { stopped: true } : {}),
 		}];
 	}
 	return [];

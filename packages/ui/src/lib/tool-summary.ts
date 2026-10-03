@@ -140,8 +140,15 @@ function summarizeTools(tools: readonly ToolNode[]): string {
 }
 
 function summarizeWorkingTools(tools: readonly ToolNode[], start: number, end: number): string {
-	let minutes = Math.max(1, Math.ceil(Math.max(0, end - start) / 60));
-	return `Worked for ${plural(minutes, "minute")}, ran ${plural(tools.length, "tool call")}`;
+	let seconds = Math.max(0, Math.round(end - start));
+	let minutes = Math.floor(seconds / 60);
+	let remaining = seconds % 60;
+	let duration = seconds === 0
+		? "less than a second"
+		: minutes === 0
+		? plural(seconds, "second")
+		: `${plural(minutes, "minute")}${remaining ? ` ${plural(remaining, "second")}` : ""}`;
+	return `Worked for ${duration}, ran ${plural(tools.length, "tool call")}`;
 }
 
 function editsFile(tool: ToolNode): boolean {

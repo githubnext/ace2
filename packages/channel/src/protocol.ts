@@ -114,7 +114,7 @@ export type Event =
 		name: string;
 		args: unknown;
 	}
-	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string }
+	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string; stopped?: boolean }
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
 	/** The replayed transcript has been sent; later events are live. */
 	| { kind: "live"; chat: ChatId };

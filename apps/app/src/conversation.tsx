@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import {
 	aceAvatar,
 	type Attachment,
+	Button,
 	ChatComposer,
 	serialize,
 	Timeline,
@@ -95,14 +96,29 @@ export function Conversation({ channel, chat: id, user }: Props) {
 	return (
 		<>
 			<div className="relative min-h-0 flex-1">
-				<Timeline
-					className="h-full min-h-0 contain-paint scroll-fade [--fade:3rem]"
-					events={events}
-					toolbar={false}
-					working={transcript.busy || undefined}
-					currentUser={{ login: user }}
-					intro={{ name: channel.name, createdAt: Math.floor(channel.created / 1000) }}
-				/>
+				{transcript.live
+					? (
+						<Timeline
+							className="h-full min-h-0 contain-paint scroll-fade [--fade:3rem]"
+							events={events}
+							toolbar={false}
+							working={transcript.busy || undefined}
+							currentUser={{ login: user }}
+							intro={{ name: channel.name, createdAt: Math.floor(channel.created / 1000) }}
+						/>
+					)
+					: (
+						<div
+							className="grid h-full place-content-center justify-items-center gap-3 px-6 text-center text-sm text-muted-foreground"
+							role={transcript.error ? "alert" : "status"}
+						>
+							<p>
+								{transcript.error
+									|| (channel.state === "dormant" ? "Starting channel…" : "Loading chat…")}
+							</p>
+							{transcript.error && <Button onClick={transcript.retry}>Try again</Button>}
+						</div>
+					)}
 				{transcript.draft && (
 					<div className="utils:max-width pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-2 text-sm whitespace-pre-wrap text-muted-foreground">
 						{transcript.draft}
@@ -127,7 +143,7 @@ export function Conversation({ channel, chat: id, user }: Props) {
 					busy={transcript.busy}
 					canStop={transcript.busy}
 					onStop={() => void host.channel(channel.id, { op: "stop", chat: id })}
-					canSend={!archived}
+					canSend={!archived && transcript.live && status === "open"}
 					onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 				/>
 			</div>

@@ -96,6 +96,7 @@ export function apply(state: Transcript, event: Event): Transcript {
 					item.kind === "reply" && item.tools.some((tool) => tool.call === event.call)
 						? {
 							...item,
+							...(event.stopped ? { stopped: true } : {}),
 							tools: item.tools.map((tool) =>
 								tool.call === event.call
 									? { ...tool, result: { error: event.error, text: event.text } }
@@ -123,20 +124,28 @@ function pick(event: Extract<Event, { kind: "message" }>) {
 export function useTranscript(channel: string | undefined, chat?: number) {
 	const [state, setState] = useState<Transcript>(EMPTY);
 	const [info, setInfo] = useState<ChannelInfo>();
+	const [error, setError] = useState<string>();
+	const [attempt, setAttempt] = useState(0);
 	useEffect(() => {
 		if (!channel) return;
 		let active = true;
+		let generation = 0;
 		const start = () => {
+			const version = ++generation;
 			setState(EMPTY);
-			host.channel<ChannelInfo>(channel, { op: "info" }).then((value) => active && setInfo(value));
+			setInfo(undefined);
+			setError(undefined);
+			const refresh = () =>
+				host.channel<ChannelInfo>(channel, { op: "info" }).then((value) => {
+					if (active && version === generation) setInfo(value);
+				}, () => {});
+			void refresh();
 			host.channel(channel, { op: "watch", ...(chat === undefined ? {} : { chat }) }, (event) => {
-				if (!active) return;
+				if (!active || version !== generation) return;
 				setState((current) => apply(current, event));
-				if (event.kind === "run") {
-					host.channel<ChannelInfo>(channel, { op: "info" }).then((value) =>
-						active && setInfo(value)
-					);
-				}
+				if (event.kind === "run") void refresh();
+			}).catch((error: Error) => {
+				if (active && version === generation) setError(error.message);
 			});
 		};
 		start();
@@ -146,6 +155,6 @@ export function useTranscript(channel: string | undefined, chat?: number) {
 			off();
 			host.request({ op: "release", channel }).catch(() => {});
 		};
-	}, [channel, chat]);
-	return { ...state, info };
+	}, [channel, chat, attempt]);
+	return { ...state, info, error, retry: () => setAttempt((value) => value + 1) };
 }
