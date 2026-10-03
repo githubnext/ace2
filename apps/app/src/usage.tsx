@@ -60,49 +60,45 @@ export function Usage({ value, context }: {
 		["Cache write", value.cacheWrite],
 	] as const;
 	return (
-		<div className="flex justify-end pt-1">
-			<Popover>
-				<PopoverTrigger
-					aria-label={context ? `Context ${percent}% full` : "Chat usage"}
-					render={
-						<Button variant="ghost" size="icon-sm" className="size-6 text-muted-foreground" />
-					}
-				>
-					<Ring fraction={fraction} />
-				</PopoverTrigger>
-				<PopoverPortal>
-					<PopoverPositioner side="top" align="end" sideOffset={8}>
-						<PopoverPopup className="w-64 p-4 text-xs" aria-label="Chat usage">
-							<h3 className="mb-1 text-sm font-medium">Context</h3>
-							<p className="mb-3 tabular-nums text-muted-foreground">
-								{context
-									? `${percent}% · ${compact.format(context.used)} of ${
-										compact.format(context.window)
-									} tokens`
-									: "No responses yet"}
-							</p>
-							<h3 className="mb-2 text-sm font-medium">Billed in this chat</h3>
-							<dl className="space-y-2">
-								{rows.map(([label, count]) => (
-									<div key={label} className="flex justify-between gap-4">
-										<dt className="text-muted-foreground">{label}</dt>
-										<dd className="tabular-nums">{exact.format(count)}</dd>
-									</div>
-								))}
-								<div className="flex justify-between gap-4 border-t pt-2">
-									<dt className="text-muted-foreground">Estimated cost (USD)</dt>
-									<dd className="tabular-nums">{cost(value.cost)}</dd>
+		<Popover>
+			<PopoverTrigger
+				aria-label={context ? `Context ${percent}% full` : "Chat usage"}
+				render={<Button variant="ghost" size="icon-sm" className="size-6 text-muted-foreground" />}
+			>
+				<Ring fraction={fraction} />
+			</PopoverTrigger>
+			<PopoverPortal>
+				<PopoverPositioner side="top" align="end" sideOffset={8}>
+					<PopoverPopup className="w-64 p-4 text-xs" aria-label="Chat usage">
+						<h3 className="mb-1 text-sm font-medium">Context</h3>
+						<p className="mb-3 tabular-nums text-muted-foreground">
+							{context
+								? `${percent}% · ${compact.format(context.used)} of ${
+									compact.format(context.window)
+								} tokens`
+								: "No responses yet"}
+						</p>
+						<h3 className="mb-2 text-sm font-medium">Billed in this chat</h3>
+						<dl className="space-y-2">
+							{rows.map(([label, count]) => (
+								<div key={label} className="flex justify-between gap-4">
+									<dt className="text-muted-foreground">{label}</dt>
+									<dd className="tabular-nums">{exact.format(count)}</dd>
 								</div>
-							</dl>
-							<p className="mt-3 leading-relaxed text-muted-foreground">
-								Token counts are what each provider reported. Every request re-sends the
-								conversation, mostly as cache reads, so billed tokens grow faster than the context.
-								Cost uses list prices.
-							</p>
-						</PopoverPopup>
-					</PopoverPositioner>
-				</PopoverPortal>
-			</Popover>
-		</div>
+							))}
+							<div className="flex justify-between gap-4 border-t pt-2">
+								<dt className="text-muted-foreground">Estimated cost (USD)</dt>
+								<dd className="tabular-nums">{cost(value.cost)}</dd>
+							</div>
+						</dl>
+						<p className="mt-3 leading-relaxed text-muted-foreground">
+							Token counts are what each provider reported. Every request re-sends the conversation,
+							mostly as cache reads, so billed tokens grow faster than the context. Cost uses list
+							prices.
+						</p>
+					</PopoverPopup>
+				</PopoverPositioner>
+			</PopoverPortal>
+		</Popover>
 	);
 }

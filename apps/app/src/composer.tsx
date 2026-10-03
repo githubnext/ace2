@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { type ReactNode, useEffect, useRef, useState, useSyncExternalStore } from "react";
 
 import {
 	aceAvatar,
@@ -34,11 +34,13 @@ type Props = {
 	draft?: string;
 	onDraftLoaded: () => void;
 	onSettings?: () => void;
+	accessory?: ReactNode;
 };
 
 /** A failed admission keeps the draft and attachments available for retry. */
 export function Composer(
-	{ channel, chat: id, user, current, busy, ready, draft, onDraftLoaded, onSettings }: Props,
+	{ channel, chat: id, user, current, busy, ready, draft, onDraftLoaded, onSettings, accessory }:
+		Props,
 ) {
 	const composer = useRef<ChatComposerHandle>(null);
 	const sending = useRef(false);
@@ -148,6 +150,7 @@ export function Composer(
 			)}
 			<ChatComposer
 				ref={composer}
+				accessory={accessory}
 				scope={`/channels/${channel.id}`}
 				tools={!phone}
 				modes={MODES}

@@ -3,6 +3,7 @@ import {
 	type ComponentPropsWithRef,
 	type ComponentType,
 	Fragment,
+	type ReactNode,
 	type Ref,
 	useEffect,
 	useImperativeHandle,
@@ -217,6 +218,8 @@ type Props = {
 	tools?: boolean;
 	/** Called when the user submits. */
 	onSend: (payload: SendPayload) => void;
+	/** Shown just before the submit control, e.g. a context meter. */
+	accessory?: ReactNode;
 	className?: string;
 	ref?: Ref<ChatComposerHandle>;
 };
@@ -616,6 +619,7 @@ function useComposer({
 	onTerminalExpand,
 	tools = true,
 	onSend,
+	accessory,
 	className,
 	ref,
 }: Props) {
@@ -1116,6 +1120,7 @@ function useComposer({
 		submitBusy,
 		onStop,
 		onTerminalExpand,
+		accessory,
 		className,
 		curAttach,
 		analyser,
@@ -1643,9 +1648,10 @@ function ComposerSend({ state }: { state: ComposerState }) {
 }
 
 function ComposerButtons({ state }: { state: ComposerState }) {
-	let { terminal, sendable, send, tip, stop, onStop, exit, edit, cancel } = state;
+	let { terminal, sendable, send, tip, stop, onStop, exit, edit, cancel, accessory } = state;
 	return (
 		<Composer.End>
+			{accessory}
 			<TooltipProvider>
 				{terminal
 					? (

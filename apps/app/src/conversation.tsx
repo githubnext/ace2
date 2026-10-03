@@ -69,8 +69,8 @@ export function Conversation({ channel, chat: id, user, draft, onDraftLoaded, on
 					draft={draft}
 					onDraftLoaded={onDraftLoaded}
 					onSettings={onSettings}
+					accessory={chat?.usage && <Usage value={chat.usage} context={chat.context} />}
 				/>
-				{chat?.usage && <Usage value={chat.usage} context={chat.context} />}
 			</div>
 		</>
 	);
