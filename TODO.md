@@ -39,9 +39,9 @@ Driven by what the team hits. Known so far:
 
 - **First desktop release.** Publish the notarized canary and verify an upgrade on another Mac.
   Move to a custom download domain before wider stable distribution. Desktop builds use the
-  original green Ace icon, with a yellow version for canary. The 0.0.3 canary app and DMG passed
-  Apple notarization; native Settings, helper startup, and Cmd+O project opening passed from
-  `/Applications`. Credentials are backed up in 1Password
+  original green Ace icon, with a yellow version for canary. The 0.0.5 canary app and DMG were
+  built from an Ace channel in CI and passed Apple notarization; native Settings, helper startup,
+  and Cmd+O project opening passed from `/Applications`. Credentials are backed up in 1Password
   and configured in both GitHub release environments. See [updates](docs/updates.md) for the
   release procedure and the earlier checks that resumed real model work after updates.
 - **Third-party notices** for desktop builds: Bun's LGPL components, Electrobun binaries, Shiki

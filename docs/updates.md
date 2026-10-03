@@ -193,8 +193,13 @@ Its agent invoked `bun desktop ci canary`, checked status, and downloaded the ar
 `bun desktop ci download`. The workflow built, signed, notarized, and verified the release;
 the download matched the requested source commit and DMG checksum. Publishing was off.
 
-The notarized app is installed at `/Applications/Ace Canary.app`. Native checks covered first-launch
-Ace Helper registration, opening a folder with Cmd+O before provider setup, the project dashboard,
-and Updates settings. Opening the folder added a project and created no channel. The initial feed
-has not been published, so an update check currently reports a feed retrieval error. Verify the
-first published notarized upgrade on another Mac before wider distribution.
+The next [CI build, canary 0.0.5](https://github.com/githubnext/ace2/actions/runs/37088762958),
+includes the yellow icon and chat usage display. Its agent downloaded and verified the artifact;
+both the app and disk image passed local Gatekeeper and stapled-ticket checks. It replaced 0.0.3
+at `/Applications/Ace Canary.app` after stopping Ace Helper. The new helper started from that
+bundle, the existing project list survived, and the installed icon matched the yellow source.
+
+Native checks covered Ace Helper registration, opening a folder with Cmd+O before provider setup,
+the project dashboard, and Updates settings showing 0.0.5. Opening the folder created no channel.
+The initial feed has not been published, so an update check currently reports a feed retrieval
+error. Verify the first published notarized upgrade on another Mac before wider distribution.
