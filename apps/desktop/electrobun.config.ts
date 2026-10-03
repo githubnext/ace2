@@ -19,7 +19,12 @@ export default {
 		buildFolder: "dist",
 		artifactFolder: "artifacts",
 		// Release packaging signs the real app; Electrobun's self-extracting wrapper is unused.
-		mac: { codesign: false, notarize: false, createDmg: false },
+		mac: {
+			icons: channel === "canary" ? "icons/canary.iconset" : "icons/ace.iconset",
+			codesign: false,
+			notarize: false,
+			createDmg: false,
+		},
 	},
 	release: { generatePatch: false },
 	runtime: { exitOnLastWindowClosed: false },
