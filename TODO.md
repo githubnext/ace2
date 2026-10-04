@@ -13,10 +13,10 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
 - **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs,
-  persistent GitHub cache, shared sidebar, and helper tool lookup work began in Codex, which Ace
-  does not yet run as a harness. Edits stayed in Codex; type checks, lint, and builds ran through
-  an Ace terminal. Browser inspection required Codex's computer-use tools. Earlier GitHub smoke
-  checks and React Doctor runs also used Codex.
+  persistent GitHub cache, shared sidebar, helper tool lookup, and 0.0.9 release preparation began
+  in Codex, which Ace does not yet run as a harness. Edits stayed in Codex; type checks, lint, and
+  builds ran through an Ace terminal. Browser inspection required Codex's computer-use tools.
+  Earlier GitHub smoke checks and React Doctor runs also used Codex.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
   confirm this one does.
 
@@ -78,7 +78,8 @@ are deliberately left out.
 
 ## Release
 
-- **First desktop release.** Canary 0.0.7 is published; verify an upgrade on another Mac.
+- **First desktop release.** Canary 0.0.8 is published. Release 0.0.9 with persistent GitHub page
+  caching and the shared project sidebar, then verify an upgrade on another Mac.
   Move to a custom download domain before wider stable distribution. Desktop builds use the
   original green Ace icon, with a yellow version for canary. The 0.0.6 canary app and DMG were
   built from an Ace channel in CI and passed Apple notarization; native Settings, helper startup,
