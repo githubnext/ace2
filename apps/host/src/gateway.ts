@@ -30,6 +30,7 @@ import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
 import { resume, shutdown } from "./shutdown";
 import * as terminals from "./terminals";
 import * as web from "./web";
+import * as windows from "./windows";
 import * as workspace from "./workspace";
 
 type Client = {
@@ -136,6 +137,7 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 }
 
 const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
+const windowOps = new Set<HostRequest["op"]>(["window", "windows", "tab-rename", "tab-result"]);
 const localOps = new Set<HostRequest["op"]>([
 	"projects",
 	"project-open",
@@ -166,6 +168,9 @@ async function handle(
 ): Promise<unknown> {
 	if (closing) throw new Error("Ace Helper is shutting down");
 	const client = socket.data;
+	if (windowOps.has(request.op) && (!client.local || client.user !== catalog.user)) {
+		throw new Error("Tabs are only available through this host's authenticated local gateway");
+	}
 	if (localOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
 		throw new Error("This action is only available from this host's local app");
 	}
@@ -183,6 +188,14 @@ async function handle(
 		throw new Error("Only this host's owner can do that");
 	}
 	switch (request.op) {
+		case "window":
+			return windows.publish(socket, request.value);
+		case "windows":
+			return windows.list();
+		case "tab-rename":
+			return windows.rename(request);
+		case "tab-result":
+			return windows.result(socket, request.call, request.result);
 		case "update-prepare": {
 			if (!config.helper) throw new Error("Only Ace Helper can prepare a desktop update");
 			const current = ++update;
@@ -377,6 +390,7 @@ function websocket(): Bun.WebSocketHandler<Client> {
 			};
 			// Listing and watching repeat constantly; everything else is a deliberate action.
 			const quiet = request.op === "channels" || request.op === "projects"
+				|| request.op === "window" || request.op === "windows" || request.op === "tab-result"
 				|| request.op === "hello" || request.op === "models"
 				|| request.op === "release" || request.op === "terminal-input"
 				|| request.op === "terminal-resize"
@@ -396,6 +410,7 @@ function websocket(): Bun.WebSocketHandler<Client> {
 		},
 		close(socket, code) {
 			sockets.delete(socket);
+			windows.drop(socket);
 			log("info", "gateway.close", { user: socket.data.user, peer: socket.data.peer, code });
 			for (const open of socket.data.channels.values()) {
 				open.then((connection) => connection.close(), () => {});

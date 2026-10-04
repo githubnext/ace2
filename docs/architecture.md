@@ -142,6 +142,13 @@ on the tailnet listener, including requests from the owner's other machines. A h
 binds discovery to the owner token, listening port, and process before the desktop or CLI opens
 the app. As with channels, this does not isolate Ace from tools running as the same OS user.
 
+Local app windows report their current channel and tabs to the host while connected. The owner
+can list these windows and rename one tab through the CLI. A rename targets a window, channel,
+and tab ID, so switching channels before the request arrives rejects it. The host returns success
+after the target window applies the change. Tab names stay in the client's existing layout state;
+they do not rename channels, chats, or another participant's tabs. The window registry is transient,
+and these operations use the authenticated loopback connection, never a tailnet peer.
+
 On macOS, a bundled LaunchAgent runs Ace Helper as the logged-in user. A small native bridge calls
 `SMAppService` to register it after first-launch consent and expose its approval status. Registration
 starts the helper immediately and at subsequent logins. A disabled background item is left for the
