@@ -225,3 +225,13 @@ Packaged helper checks must also start with launchd's system-only PATH: Bun 1.4'
 Pass the imported PATH explicitly when resolving developer tools. The 0.0.7 helper reproduced the
 false missing-GitHub-CLI error; a compiled helper with the fix read real issues and PRs using the
 same restricted startup environment and existing GitHub login.
+
+[Canary 0.0.8](https://github.com/githubnext/ace2/actions/runs/37204148484), from `607d91e`,
+published the helper tool lookup fix. [Canary 0.0.9](https://github.com/githubnext/ace2/actions/runs/37238501439),
+from `5b7e614`, adds persistent GitHub page caching and the shared project sidebar.
+
+The 0.0.9 checks, release dispatch, and artifact download ran through an Ace terminal. CI passed
+type, formatting, and lint checks; signed and notarized the app and DMG; and verified the public
+archive before publishing the signed feed. The download matched the requested source revision
+and SHA-256, and the DMG passed local Gatekeeper and stapled-ticket checks as
+`Notarized Developer ID`. The public feed serves 0.0.9 with `Cache-Control: no-store`.

@@ -78,8 +78,8 @@ are deliberately left out.
 
 ## Release
 
-- **First desktop release.** Canary 0.0.8 is published. Release 0.0.9 with persistent GitHub page
-  caching and the shared project sidebar, then verify an upgrade on another Mac.
+- **First desktop release.** Canary 0.0.9 is published with persistent GitHub page caching and
+  the shared project sidebar. Verify an upgrade on another Mac.
   Move to a custom download domain before wider stable distribution. Desktop builds use the
   original green Ace icon, with a yellow version for canary. The 0.0.6 canary app and DMG were
   built from an Ace channel in CI and passed Apple notarization; native Settings, helper startup,
