@@ -11,6 +11,7 @@ import { config } from "./config";
 import { diagnostics } from "./diagnostics";
 import * as directory from "./directory";
 import { GatewayClient } from "./gateway-client";
+import * as github from "./github";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
 import { archive, isRunning, models, project, remove } from "./manage";
@@ -136,6 +137,9 @@ const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
 const localOps = new Set<HostRequest["op"]>([
 	"projects",
 	"project-open",
+	"github-list",
+	"github-detail",
+	"github-files",
 	"settings",
 	"diagnostics",
 	"key-set",
@@ -222,6 +226,29 @@ async function handle(
 			projectsChanged();
 			return project;
 		}
+		case "project-repo": {
+			if (request.host && request.host !== name && !client.peer) {
+				return (await remote(client, request.host)).request(
+					{
+						op: "project-repo",
+						project: request.project,
+					},
+					undefined,
+					trace,
+				);
+			}
+			const known = client.peer
+				? catalog.list().some((channel) => channel.project === request.project)
+				: projects.list().some((project) => project.path === request.project);
+			if (!known) throw new Error("Open this project in Ace first");
+			return github.project(request.project);
+		}
+		case "github-list":
+			return github.list(request);
+		case "github-detail":
+			return github.detail(request);
+		case "github-files":
+			return github.files(request.repo, request.number);
 		case "settings":
 			return settings();
 		case "diagnostics":

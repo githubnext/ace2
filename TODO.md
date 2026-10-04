@@ -12,6 +12,10 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
+- **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs work
+  began in Codex, which Ace does not yet run as a harness: edits stayed there, while type checks,
+  lint, and builds ran through an Ace terminal. Browser inspection required Codex's computer-use
+  tools. GitHub smoke checks and React Doctor also ran from Codex.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
   confirm this one does.
 
@@ -55,7 +59,7 @@ are deliberately left out.
 - **Non-image uploads** in the composer.
 - **Skills and custom agents in the composer**: list the checkout's skills and agents for people
   to pick.
-- **Work items**: issue and PR pickers, issue and PR routes, `ace://` links, and taking over an
+- **Work items**: issue and PR pickers when starting work, `ace://` links, and taking over an
   existing branch or PR.
 - **CI tools**: PR checks, workflow runs and logs, rerun, cancel, dispatch, and fix failing
   checks.

@@ -1,7 +1,14 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
-import type { ChannelInfo, Event, ModelRef, Request } from "@ace/channel/protocol";
+import type {
+	ChannelInfo,
+	Event,
+	GithubFilter,
+	GithubKind,
+	ModelRef,
+	Request,
+} from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 5;
+export const HOST_PROTOCOL = 6;
 
 export type HostInfo = {
 	app: "ace";
@@ -70,6 +77,19 @@ export type HostRequest =
 	| { op: "channels" }
 	| { op: "projects" }
 	| { op: "project-open"; path: string }
+	/** Resolve a known project's GitHub remote on the machine that holds its checkout. */
+	| { op: "project-repo"; project: string; host?: string }
+	/** GitHub reads use the local owner's GitHub CLI credentials, never a peer's account. */
+	| {
+		op: "github-list";
+		repo: string;
+		kind: GithubKind;
+		state: GithubFilter;
+		search: string;
+		limit: number;
+	}
+	| { op: "github-detail"; repo: string; kind: GithubKind; number: number }
+	| { op: "github-files"; repo: string; number: number }
 	/** These settings belong to the local owner and are never forwarded to peers. */
 	| { op: "settings" }
 	| { op: "diagnostics" }

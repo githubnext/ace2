@@ -18,6 +18,11 @@ Words in this document have the meanings in [terms](terms.md).
 
 Clients (the CLI and desktop app) attach to channels; a channel is not a client.
 
+The app's Issues and PRs pages read the selected project's GitHub repository through the host's
+GitHub CLI account. A peer can resolve the Git remote of a project already exposed by its channels;
+the app's own host performs authenticated GitHub reads. GitHub content is fetched on demand, not
+stored in channel history. GitHub issue and PR links open these pages inside Ace.
+
 ## Channel
 
 A channel is one worker process over one [pi-durable](https://github.com/earendil-works/pi)

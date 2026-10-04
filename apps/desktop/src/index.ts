@@ -142,6 +142,8 @@ ApplicationMenu.setApplicationMenu([
 		submenu: [
 			{ label: "Dashboard", action: "dashboard", accelerator: "CmdOrCtrl+1" },
 			{ label: "Channels", action: "channels", accelerator: "CmdOrCtrl+2" },
+			{ label: "Issues", action: "issues", accelerator: "CmdOrCtrl+3" },
+			{ label: "Pull Requests", action: "prs", accelerator: "CmdOrCtrl+4" },
 			{ type: "divider" },
 			{ label: "Toggle Navigation", action: "nav-toggle", accelerator: "CmdOrCtrl+b" },
 			{
@@ -174,7 +176,16 @@ Electrobun.events.on("application-menu-clicked", ({ data }) => {
 		return;
 	}
 	if (
-		["settings", "project-open", "dashboard", "channels", "nav-toggle", "channels-toggle"].includes(
+		[
+			"settings",
+			"project-open",
+			"dashboard",
+			"channels",
+			"issues",
+			"prs",
+			"nav-toggle",
+			"channels-toggle",
+		].includes(
 			data.action,
 		)
 	) {
