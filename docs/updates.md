@@ -201,8 +201,8 @@ bundle, the existing project list survived, and the installed icon matched the y
 
 Native checks covered Ace Helper registration, opening a folder with Cmd+O before provider setup,
 the project dashboard, and Updates settings showing 0.0.5. Opening the folder created no channel.
-The initial feed has not been published, so an update check currently reports a feed retrieval
-error. Verify the first published notarized upgrade on another Mac before wider distribution.
+The feed was not yet published at that stage, so update checks reported a feed retrieval error.
+Verify a published notarized upgrade on another Mac before wider distribution.
 
 [Canary 0.0.6](https://github.com/githubnext/ace2/actions/runs/37135810035), from `76435b8`, defers
 provider setup until agent invocation and includes the context-usage ring. An Ace channel dispatched
@@ -217,3 +217,11 @@ selected or agent tokens used. The temporary channel was archived with its histo
 Settings showed 0.0.6 and the existing provider keys; the authenticated helper used protocol 5 and
 ran from the installed bundle. Source UI checks also retained a failed dashboard agent draft through
 reload and successfully retried it after adding a real key, without recreating the channel or worker.
+
+[Canary 0.0.7](https://github.com/githubnext/ace2/actions/runs/37203388007) published the first
+signed feed and public DMG. The installed 0.0.6 app found the update through Check for Updates.
+Packaged helper checks must also start with launchd's system-only PATH: Bun 1.4's default
+`Bun.which` lookup retains that startup PATH after the helper imports the login shell environment.
+Pass the imported PATH explicitly when resolving developer tools. The 0.0.7 helper reproduced the
+false missing-GitHub-CLI error; a compiled helper with the fix read real issues and PRs using the
+same restricted startup environment and existing GitHub login.

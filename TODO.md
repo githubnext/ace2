@@ -12,10 +12,10 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
-- **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs work
-  began in Codex, which Ace does not yet run as a harness: edits stayed there, while type checks,
-  lint, and builds ran through an Ace terminal. Browser inspection required Codex's computer-use
-  tools. GitHub smoke checks and React Doctor also ran from Codex.
+- **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs and
+  helper tool lookup work began in Codex, which Ace does not yet run as a harness: edits stayed
+  there, while type checks, lint, and builds ran through an Ace terminal. Browser inspection
+  required Codex's computer-use tools. GitHub smoke checks and React Doctor also ran from Codex.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
   confirm this one does.
 
@@ -77,7 +77,7 @@ are deliberately left out.
 
 ## Release
 
-- **First desktop release.** Publish the notarized canary and verify an upgrade on another Mac.
+- **First desktop release.** Canary 0.0.7 is published; verify an upgrade on another Mac.
   Move to a custom download domain before wider stable distribution. Desktop builds use the
   original green Ace icon, with a yellow version for canary. The 0.0.6 canary app and DMG were
   built from an Ace channel in CI and passed Apple notarization; native Settings, helper startup,

@@ -1,4 +1,7 @@
-/** Finder and launchd do not supply the PATH used by a developer's tools. */
+/**
+ * Finder and launchd do not supply the PATH used by a developer's tools.
+ * Pass the adopted PATH to Bun.which; its default lookup keeps the startup PATH.
+ */
 export function adoptLoginShell(): void {
 	const shell = process.env.SHELL || "/bin/zsh";
 	const mark = "__ace_env__";

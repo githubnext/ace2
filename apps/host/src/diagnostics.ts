@@ -6,7 +6,7 @@ import type { Diagnostics } from "./protocol";
 import * as tailnet from "./tailnet";
 
 async function git(): Promise<Diagnostics["tools"][number]> {
-	const path = Bun.which("git") || undefined;
+	const path = Bun.which("git", { PATH: process.env.PATH }) || undefined;
 	if (!path) return { name: "Git", error: "Install Git to use project folders." };
 	// Apple's git shim opens an installer; a diagnostic must only report missing tools.
 	if (process.platform === "darwin" && path === "/usr/bin/git") {

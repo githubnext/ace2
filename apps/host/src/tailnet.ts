@@ -25,7 +25,7 @@ type Node = {
 export type Machine = { name: string; login: string; address: string; dns: string };
 
 function executable(): string | undefined {
-	const path = Bun.which("tailscale");
+	const path = Bun.which("tailscale", { PATH: process.env.PATH });
 	if (path) return path;
 	if (process.platform !== "darwin") return;
 	return ["/Applications", join(homedir(), "Applications")]
