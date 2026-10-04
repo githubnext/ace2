@@ -137,7 +137,8 @@ and Ace's grouped permission in macOS background-item settings.
 - Packaged UI checks covered native Cmd+O, opening projects before provider setup, channel
   creation, project switching, and a real Anthropic shell-tool reply. Fixed a render loop by
   caching object snapshots in the shared local-storage hook.
-- Distribution and dogfooding follow-up work is tracked in [TODO.md](../TODO.md). Team directory
+- Follow-up work is tracked in the [dogfooding](https://github.com/githubnext/ace2/issues/5) and
+  [desktop distribution](https://github.com/githubnext/ace2/issues/7) meta issues. Team directory
   configuration and providers beyond Anthropic/OpenAI still use the CLI; directory status in
   Settings is read-only.
 
