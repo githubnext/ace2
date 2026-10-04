@@ -74,7 +74,7 @@ function number(value: number): string {
 }
 
 async function gh<T>(args: string[]): Promise<T> {
-	const path = Bun.which("gh");
+	const path = Bun.which("gh", { PATH: process.env.PATH });
 	if (!path) throw new Error("Install GitHub CLI on this host, then sign in with gh auth login.");
 	const env: NodeJS.ProcessEnv = {
 		...process.env,
