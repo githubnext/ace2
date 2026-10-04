@@ -9,11 +9,11 @@ import {
 	useMedia,
 	UserMenu,
 } from "@ace/ui";
-import { IconHash, IconHome } from "@ace/ui/icons";
+import { IconHash, IconHome, IconIssue, IconPullRequest } from "@ace/ui/icons";
 
 import { desktop } from "./desktop";
 
-export type Page = "dashboard" | "channels";
+export type Page = "dashboard" | "channels" | "issues" | "prs";
 
 export function Navigation({ page, user, onPage, onSettings }: {
 	page: Page;
@@ -48,6 +48,30 @@ export function Navigation({ page, user, onPage, onSettings }: {
 				>
 					Channels
 				</NavListLink>
+				<NavListLink
+					href="#issues"
+					icon={<IconIssue />}
+					active={page === "issues"}
+					shortcut="⌘3"
+					onClick={(event) => {
+						event.preventDefault();
+						onPage("issues");
+					}}
+				>
+					Issues
+				</NavListLink>
+				<NavListLink
+					href="#prs"
+					icon={<IconPullRequest />}
+					active={page === "prs"}
+					shortcut="⌘4"
+					onClick={(event) => {
+						event.preventDefault();
+						onPage("prs");
+					}}
+				>
+					PRs
+				</NavListLink>
 			</NavList>
 		</Nav>
 	);
@@ -58,6 +82,8 @@ const ACTIONS = [
 	"settings",
 	"dashboard",
 	"channels",
+	"issues",
+	"prs",
 	"nav-toggle",
 	"channels-toggle",
 ];
@@ -81,6 +107,10 @@ export function WindowControls({ onOpen, onSettings, onPage, connected }: {
 				return onPage("dashboard");
 			case "channels":
 				return onPage("channels");
+			case "issues":
+				return onPage("issues");
+			case "prs":
+				return onPage("prs");
 			case "nav-toggle":
 				return nav.setOpen((value) => !value);
 			case "channels-toggle":
@@ -106,7 +136,14 @@ export function WindowControls({ onOpen, onSettings, onPage, connected }: {
 			if ((!event.metaKey && !event.ctrlKey) || event.altKey || event.defaultPrevented) return;
 			const action = event.key.toLowerCase() === "b"
 				? event.shiftKey ? "channels-toggle" : "nav-toggle"
-				: ({ o: "project-open", ",": "settings", "1": "dashboard", "2": "channels" })[event.key];
+				: ({
+					o: "project-open",
+					",": "settings",
+					"1": "dashboard",
+					"2": "channels",
+					"3": "issues",
+					"4": "prs",
+				})[event.key];
 			if (!action) return;
 			event.preventDefault();
 			run(action);

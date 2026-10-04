@@ -34,6 +34,12 @@ export function workerEnv(): NodeJS.ProcessEnv {
 	return { ...process.env, ...Object.fromEntries(sealed) };
 }
 
+/** GitHub CLI receives only its own sealed credentials, not model provider keys. */
+export function githubEnv(): NodeJS.ProcessEnv {
+	const token = env("GH_TOKEN") || env("GITHUB_TOKEN");
+	return token ? { GH_TOKEN: token } : {};
+}
+
 function env(name: string): string | undefined {
 	return set(sealed.get(name) ?? process.env[name]);
 }

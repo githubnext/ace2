@@ -24,6 +24,8 @@ import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 import { chosen, deployed, remember } from "./address";
 import { Channel, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
+import { Github } from "./github";
+import { GithubLinks, type GithubTarget } from "./github-link";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
 import { Navigation, type Page, WindowControls } from "./navigation";
@@ -103,6 +105,9 @@ export function App() {
 	const [adding, setAdding] = useState(false);
 	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [draft, setDraft] = useState<ChannelDraft>();
+	const [github, setGithub] = useState<
+		Record<string, Partial<Record<"issues" | "prs", GithubTarget>>>
+	>({});
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
 	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
@@ -237,9 +242,19 @@ export function App() {
 		}
 	}
 
+	function openGithub(target: GithubTarget) {
+		if (!current) return;
+		setGithub((value) => ({
+			...value,
+			[current.id]: { ...value[current.id], [target.kind]: target },
+		}));
+		setPage(target.kind);
+	}
+
 	return (
 		<ThemeProvider storageKey="ace-theme">
 			<TooltipProvider>
+				{current && <GithubLinks onOpen={openGithub} />}
 				<Layout
 					appearance={desktop ? "native" : "web"}
 					defaultNavOpen={false}
@@ -307,7 +322,7 @@ export function App() {
 						</Sidebar>
 					)}
 					<Main
-						className={page === "channels" && channel
+						className={(page === "channels" && channel) || page === "issues" || page === "prs"
 							? "overflow-hidden bg-background"
 							: "overflow-y-auto bg-background"}
 					>
@@ -339,6 +354,24 @@ export function App() {
 									onOpen={() => void choose()}
 									onChannel={select}
 									onCreate={create}
+								/>
+							)
+							: page === "issues" || page === "prs"
+							? (
+								<Github
+									key={`${current.id}:${page}`}
+									kind={page}
+									project={current}
+									repos={repos}
+									connected={connected}
+									target={github[current.id]?.[page]}
+									onTarget={(target) =>
+										setGithub((value) => ({
+											...value,
+											[current.id]: { ...value[current.id], [page]: target },
+										}))}
+									onProject={setProject}
+									onOpen={() => void choose()}
 								/>
 							)
 							: channel

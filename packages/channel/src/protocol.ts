@@ -61,6 +61,51 @@ export type Change = {
  */
 export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
 
+/** GitHub views are read through the host; they are not durable channel state. */
+export type GithubKind = "issues" | "prs";
+export type GithubFilter = "open" | "closed" | "all";
+export type GithubItem = {
+	kind: GithubKind;
+	number: number;
+	title: string;
+	url: string;
+	state: "open" | "closed" | "merged" | "draft";
+	author: string;
+	created: string;
+	updated: string;
+	labels: { name: string; color: string }[];
+};
+export type GithubList = { items: GithubItem[]; more: boolean };
+export type GithubComment = {
+	id: string;
+	url: string;
+	author: string;
+	body: string;
+	created: string;
+	review?: "approved" | "changes_requested" | "commented" | "dismissed";
+};
+export type GithubDetail = GithubItem & {
+	body: string;
+	comments: GithubComment[];
+	pull?: {
+		base: string;
+		head: string;
+		adds: number;
+		dels: number;
+		files: number;
+		review: string;
+	};
+};
+export type GithubFile = {
+	file: string;
+	from?: string;
+	adds: number;
+	dels: number;
+	signature: string;
+	patch?: string;
+	error?: string;
+};
+
 /** An image as base64. Clients downscale before sending; see `MAX_IMAGES` in room.ts. */
 export type Image = { mimeType: string; data: string };
 
