@@ -24,7 +24,8 @@ import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 import { chosen, deployed, remember } from "./address";
 import { Channel, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
-import { Github } from "./github";
+import { Github, GithubSidebar } from "./github";
+import { useGithubRefresh } from "./github-cache";
 import { GithubLinks, type GithubTarget } from "./github-link";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
@@ -105,9 +106,9 @@ export function App() {
 	const [adding, setAdding] = useState(false);
 	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [draft, setDraft] = useState<ChannelDraft>();
-	const [github, setGithub] = useState<
+	const [github, setGithub] = useLocalStorage<
 		Record<string, Partial<Record<"issues" | "prs", GithubTarget>>>
-	>({});
+	>(`ace:github-targets:${host.url}`, {});
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
 	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
@@ -138,6 +139,7 @@ export function App() {
 		channels,
 		hello.host,
 	]);
+	useGithubRefresh(available);
 	const current = available.find((value) => value.id === project) || available[0];
 	const visible = channels.filter((channel) =>
 		channel.host === current?.host && channel.project === current.path
@@ -242,12 +244,16 @@ export function App() {
 		}
 	}
 
-	function openGithub(target: GithubTarget) {
+	function setTarget(kind: "issues" | "prs", target?: GithubTarget) {
 		if (!current) return;
 		setGithub((value) => ({
 			...value,
-			[current.id]: { ...value[current.id], [target.kind]: target },
+			[current.id]: { ...value[current.id], [kind]: target },
 		}));
+	}
+
+	function openGithub(target: GithubTarget) {
+		setTarget(target.kind, target);
 		setPage(target.kind);
 	}
 
@@ -280,45 +286,60 @@ export function App() {
 						onPage={setPage}
 						connected={connected}
 					/>
-					{page === "channels" && current && (
+					{page !== "dashboard" && current && (
 						<Sidebar
 							side="left"
 							className="-my-2 h-[calc(100%+1rem)]"
 							innerClassName="h-full min-h-0"
 						>
-							<SessionSidebar
-								className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
-								projectName={current.name}
-								repos={repos}
-								selectedRepoId={current.id}
-								groups={groups}
-								selectedUid={channel?.id}
-								loading={status === "connecting" && !channels.length}
-								onRepoChange={(repo) => setProject(repo.id)}
-								onAddRepo={connected ? () => void choose() : undefined}
-								onSelect={(item) => {
-									const value = visible.find((value) => value.id === item.uid);
-									if (value) select(value);
-								}}
-								onNewSession={local && connected ? () => void create() : undefined}
-								onToggleGroup={(id) => setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
-								onArchive={local && connected
-									? (item) =>
-										void change({
-											op: "archive",
-											channel: item.uid,
-											archived: item.lifecycle !== "archived",
-										})
-									: undefined}
-								onDelete={local && connected
-									? (item) => void change({ op: "delete", channel: item.uid })
-									: undefined}
-								empty={
-									<p className="px-4 py-6 text-xs text-muted-foreground">
-										No channels in this project yet.
-									</p>
-								}
-							/>
+							{page === "channels"
+								? (
+									<SessionSidebar
+										className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
+										projectName={current.name}
+										repos={repos}
+										selectedRepoId={current.id}
+										groups={groups}
+										selectedUid={channel?.id}
+										loading={status === "connecting" && !channels.length}
+										onRepoChange={(repo) => setProject(repo.id)}
+										onAddRepo={connected ? () => void choose() : undefined}
+										onSelect={(item) => {
+											const value = visible.find((value) => value.id === item.uid);
+											if (value) select(value);
+										}}
+										onNewSession={local && connected ? () => void create() : undefined}
+										onToggleGroup={(id) =>
+											setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
+										onArchive={local && connected
+											? (item) =>
+												void change({
+													op: "archive",
+													channel: item.uid,
+													archived: item.lifecycle !== "archived",
+												})
+											: undefined}
+										onDelete={local && connected
+											? (item) => void change({ op: "delete", channel: item.uid })
+											: undefined}
+										empty={
+											<p className="px-4 py-6 text-xs text-muted-foreground">
+												No channels in this project yet.
+											</p>
+										}
+									/>
+								)
+								: (
+									<GithubSidebar
+										kind={page}
+										project={current}
+										repos={repos}
+										connected={connected}
+										onProject={setProject}
+										onOpen={() => void choose()}
+										onTarget={(target) => setTarget(page, target)}
+									/>
+								)}
 						</Sidebar>
 					)}
 					<Main
@@ -362,16 +383,8 @@ export function App() {
 									key={`${current.id}:${page}`}
 									kind={page}
 									project={current}
-									repos={repos}
-									connected={connected}
 									target={github[current.id]?.[page]}
-									onTarget={(target) =>
-										setGithub((value) => ({
-											...value,
-											[current.id]: { ...value[current.id], [page]: target },
-										}))}
-									onProject={setProject}
-									onOpen={() => void choose()}
+									onTarget={(target) => setTarget(page, target)}
 								/>
 							)
 							: channel

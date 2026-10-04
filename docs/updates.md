@@ -122,9 +122,9 @@ Use `stable` instead of `canary` for the main app. Building does not publish; ad
 explicitly to build and publish a release. Manual builds may run at any time. Native app
 inspection is still a separate dogfooding gap.
 
-Keep the same Developer ID identity for installed development builds with
-`ACE_CODESIGN_IDENTITY`; replacing one with an ad-hoc signature can invalidate Ace Helper's
-macOS background permission.
+Keep the same signing identity for installed development builds with `ACE_CODESIGN_IDENTITY`.
+Changing from Apple Development to Developer ID, or to an ad-hoc signature, can invalidate
+Ace Helper's macOS launch constraint even when the Team ID stays the same.
 
 ## Credentials and first release
 

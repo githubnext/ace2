@@ -20,8 +20,11 @@ Clients (the CLI and desktop app) attach to channels; a channel is not a client.
 
 The app's Issues and PRs pages read the selected project's GitHub repository through the host's
 GitHub CLI account. A peer can resolve the Git remote of a project already exposed by its channels;
-the app's own host performs authenticated GitHub reads. GitHub content is fetched on demand, not
-stored in channel history. GitHub issue and PR links open these pages inside Ace.
+the app's own host performs authenticated GitHub reads. The app caches GitHub responses in
+IndexedDB, scoped to its host connection. It refreshes in the background at startup and every
+three hours, keeping cached content visible while requests run or fail. GitHub content stays
+outside channel history. Issues and PRs share the Channels sidebar and project picker, with
+Open, Closed, and All filters in the sidebar. GitHub issue and PR links open these pages inside Ace.
 
 ## Channel
 

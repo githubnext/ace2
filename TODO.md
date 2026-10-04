@@ -12,10 +12,11 @@ so (see [the PR template](.github/pull_request_template.md)) and the gap goes he
 - **Native UI inspection from a channel.** Exercise the desktop window and macOS dialogs while
   developing Ace. The desktop lane used Codex's computer-use tools because Ace's channel tools
   cannot inspect or operate native UI yet.
-- **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs and
-  helper tool lookup work began in Codex, which Ace does not yet run as a harness: edits stayed
-  there, while type checks, lint, and builds ran through an Ace terminal. Browser inspection
-  required Codex's computer-use tools. GitHub smoke checks and React Doctor also ran from Codex.
+- **External harness handoff.** Bring an existing Codex run into a channel. The Issues/PRs,
+  persistent GitHub cache, shared sidebar, and helper tool lookup work began in Codex, which Ace
+  does not yet run as a harness. Edits stayed in Codex; type checks, lint, and builds ran through
+  an Ace terminal. Browser inspection required Codex's computer-use tools. Earlier GitHub smoke
+  checks and React Doctor runs also used Codex.
 - **Two machines on the tailnet** with the dogfooding team. The old repo's equivalent worked;
   confirm this one does.
 

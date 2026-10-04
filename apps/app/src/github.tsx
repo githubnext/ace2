@@ -1,4 +1,4 @@
-import { useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
+import { useId, useMemo, useState } from "react";
 
 import type {
 	GithubDetail,
@@ -8,30 +8,34 @@ import type {
 	GithubKind,
 	GithubList,
 } from "@ace/channel/protocol";
-import type { HostRequest } from "@ace/host/protocol";
 import {
 	Button,
 	DiffView,
 	type Event,
 	Input,
-	ProjectPicker,
+	ProjectSidebar,
 	type SessionSidebarRepo,
 	Timeline,
+	useLayoutLeft,
+	useLocalStorage,
+	useMedia,
 } from "@ace/ui";
 import {
-	IconChevronDown,
 	IconChevronRight,
 	IconCircleCheck,
 	IconExternal,
 	IconIssue,
+	IconListTree,
 	IconLoader,
 	IconMerge,
 	IconPullRequest,
 	IconPullRequestClosed,
 	IconRotate,
 	IconSearch,
+	IconSidebar,
 } from "@ace/ui/icons";
 
+import { type Query, useGithub } from "./github-cache";
 import type { GithubTarget } from "./github-link";
 import { host } from "./host";
 import type { AppProject } from "./projects";
@@ -49,8 +53,8 @@ const DATE = new Intl.DateTimeFormat(undefined, {
 	year: "numeric",
 });
 
-type Query<T> = { value?: T; error?: string; loading: boolean; refresh: () => void };
 type Filter = { state: GithubFilter; search: string; limit: number };
+const DEFAULT_FILTER: Filter = { state: "open", search: "", limit: 50 };
 
 const ICONS = {
 	issues: { open: IconIssue, closed: IconCircleCheck, merged: IconMerge, draft: IconIssue },
@@ -76,58 +80,59 @@ const COLORS = {
 	},
 };
 
-/** Keep loaded data during refreshes; a superseded request can never replace the current view. */
-function useGithub<T>(request?: HostRequest): Query<T> {
-	const status = useSyncExternalStore(host.subscribe, () => host.status);
-	const [revision, setRevision] = useState(0);
-	const [result, setResult] = useState<
-		{ request: string; key: string; value?: T; error?: string }
-	>();
-	const source = request && JSON.stringify(request);
-	const key = `${source}:${revision}`;
-	useEffect(() => {
-		if (!source || status !== "open") return;
-		let live = true;
-		host.request<T>(JSON.parse(source) as HostRequest).then(
-			(value) => {
-				if (live) setResult({ request: source, key, value });
-			},
-			(error: Error) => {
-				if (!live) return;
-				setResult((previous) => ({
-					request: source,
-					key,
-					value: previous?.request === source ? previous.value : undefined,
-					error: error.message,
-				}));
-			},
-		);
-		return () => {
-			live = false;
-		};
-	}, [source, key, status]);
-	useEffect(() => {
-		if (!source) return;
-		const refresh = () => {
-			if (document.visibilityState === "visible") setRevision((value) => value + 1);
-		};
-		window.addEventListener("focus", refresh);
-		document.addEventListener("visibilitychange", refresh);
-		return () => {
-			window.removeEventListener("focus", refresh);
-			document.removeEventListener("visibilitychange", refresh);
-		};
-	}, [source]);
-	return {
-		value: result?.request === source ? result?.value : undefined,
-		error: status !== "open"
-			? "Connect to your host to load GitHub."
-			: result?.key === key
-			? result.error
-			: undefined,
-		loading: !!source && status === "open" && result?.key !== key,
-		refresh: () => setRevision((value) => value + 1),
-	};
+function useGithubFilter(kind: GithubKind, project: AppProject) {
+	return useLocalStorage<Filter>(
+		`ace:github-filter:${host.url}:${project.id}:${kind}`,
+		DEFAULT_FILTER,
+	);
+}
+
+export function GithubSidebar({ kind, project, repos, connected, onProject, onOpen, onTarget }: {
+	kind: GithubKind;
+	project: AppProject;
+	repos: SessionSidebarRepo[];
+	connected: boolean;
+	onProject: (id: string) => void;
+	onOpen: () => void;
+	onTarget: (target?: GithubTarget) => void;
+}) {
+	const [filter, setFilter] = useGithubFilter(kind, project);
+	const left = useLayoutLeft();
+	const phone = useMedia("(width < 40rem)");
+	return (
+		<ProjectSidebar
+			className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
+			projectName={project.name}
+			repos={repos}
+			selectedRepoId={project.id}
+			onRepoChange={(repo) => onProject(repo.id)}
+			onAddRepo={connected ? onOpen : undefined}
+		>
+			<h2 className="px-3 pt-2 pb-1.5 text-xs font-medium text-muted-foreground">{NAMES[kind]}</h2>
+			<nav className="flex flex-col gap-0.5 px-1.5" aria-label={`${NAMES[kind]} state`}>
+				{(["open", "closed", "all"] as const).map((state) => {
+					const Icon = state === "all" ? IconListTree : ICONS[kind][state];
+					return (
+						<Button
+							key={state}
+							variant="ghost"
+							size="sm"
+							className="h-7.5 justify-start gap-2 rounded-lg border border-transparent px-2 text-muted-foreground aria-pressed:selected-surface aria-pressed:bg-popover/35 aria-pressed:text-accent-text aria-pressed:hover:text-accent-text dark:aria-pressed:bg-black/32"
+							aria-pressed={filter.state === state}
+							onClick={() => {
+								setFilter({ ...filter, state, limit: 50 });
+								onTarget(undefined);
+								if (phone) left.setOpen(false);
+							}}
+						>
+							<Icon className="size-4" aria-hidden />
+							{state[0]!.toUpperCase() + state.slice(1)}
+						</Button>
+					);
+				})}
+			</nav>
+		</ProjectSidebar>
+	);
 }
 
 function StateIcon({ item }: { item: Pick<GithubItem, "kind" | "state"> }) {
@@ -455,7 +460,7 @@ function Results({ kind, repo, data, filter, onFilter, onRetry }: {
 		return (
 			<Notice
 				error={error}
-				loading={loading}
+				loading={repo.value === undefined && loading}
 				empty="This project has no GitHub remote."
 				onRetry={onRetry}
 			/>
@@ -467,7 +472,7 @@ function Results({ kind, repo, data, filter, onFilter, onRetry }: {
 		return (
 			<Notice
 				error={error}
-				loading={loading}
+				loading={data.value === undefined && loading}
 				empty={`No ${state}${NAMES[kind].toLowerCase()}${scope}.`}
 				onRetry={onRetry}
 			/>
@@ -497,22 +502,15 @@ function Results({ kind, repo, data, filter, onFilter, onRetry }: {
 	);
 }
 
-export function Github({ kind, project, repos, connected, target, onTarget, onProject, onOpen }: {
+export function Github({ kind, project, target, onTarget }: {
 	kind: GithubKind;
 	project: AppProject;
-	repos: SessionSidebarRepo[];
-	connected: boolean;
 	target?: GithubTarget;
 	onTarget: (target?: GithubTarget) => void;
-	onProject: (id: string) => void;
-	onOpen: () => void;
 }) {
-	const [filter, setFilter] = useState<Filter>({
-		state: "open",
-		search: "",
-		limit: 50,
-	});
-	const [search, setSearch] = useState("");
+	const [filter, setFilter] = useGithubFilter(kind, project);
+	const [search, setSearch] = useState(filter.search);
+	const left = useLayoutLeft();
 	const repo = useGithub<string | null>(
 		target ? undefined : { op: "project-repo", project: project.path, host: project.host },
 	);
@@ -526,49 +524,33 @@ export function Github({ kind, project, repos, connected, target, onTarget, onPr
 	}
 	return (
 		<section className="flex h-full min-h-0 flex-col bg-background">
-			<header className="flex shrink-0 items-center gap-4 border-b px-4 py-3 sm:px-6">
+			<header className="flex h-8 shrink-0 items-center gap-3 border-b pr-2 electrobun-webkit-app-region-drag">
+				<div className="flex h-full w-8 shrink-0 items-center justify-center border-r electrobun-webkit-app-region-no-drag">
+					<Button
+						variant="ghost"
+						size="icon-sm"
+						aria-label={`Toggle ${NAMES[kind].toLowerCase()} sidebar`}
+						aria-expanded={left.open}
+						onClick={() => left.setOpen((value) => !value)}
+					>
+						<IconSidebar className="size-4" aria-hidden />
+					</Button>
+				</div>
 				<h1 className="text-sm font-medium">{NAMES[kind]}</h1>
-				<ProjectPicker
-					repos={repos}
-					selectedRepoId={project.id}
-					onRepoChange={(repo) => onProject(repo.id)}
-					onAddRepo={connected ? onOpen : undefined}
-					trigger={
-						<button
-							type="button"
-							aria-label={`Select project, currently ${project.name}`}
-							className="ml-auto inline-flex min-w-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs text-muted-foreground outline-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30"
-						/>
-					}
-				>
-					<span className="truncate">{project.name}</span>
-					<IconChevronDown className="size-3 shrink-0" aria-hidden />
-				</ProjectPicker>
+				{!target && (
+					<div className="ml-auto flex min-w-0 items-center gap-2 electrobun-webkit-app-region-no-drag">
+						<span className="hidden truncate text-xs text-muted-foreground sm:block">
+							{repo.value}
+						</span>
+						<Refresh loading={loading} onClick={refresh} />
+					</div>
+				)}
 			</header>
 			{target
 				? <Detail key={target.url} target={target} onTarget={onTarget} />
 				: (
 					<>
-						<div className="flex shrink-0 flex-col gap-3 border-b px-4 py-3 sm:px-6">
-							<div className="flex items-center gap-3">
-								<div className="flex items-center gap-1" aria-label={`${NAMES[kind]} state`}>
-									{(["open", "closed", "all"] as const).map((state) => (
-										<Button
-											key={state}
-											variant={filter.state === state ? "secondary" : "ghost"}
-											size="sm"
-											aria-pressed={filter.state === state}
-											onClick={() => setFilter({ ...filter, state, limit: 50 })}
-										>
-											{state[0]!.toUpperCase() + state.slice(1)}
-										</Button>
-									))}
-								</div>
-								<span className="ml-auto hidden min-w-0 truncate text-xs text-muted-foreground sm:block">
-									{repo.value}
-								</span>
-								<Refresh loading={loading} onClick={refresh} />
-							</div>
+						<div className="shrink-0 border-b px-4 py-3 sm:px-6">
 							<form
 								className="flex gap-2"
 								onSubmit={(event) => {

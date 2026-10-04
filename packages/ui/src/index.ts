@@ -91,6 +91,7 @@ export {
 export type { SidebarRow } from "./components/session-item/session-item.types";
 export {
 	ProjectPicker,
+	ProjectSidebar,
 	SessionSidebar,
 	type SessionSidebarGroup,
 	type SessionSidebarGroupId,
