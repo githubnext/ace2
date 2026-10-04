@@ -1,17 +1,32 @@
 import { randomBytes } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	readdirSync,
+	readFileSync,
+	renameSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
 import { userInfo } from "node:os";
 import { join } from "node:path";
 
-import type { ModelRef } from "@ace/channel";
+import { type Metadata, type ModelRef, validateName } from "@ace/channel";
 
 import { config } from "./config";
 import { login } from "./tailnet";
 
 export type Listing = {
-	version: 1;
+	version: 2;
 	id: string;
 	name: string;
+	/** The original name remains the prefix for lane branches after a rename. */
+	prefix: string;
+	/** Whether the initial name was chosen deliberately rather than randomly. */
+	named: boolean;
+	/** A listing projection; pi's metadata document is authoritative once the channel opens. */
+	summary?: string;
+	revision?: number;
 	owner: string;
 	project: string;
 	model?: ModelRef;
@@ -84,18 +99,17 @@ function pick(words: string[]): string {
 
 /** A new channel's record, not yet saved: a hosted channel saves it once the service has it. */
 export function draft(project: string, model?: ModelRef, name?: string, hosted?: string): Listing {
-	const names = new Set(list().map((record) => record.name));
+	const names = new Set(list().flatMap((record) => [record.name, record.prefix]));
 	const random = () => `${pick(WORDS[0])}-${pick(WORDS[1])}`;
-	let chosen = name || random();
-	if (name && names.has(name)) throw new Error(`A channel named ${name} already exists`);
+	let chosen = name ? validateName(name) : random();
+	if (name && names.has(chosen)) throw new Error(`A channel named ${chosen} already exists`);
 	while (names.has(chosen)) chosen = random();
-	if (!/^[a-z0-9][a-z0-9-]*$/.test(chosen)) {
-		throw new Error("A channel name must be lowercase kebab-case");
-	}
 	const record: Listing = {
-		version: 1,
+		version: 2,
 		id: randomBytes(8).toString("hex"),
 		name: chosen,
+		prefix: chosen,
+		named: !!name,
 		owner: user,
 		project,
 		model,
@@ -123,19 +137,31 @@ export function owns(id: string): boolean {
 
 export function read(id: string): Listing {
 	const record = JSON.parse(readFileSync(paths(id).record, "utf8")) as
-		& Omit<Listing, "version">
+		& Omit<Listing, "version" | "prefix" | "named">
+		& Partial<Pick<Listing, "prefix" | "named">>
 		& { version?: number };
-	if (record.version !== undefined && record.version !== 1) {
+	if (record.version !== undefined && record.version !== 1 && record.version !== 2) {
 		throw new Error(
 			`Channel ${id} uses catalog version ${record.version}. Open it with a compatible Ace build.`,
 		);
 	}
-	// Version 0 required a model. Preserve that choice; version 1 also permits unset models.
-	return { ...record, version: 1 };
+	if (record.version === 2) return record as Listing;
+	// Older channels retain both their chosen name and their existing lane branch prefix.
+	return { ...record, version: 2, prefix: record.name, named: true };
 }
 
 export function write(record: Listing): void {
-	writeFileSync(paths(record.id).record, JSON.stringify(record, null, "\t"));
+	const path = paths(record.id).record;
+	const temporary = `${path}.${process.pid}.tmp`;
+	writeFileSync(temporary, JSON.stringify(record, null, "\t"));
+	renameSync(temporary, path);
+}
+
+/** Rebuildable listing metadata from the channel's committed pi document. */
+export function metadata(id: string, value: Metadata): void {
+	const record = read(id);
+	if (record.revision !== undefined && record.revision >= value.revision) return;
+	write({ ...record, ...value });
 }
 
 export function list(): Listing[] {
@@ -149,8 +175,11 @@ export function list(): Listing[] {
 /** Resolve a channel by ID or name. */
 export function find(ref: string): Listing {
 	const records = list();
-	const record = records.find((record) => record.id === ref)
-		|| records.find((record) => record.name === ref);
+	const identified = records.find((record) => record.id === ref);
+	if (identified) return identified;
+	const matches = records.filter((record) => record.name === ref);
+	if (matches.length > 1) throw new Error(`More than one channel is named ${ref}; use its ID`);
+	const record = matches[0];
 	if (!record) throw new Error(`No channel ${ref}`);
 	return record;
 }

@@ -14,6 +14,8 @@ import {
 	type TextLineReader,
 } from "@earendil-works/pi-durable/env";
 
+import type { Metadata } from "./protocol";
+
 declare function btoa(data: string): string;
 declare function atob(data: string): string;
 
@@ -21,6 +23,9 @@ declare function atob(data: string): string;
 export type Call =
 	| { call: number; method: Method; cwd: string; args: unknown[] }
 	| { cancel: number };
+
+/** Metadata is projected by the workspace host even when no client watches the channel. */
+export type WorkspaceMessage = Call | { metadata: Metadata };
 
 /** Workspace to channel. */
 export type Reply =

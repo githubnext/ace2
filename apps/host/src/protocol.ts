@@ -8,7 +8,7 @@ import type {
 	Request,
 } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 6;
+export const HOST_PROTOCOL = 7;
 
 export type HostInfo = {
 	app: "ace";
@@ -39,6 +39,9 @@ export type Listing = {
 	/** The machine running the channel, by its tailnet name. */
 	host: string;
 	name: string;
+	summary?: string;
+	/** Revision of the channel's projected name and summary. */
+	revision?: number;
 	owner: string;
 	project: string;
 	model?: ModelRef;

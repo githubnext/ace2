@@ -55,11 +55,13 @@ const pending = new Set<Promise<unknown>>();
 function local(): Listing[] {
 	return catalog.list().map((record) => {
 		const state = record.archived ? "archived" : isRunning(record.id) ? "running" : "dormant";
-		const { id, name: channel, owner, project, model, created, hosted } = record;
+		const { id, name: channel, summary, revision, owner, project, model, created, hosted } = record;
 		const listing: Listing = {
 			id,
 			host: name,
 			name: channel,
+			summary,
+			revision,
 			owner,
 			project,
 			model,

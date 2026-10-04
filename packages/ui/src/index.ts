@@ -88,6 +88,10 @@ export {
 	type ScrollViewProps,
 	type ScrollViewRange,
 } from "./components/scroll-view/scroll-view";
+export {
+	SessionDetailsView,
+	type SessionDetailsViewProps,
+} from "./components/session-details/session-details";
 export type { SidebarRow } from "./components/session-item/session-item.types";
 export {
 	ProjectPicker,

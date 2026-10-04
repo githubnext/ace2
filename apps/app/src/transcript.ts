@@ -112,6 +112,8 @@ export function apply(state: Transcript, event: Event): Transcript {
 			return { ...state, busy: event.state === "start", draft: "" };
 		case "live":
 			return { ...state, live: true };
+		case "metadata":
+			return state;
 	}
 }
 

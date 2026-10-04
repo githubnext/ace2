@@ -29,8 +29,18 @@ import { instructions } from "./context";
 import { changes, patch } from "./changes";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
+import { metadata, MetadataDoc, validateName } from "./metadata";
 import { available, choose } from "./models";
-import type { ChannelInfo, Chat, ChatId, Event, ModelRef, Request, Usage } from "./protocol";
+import type {
+	ChannelInfo,
+	Chat,
+	ChatId,
+	Event,
+	Metadata,
+	ModelRef,
+	Request,
+	Usage,
+} from "./protocol";
 import * as room from "./room";
 
 const SettingsDoc = defineDoc<{ shared: boolean }>({
@@ -43,6 +53,10 @@ const SettingsDoc = defineDoc<{ shared: boolean }>({
 export type Options = {
 	id: string;
 	name: string;
+	/** Existing and explicitly named channels keep their name until a requested rename. */
+	named?: boolean;
+	/** Immutable Git branch prefix, seeded from the channel's initial name. */
+	prefix?: string;
 	owner: string;
 	/** Paths inside the execution environment's file system. */
 	project: string;
@@ -54,6 +68,8 @@ export type Options = {
 	models: Models;
 	env(cwd: string): ExecutionEnv;
 	directory: Directory;
+	/** Publish a projection of committed metadata to the runtime's channel catalog. */
+	onMetadata?(value: Metadata): void;
 	log: Log;
 };
 
@@ -63,20 +79,25 @@ export class Channel {
 	#options: Options;
 	#harness: Harness;
 	#log: Log;
+	#metadata: Metadata;
+	#listeners = new Set<{ chat: ChatId; send: Send }>();
 
-	private constructor(options: Options, harness: Harness, log: Log) {
+	private constructor(options: Options, harness: Harness, log: Log, value: Metadata) {
 		this.#options = options;
 		this.#harness = harness;
 		this.#log = log;
+		this.#metadata = value;
 	}
 
 	static async open(options: Options): Promise<Channel> {
 		const log = scoped(options.log, { channel: options.id });
+		let channel: Channel;
 		const registry = createRegistry();
 		registry.install(logging(log));
 		registry.install(CodingTools);
-		registry.install(lanes(options));
+		registry.install(lanes({ ...options, name: options.prefix || options.name }));
 		registry.install(Subagent);
+		registry.install(metadata((value) => channel.#changed(value)));
 		registry.install(messaging(options.directory));
 		registry.install(
 			defineExtension({ name: "ace-channel", sections: [room.section(options), instructions] }),
@@ -88,10 +109,21 @@ export class Channel {
 			onReport: (error) => log("error", "harness.report", failure(error)),
 		}, context);
 		await harness.root(context, { agent: { model: options.model, cwd: options.project } });
+		const value = await harness.commit(async (tx) => {
+			const doc = await tx.doc(MetadataDoc);
+			// A missing document is the version 0 upgrade; existing pi metadata always wins.
+			if (!doc.name) {
+				doc.name = options.name;
+				doc.named = options.named ?? true;
+			}
+			return { name: doc.name, summary: doc.summary, revision: doc.revision };
+		}, context);
+		channel = new Channel(options, harness, log, value);
+		channel.#changed(value);
 		// Opening resumes work a crash interrupted; a killed channel left only terminal tasks behind.
 		harness.resume();
-		log("info", "channel.open", { name: options.name, project: options.project });
-		return new Channel(options, harness, log);
+		log("info", "channel.open", { name: value.name, project: options.project });
+		return channel;
 	}
 
 	/** Runs a client request, logging its outcome with the caller's `trace` id. */
@@ -139,6 +171,8 @@ export class Channel {
 				return this.kill();
 			case "share":
 				return this.#share(request);
+			case "rename":
+				return this.#rename(request);
 			case "watch":
 				return this.#watch(request.chat, send);
 			case "changes": {
@@ -161,8 +195,9 @@ export class Channel {
 	}
 
 	async info(): Promise<ChannelInfo> {
-		const { id, name, project, owner } = this.#options;
+		const { id, project, owner } = this.#options;
 		const settings = await this.#harness.snapshot(SettingsDoc, context);
+		const { name, summary, revision } = (await this.#harness.snapshot(MetadataDoc, context))!;
 		const records: ConversationRecord[] = [];
 		let cursor: Cursor | undefined;
 		do {
@@ -192,7 +227,7 @@ export class Channel {
 			if (lane) chat.lane = lane;
 			return chat;
 		}));
-		return { id, name, project, owner, shared: settings?.shared ?? true, chats };
+		return { id, name, summary, revision, project, owner, shared: settings?.shared ?? true, chats };
 	}
 
 	/** The newest response's own token count; providers report what that request carried. */
@@ -326,17 +361,59 @@ export class Channel {
 		}, context);
 	}
 
+	async #rename(request: Extract<Request, { op: "rename" }>): Promise<Metadata> {
+		if (request.author !== this.#options.owner) {
+			throw new Error("Only the owner can rename the channel");
+		}
+		const name = validateName(request.name);
+		const value = await this.#harness.commit(async (tx) => {
+			const doc = await tx.doc(MetadataDoc);
+			if (doc.name !== name) doc.revision++;
+			doc.name = name;
+			doc.named = true;
+			return { name: doc.name, summary: doc.summary, revision: doc.revision };
+		}, context);
+		this.#changed(value);
+		return value;
+	}
+
+	#changed(value: Metadata): void {
+		if (value.revision < this.#metadata.revision) return;
+		this.#metadata = value;
+		try {
+			this.#options.onMetadata?.(value);
+		} catch (error) {
+			this.#log("warn", "metadata.publish", failure(error));
+		}
+		for (const listener of this.#listeners) {
+			try {
+				listener.send({ kind: "metadata", chat: listener.chat, ...value });
+			} catch {
+				this.#listeners.delete(listener);
+			}
+		}
+	}
+
 	/** Replays the chat's active transcript, then streams. Resolves when the stream ends. */
 	async #watch(chat: ChatId | undefined, send: Send) {
 		const conversation = await this.#conversation(chat);
 		const stream = await watchEvents(this.#harness, conversation.id, context);
+		const listener = { chat: conversation.id, send };
+		this.#listeners.add(listener);
+		void stream.closed.then(() => this.#listeners.delete(listener));
+		send({ kind: "metadata", chat: conversation.id, ...this.#metadata });
 		for (const entry of stream.snapshot.entries) for (const event of events(entry)) send(event);
 		if (stream.snapshot.run) send({ kind: "run", chat: conversation.id, state: "start" });
 		send({ kind: "live", chat: conversation.id });
 		stream.start(async (batch) => {
 			for (const event of batch) for (const mapped of live(conversation.id, event)) send(mapped);
 		});
-		return stream;
+		return {
+			stop: () => {
+				this.#listeners.delete(listener);
+				return stream.stop();
+			},
+		};
 	}
 }
 

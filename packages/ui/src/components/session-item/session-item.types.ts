@@ -9,6 +9,7 @@ export type SidebarRow = {
 	kind: "session" | "lobby";
 	renderKey?: string;
 	name: string;
+	summary?: string;
 	parent?: string;
 	depth?: number;
 	createdAt: UNIX;

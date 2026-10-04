@@ -1,7 +1,7 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 
-import { type Call, serve } from "@ace/channel/workspace";
+import { serve, type WorkspaceMessage } from "@ace/channel/workspace";
 
 import * as catalog from "./catalog";
 import { hostedSocket } from "./client";
@@ -34,7 +34,8 @@ function link(record: catalog.Listing): () => Promise<void> {
 				if (connected.readyState === WebSocket.OPEN) connected.send(JSON.stringify(reply));
 			});
 			socket.addEventListener("message", ({ data }) => {
-				const call = JSON.parse(String(data)) as Call;
+				const call = JSON.parse(String(data)) as WorkspaceMessage;
+				if ("metadata" in call) return catalog.metadata(record.id, call.metadata);
 				log("debug", "workspace.call", {
 					channel: record.id,
 					...("cancel" in call

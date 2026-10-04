@@ -7,6 +7,7 @@ import {
 	SessionSidebar,
 	type SessionSidebarGroup,
 	type SessionSidebarGroupId,
+	type SessionSidebarProps,
 	type SessionSidebarRepo,
 	Sidebar,
 	type SidebarRow,
@@ -15,6 +16,7 @@ import {
 	Toaster,
 	TooltipProvider,
 	useLayoutLeft,
+	useLayoutRight,
 	useLocalStorage,
 	useMedia,
 } from "@ace/ui";
@@ -22,13 +24,14 @@ import { IconHash, IconPlus } from "@ace/ui/icons";
 import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
 
 import { chosen, deployed, remember } from "./address";
-import { Channel, type ChannelDraft } from "./channel";
+import { Channel, ChannelDetails, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
 import { Github, GithubSidebar } from "./github";
 import { useGithubRefresh } from "./github-cache";
 import { GithubLinks, type GithubTarget } from "./github-link";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
+import { Rename } from "./layout/rename";
 import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
 import { projectId, projects } from "./projects";
@@ -39,14 +42,34 @@ import { UpdateNotice } from "./updates";
  * On a phone the channel list is a drawer over the channel: open while no channel is chosen, and
  * out of the way once one is.
  */
-function PhoneDrawer({ page, channel }: { page: string; channel?: string }) {
+function Drawers({ page, channel }: { page: string; channel?: string }) {
 	const left = useLayoutLeft();
+	const { setOpen: setRightOpen } = useLayoutRight();
 	const phone = useMedia("(width < 40rem)");
 	const { setOpen } = left;
 	useEffect(() => {
 		if (phone) setOpen(page === "channels" && !channel);
 	}, [phone, page, channel, setOpen]);
+	useEffect(() => {
+		if (page !== "channels" || !channel) setRightOpen(false);
+	}, [page, channel, setRightOpen]);
 	return null;
+}
+
+function ChannelsSidebar(props: SessionSidebarProps) {
+	const left = useLayoutLeft();
+	const right = useLayoutRight();
+	const phone = useMedia("(width < 40rem)");
+	return (
+		<SessionSidebar
+			{...props}
+			onInfo={(item) => {
+				props.onSelect?.(item);
+				if (phone) left.setOpen(false);
+				right.setOpen(true);
+			}}
+		/>
+	);
 }
 
 function Disconnected() {
@@ -74,11 +97,16 @@ function row(channel: Listing, user: string): SidebarRow {
 		uid: channel.id,
 		kind: "session",
 		name: channel.name,
+		summary: channel.summary,
 		createdAt: Math.floor(channel.created / 1000),
 		lifecycle: channel.state === "archived" ? "archived" : "live",
 		private: false,
 		mine: channel.owner === user,
 		member: true,
+		capabilities: {
+			rename: channel.owner === user && channel.state !== "offline",
+			archive: true,
+		},
 		connection: channel.state === "running"
 			? "connected"
 			: channel.state === "offline"
@@ -106,6 +134,7 @@ export function App() {
 	const [adding, setAdding] = useState(false);
 	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [draft, setDraft] = useState<ChannelDraft>();
+	const [renaming, setRenaming] = useState<{ id: string; name: string }>();
 	const [github, setGithub] = useLocalStorage<
 		Record<string, Partial<Record<"issues" | "prs", GithubTarget>>>
 	>(`ace:github-targets:${host.url}`, {});
@@ -244,6 +273,12 @@ export function App() {
 		}
 	}
 
+	async function rename(name: string) {
+		if (!renaming) return;
+		await host.channel(renaming.id, { op: "rename", author: hello.user, name: name.trim() });
+		setRenaming(undefined);
+	}
+
 	function setTarget(kind: "issues" | "prs", target?: GithubTarget) {
 		if (!current) return;
 		setGithub((value) => ({
@@ -279,7 +314,7 @@ export function App() {
 						/>
 					}
 				>
-					<PhoneDrawer page={page} channel={channel?.id} />
+					<Drawers page={page} channel={channel?.id} />
 					<WindowControls
 						onOpen={() => void choose()}
 						onSettings={() => setSettings(true)}
@@ -294,7 +329,7 @@ export function App() {
 						>
 							{page === "channels"
 								? (
-									<SessionSidebar
+									<ChannelsSidebar
 										className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
 										projectName={current.name}
 										repos={repos}
@@ -309,6 +344,9 @@ export function App() {
 											if (value) select(value);
 										}}
 										onNewSession={local && connected ? () => void create() : undefined}
+										onRename={connected
+											? (item) => setRenaming({ id: item.uid, name: item.name })
+											: undefined}
 										onToggleGroup={(id) =>
 											setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
 										onArchive={local && connected
@@ -414,8 +452,23 @@ export function App() {
 								</div>
 							)}
 					</Main>
+					{page === "channels" && channel && <ChannelDetails channel={channel} />}
 				</Layout>
 				{adding && <OpenProject onOpen={open} onClose={() => setAdding(false)} />}
+				{renaming && (
+					<Rename
+						open
+						name={renaming.name}
+						title="Rename channel"
+						label="Channel name"
+						description="Use lowercase letters, numbers, and hyphens, up to 63 characters."
+						maxLength={63}
+						pattern="[a-z0-9][a-z0-9\-]{0,62}"
+						required
+						onSave={rename}
+						onCancel={() => setRenaming(undefined)}
+					/>
+				)}
 				{settings && (
 					<Settings
 						key={String(settings)}

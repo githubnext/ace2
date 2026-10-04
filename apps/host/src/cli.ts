@@ -25,6 +25,7 @@ const HELP = `ace — channels on this host
   ace new [--project <dir>] [--name <name>] [--model <provider/id>] [--hosted <url>]
   ace ls [--all]
   ace info <channel>
+  ace rename <channel> <name>                   rename without changing its lanes
   ace backup <channel> <directory>              snapshot local channel data into a new directory
   ace say <channel> [--chat <id>] <text…>        post without invoking the agent
   ace ask <channel> [--chat <id>] [--model <provider/id>] [--detach] <text…>
@@ -239,6 +240,10 @@ async function main() {
 			return;
 		case "info":
 			return console.log(JSON.stringify(await request(record.id, { op: "info" }), null, 2));
+		case "rename":
+			if (rest.length !== 1) throw new Error("ace rename <channel> <name>");
+			await request(record.id, { op: "rename", author: catalog.user, name: rest[0]! });
+			return;
 		case "say":
 			if (!text) throw new Error("Nothing to say");
 			await request(record.id, { op: "say", chat: chat(), author: catalog.user, text });

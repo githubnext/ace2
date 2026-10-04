@@ -2,6 +2,7 @@ import { useCallback, useRef, useState } from "react";
 
 import type { Changes } from "@ace/channel/protocol";
 import type { Listing } from "@ace/host/protocol";
+import { SessionDetailsView, Sidebar, useLayoutRight } from "@ace/ui";
 
 import { Conversation } from "./conversation";
 import { host } from "./host";
@@ -22,6 +23,22 @@ type Props = {
 	onDraftLoaded: () => void;
 	onSettings?: () => void;
 };
+
+export function ChannelDetails({ channel }: { channel: Listing }) {
+	const right = useLayoutRight();
+	return (
+		<Sidebar
+			side="right"
+			id="channel-details"
+			aria-hidden={!right.open}
+			inert={!right.open}
+			className="-my-2 h-[calc(100%+1rem)]"
+			innerClassName="h-full min-h-0"
+		>
+			<SessionDetailsView summary={channel.summary} onClose={() => right.setOpen(false)} />
+		</Sidebar>
+	);
+}
 
 /** A channel's tabs: its chat, plus Diff and Terminal views of that chat's lane. */
 export function Channel({ channel, user, remote, draft, onDraftLoaded, onSettings }: Props) {

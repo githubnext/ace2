@@ -74,10 +74,17 @@ For Ace-owned catalog or preference format changes, migrate old records explicit
 the new form. An unreadable or newer store must produce an actionable error, never an empty
 replacement channel. Release validation must exercise existing data as well as fresh installs.
 
-Catalog records and hosted-channel configurations use version 1, which permits an unset initial
-model. Unversioned records are version 0: readers migrate them in memory, preserving their model
-and all other fields. They are written as version 1 on the next save; unknown versions are refused.
-pi's existing optional agent-model field needs no database migration, and channel history is unchanged.
+Catalog records and hosted-channel configurations use version 2. Readers migrate unversioned
+(version 0) and version 1 records in memory, preserving their model, name, and all other fields.
+The original name becomes an immutable lane branch prefix, and legacy names remain deliberate
+names that agents preserve. Records are written as version 2 on the next save; unknown versions
+are refused.
+
+The channel's current name and rolling summary live in pi's version 1 `ace.metadata` session
+document. Its first open seeds the name from the catalog without changing existing entries or
+chats. Catalog names, summaries, and revision numbers are rebuildable listing projections; local
+workers refresh them from committed metadata, and hosted channels send them to their workspace
+on changes and reconnection. Renaming never moves an existing lane or changes its branch prefix.
 
 The October 3, 2026 credential-deferral check opened a backed-up version 0 channel with no keys:
 its pi entries and selected model were unchanged. Fresh channels accepted human messages before
@@ -85,3 +92,9 @@ provider setup and retained their history through a worker restart. Adding a rea
 enabled the same worker to answer using the earlier human messages; removing it blocked only agent
 invocation. The local Workers runtime also accepted new model-free hosted configurations and legacy
 configurations with their original model.
+
+The October 4, 2026 metadata check reopened isolated version 0 and version 1 copies of an existing
+channel backup. All original pi entries remained byte-for-byte equivalent, both copies continued
+with a real model, and renamed channels and rolling summaries survived worker restarts. The source
+backup's checksums remained unchanged. Fresh-channel checks also confirmed that renaming leaves
+existing lane branches intact and new lanes use the original branch prefix.

@@ -52,6 +52,11 @@ Session stored in one SQLite file. A chat is one pi conversation in that Session
 - **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
   `UsageDoc`, including compaction. The app shows input, output, cache tokens, and estimated USD
   at model catalog prices. Reopening the chat reads the same totals; Ace keeps no second ledger.
+- **Names and summaries are durable metadata.** The owner can rename a channel. The root chat's
+  agent names a randomly named channel and keeps a short summary as work progresses, preserving
+  deliberate names unless asked to rename. Metadata lives in a pi session document and is
+  projected into host listings. Watch events update open clients; the details sidebar shows the
+  full summary. Lane paths and branch prefixes keep the channel's original name.
 
 `packages/channel` must stay runtime-neutral: no `node:*`, `bun:*`, or Workers imports. The host
 injects storage, models, and the execution environment. This keeps hosted channels (a channel

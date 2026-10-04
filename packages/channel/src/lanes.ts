@@ -23,7 +23,7 @@ export const LanesDoc = defineDoc<
 
 const NAME = /^[a-z0-9][a-z0-9-]{0,62}$/;
 
-/** Lane branches are prefixed with the channel name so channels sharing a project don't collide. */
+/** The initial channel name remains the lane prefix after a rename. */
 export type Place = { name: string; project: string; lanes: string };
 
 export function lanes(place: Place): Extension {

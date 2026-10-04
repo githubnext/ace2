@@ -121,7 +121,14 @@ export function Dashboard(
 									className="flex min-w-0 items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm outline-none hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/30"
 								>
 									<IconHash className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-									<span className="min-w-0 flex-1 truncate">{channel.name}</span>
+									<span className="min-w-0 flex-1">
+										<span className="block truncate">{channel.name}</span>
+										{channel.summary && (
+											<span className="mt-1 line-clamp-2 text-xs leading-5 break-words text-muted-foreground">
+												{channel.summary}
+											</span>
+										)}
+									</span>
 									{channel.state === "offline" && (
 										<span className="text-xs text-muted-foreground">Offline</span>
 									)}
