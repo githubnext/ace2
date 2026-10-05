@@ -1277,6 +1277,7 @@ function ChatComposer(props: Props) {
 						onKeyDown={keydown}
 						onSubmit={send}
 						onUpdate={update}
+						onFiles={attachable ? addFiles : undefined}
 						placeholder={placeholder ?? (terminal && cwd ? cwd : current?.placeholder)}
 						className="text-sm text-foreground"
 					/>
