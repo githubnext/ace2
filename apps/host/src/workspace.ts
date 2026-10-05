@@ -1,10 +1,11 @@
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 
-import { type Call, serve } from "@ace/channel/workspace";
+import { serve, type WorkspaceMessage } from "@ace/channel/workspace";
 
 import * as catalog from "./catalog";
 import { hostedSocket } from "./client";
+import { desktop } from "./desktop";
 import { failure, log } from "./log";
 
 /**
@@ -22,6 +23,7 @@ function link(record: catalog.Listing): () => Promise<void> {
 	let socket: WebSocket | undefined;
 	let wait = 1000;
 	let timer: ReturnType<typeof setTimeout> | undefined;
+	let stopCalls: (() => Promise<void>) | undefined;
 	const connect = async () => {
 		if (stopped) return;
 		try {
@@ -32,9 +34,11 @@ function link(record: catalog.Listing): () => Promise<void> {
 			log("info", "workspace.connect", { channel: record.id, hosted: record.hosted });
 			const handle = serve(env, (reply) => {
 				if (connected.readyState === WebSocket.OPEN) connected.send(JSON.stringify(reply));
-			});
+			}, desktop);
+			stopCalls = () => handle.close();
 			socket.addEventListener("message", ({ data }) => {
-				const call = JSON.parse(String(data)) as Call;
+				const call = JSON.parse(String(data)) as WorkspaceMessage;
+				if ("metadata" in call) return catalog.metadata(record.id, call.metadata);
 				log("debug", "workspace.call", {
 					channel: record.id,
 					...("cancel" in call
@@ -44,6 +48,7 @@ function link(record: catalog.Listing): () => Promise<void> {
 				handle(call);
 			});
 			socket.addEventListener("close", ({ code, reason }) => {
+				void handle.close();
 				socket = undefined;
 				log("warn", "workspace.drop", { channel: record.id, code, reason, stopped });
 				if (!stopped) timer = setTimeout(connect, wait);
@@ -60,6 +65,7 @@ function link(record: catalog.Listing): () => Promise<void> {
 		stopped = true;
 		clearTimeout(timer);
 		socket?.close();
+		await stopCalls?.();
 		await Promise.all([...envs.values()].map((found) => found.cleanup(BACKGROUND_CONTEXT)));
 	};
 }

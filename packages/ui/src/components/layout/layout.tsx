@@ -73,6 +73,7 @@ const SLOT = [
 	"[data-slot='dialog-content']",
 	"[data-slot='dialog-overlay']",
 	"[data-slot='dropdown-menu-content']",
+	"[data-slot='context-menu-content']",
 	"[data-slot='popover-content']",
 	"[data-slot='sheet-content']",
 	"[data-slot='sheet-overlay']",

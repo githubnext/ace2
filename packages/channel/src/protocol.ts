@@ -17,9 +17,10 @@ export type Usage = {
 export type ChatId = number;
 export type EntryId = number;
 
-export type ChannelInfo = {
+export type Metadata = { name: string; summary: string; revision: number };
+
+export type ChannelInfo = Metadata & {
 	id: string;
-	name: string;
 	/** Directory of the project checkout lanes are created from. */
 	project: string;
 	owner: string;
@@ -135,6 +136,7 @@ export type Request =
 	| { op: "stop"; chat?: ChatId }
 	| { op: "kill" }
 	| { op: "share"; author: string; shared: boolean }
+	| { op: "rename"; author: string; name: string }
 	/** Resolve once the answer to a submission is placed: "done", or "unanswered" when stopped or killed. */
 	| { op: "wait"; submission: number }
 	| { op: "changes"; chat?: ChatId }
@@ -177,8 +179,18 @@ export type Event =
 		name: string;
 		args: unknown;
 	}
-	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string; stopped?: boolean }
+	| {
+		kind: "result";
+		chat: ChatId;
+		call: string;
+		error: boolean;
+		text: string;
+		images?: Image[];
+		stopped?: boolean;
+	}
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
+	/** Channel-wide metadata, sent initially and whenever its name or summary changes. */
+	| ({ kind: "metadata"; chat: ChatId } & Metadata)
 	/** The replayed transcript has been sent; later events are live. */
 	| { kind: "live"; chat: ChatId };
 

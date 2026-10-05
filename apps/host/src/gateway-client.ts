@@ -1,4 +1,6 @@
 /** A client of a host gateway, shared by the app and by hosts reaching their tailnet peers. */
+import type { Metadata } from "@ace/channel/protocol";
+
 import type {
 	Event,
 	HostFrame,
@@ -26,6 +28,7 @@ export class GatewayClient {
 	#retry = 250;
 	#timer?: ReturnType<typeof setTimeout>;
 	#closed = false;
+	#metadata = new Map<string, Metadata>();
 	status: Status = "connecting";
 	channels: Listing[] = [];
 	projects: Project[] = [];
@@ -57,7 +60,7 @@ export class GatewayClient {
 			this.#retry = 250;
 			this.#set("open");
 			this.request<Listing[]>({ op: "channels" }).then((channels) => {
-				this.channels = channels;
+				this.channels = this.#listings(channels);
 				this.#emit();
 			}, () => {});
 			this.onOpen?.();
@@ -71,6 +74,7 @@ export class GatewayClient {
 				pending.reject(new Error("Disconnected from the host"));
 			}
 			this.#pending.clear();
+			this.#metadata.clear();
 			this.channels = [];
 			this.#set("closed");
 			if (this.#closed) return;
@@ -89,7 +93,7 @@ export class GatewayClient {
 			return this.#emit();
 		}
 		if ("channels" in frame) {
-			this.channels = frame.channels;
+			this.channels = this.#listings(frame.channels);
 			return this.#emit();
 		}
 		if ("terminal" in frame) return this.#terminals.get(frame.terminal)?.(frame);
@@ -99,6 +103,31 @@ export class GatewayClient {
 		if (!pending?.watch || !frame.ok) this.#pending.delete(frame.id);
 		if (frame.ok) return pending?.resolve(frame.value);
 		pending?.reject(new Error(frame.error));
+	}
+
+	/** A hosted channel can advance while its workspace's catalog is offline. */
+	#listings(channels: Listing[]): Listing[] {
+		return channels.map((channel) => {
+			const metadata = this.#metadata.get(channel.id);
+			if (!metadata) return channel;
+			if ((channel.revision || 0) >= metadata.revision) {
+				this.#metadata.delete(channel.id);
+				return channel;
+			}
+			return { ...channel, ...metadata };
+		});
+	}
+
+	#update(channel: string, metadata: Metadata) {
+		const previous = this.#metadata.get(channel);
+		if (previous && previous.revision >= metadata.revision) return;
+		this.#metadata.set(channel, metadata);
+		this.channels = this.channels.map((listing) =>
+			listing.id === channel && (listing.revision || 0) < metadata.revision
+				? { ...listing, ...metadata }
+				: listing
+		);
+		this.#emit();
 	}
 
 	#set(status: Status) {
@@ -139,7 +168,17 @@ export class GatewayClient {
 		watch?: (event: Event) => void,
 		trace?: string,
 	): Promise<T> {
-		return this.request<T>({ op: "channel", channel, request }, watch, trace);
+		const observe = watch && ((event: Event) => {
+			if (event.kind === "metadata") {
+				const { name, summary, revision } = event;
+				this.#update(channel, { name, summary, revision });
+			}
+			watch(event);
+		});
+		return this.request<T>({ op: "channel", channel, request }, observe, trace).then((value) => {
+			if (request.op === "rename") this.#update(channel, value as Metadata);
+			return value;
+		});
 	}
 
 	/** Receive a terminal's output and exit; returns the unsubscribe. */

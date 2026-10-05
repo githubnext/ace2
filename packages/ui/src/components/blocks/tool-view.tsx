@@ -24,30 +24,44 @@ import "./tool.css";
 type HighlightState = { source: string; lang?: string; html: string };
 
 function ToolView(
-	{ data, expanded, settling, height, clipped, diff, width }: {
+	{ data, expanded, settling, height, clipped, diff, images, width }: {
 		data: ToolData;
 		expanded: boolean;
 		settling: boolean;
 		height: number;
 		clipped: boolean;
 		diff?: Block;
+		images?: Block;
 		width: number;
 	},
 ) {
 	let preview = agentPreview(data);
 	let subagent = isSubagent(data);
-	let open = expanded && Boolean(data.result || preview);
-	let total = ROW_HEIGHT + (open ? height : 0);
+	let open = expanded && Boolean(data.result || preview || images);
+	let total = ROW_HEIGHT + (open ? height + (images?.measure(width).height || 0) : 0);
 
 	return (
 		<div className="overflow-hidden" style={{ blockSize: total }}>
 			<ToolHeader data={data} expanded={expanded} settling={settling} open={open} />
-			{open && (
+			{open && height > 0 && (
 				subagent && preview
 					? <ToolAgentResult data={data} height={height} settling={settling} />
 					: diff
-					? <ToolDiffResult block={diff} width={width} height={height} settling={settling} />
+					? (
+						<ToolDiffResult
+							block={diff}
+							width={width}
+							height={height}
+							settling={settling}
+							last={!images}
+						/>
+					)
 					: <ToolResult data={data} height={height} clipped={clipped} settling={settling} />
+			)}
+			{open && images && (
+				<div className={settling ? "tool-result-expand-out" : "tool-result-expand-in"}>
+					{images.render(width)}
+				</div>
 			)}
 		</div>
 	);
@@ -116,7 +130,7 @@ function ToolHeader(
 	let context = useToolContext();
 	let toggle = context?.toggle;
 	let preview = agentPreview(data);
-	let interactive = Boolean((data.result || preview) && toggle);
+	let interactive = Boolean((data.result || preview || data.images?.length) && toggle);
 	let title = titleFor(data);
 	let error = data.status === "error" || data.agent?.status === "error";
 	let cls = headerClass(interactive, open, error);
@@ -221,7 +235,8 @@ function ToolResult(
 	return (
 		<div
 			className={cn(
-				"relative rounded-t-none rounded-b-md squircle tab-4 overflow-hidden border-x border-b border-border bg-code contain-content",
+				"relative rounded-t-none squircle tab-4 overflow-hidden border-x border-b border-border bg-code contain-content",
+				!data.images?.length && "rounded-b-md",
 				settling ? "tool-result-expand-out" : "tool-result-expand-in",
 			)}
 			style={{
@@ -283,7 +298,8 @@ function ToolAgentResult(
 	return (
 		<div
 			className={cn(
-				"relative rounded-t-none rounded-b-md squircle tab-4 overflow-hidden border-x border-b border-border bg-code contain-content",
+				"relative rounded-t-none squircle tab-4 overflow-hidden border-x border-b border-border bg-code contain-content",
+				!data.images?.length && "rounded-b-md",
 				settling ? "tool-result-expand-out" : "tool-result-expand-in",
 			)}
 			style={{
@@ -312,17 +328,19 @@ function sameHighlight(
 }
 
 function ToolDiffResult(
-	{ block, height, width, settling }: {
+	{ block, height, width, settling, last }: {
 		block: Block;
 		height: number;
 		width: number;
 		settling: boolean;
+		last: boolean;
 	},
 ) {
 	return (
 		<div
 			className={cn(
 				"overflow-hidden contain-content [&>*]:rounded-t-none [&>*]:!border-t-0",
+				!last && "[&>*]:rounded-b-none",
 				settling ? "tool-result-expand-out" : "tool-result-expand-in",
 			)}
 			style={{

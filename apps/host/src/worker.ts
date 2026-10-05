@@ -9,6 +9,7 @@ import { Channel, type Envelope, type Frame } from "@ace/channel";
 
 import * as catalog from "./catalog";
 import { request } from "./client";
+import { desktop } from "./desktop";
 import { models, seal } from "./keys";
 import { defaultModel } from "./manage";
 import { lines } from "./lines";
@@ -60,6 +61,9 @@ const envs = new Map<string, NodeExecutionEnv>();
 const channel = await Channel.open({
 	id,
 	name: record.name,
+	prefix: record.prefix,
+	named: record.named,
+	onMetadata: (value) => catalog.metadata(id, value),
 	owner: record.owner,
 	project: record.project,
 	lanes: paths.lanes,
@@ -67,13 +71,14 @@ const channel = await Channel.open({
 	defaultModel,
 	storage: await openNodeSqliteStorage(paths.storage),
 	models: models(),
+	desktop,
 	env(cwd) {
 		let env = envs.get(cwd);
 		if (!env) envs.set(cwd, env = new NodeExecutionEnv({ cwd }));
 		return env;
 	},
 	directory: {
-		self: { id, name: record.name },
+		self: { id, name: record.prefix },
 		list: async () => catalog.list().filter((other) => other.id !== id && !other.archived),
 		async deliver(delivery) {
 			const op = delivery.invoke ? "ask" : "say";

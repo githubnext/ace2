@@ -199,7 +199,7 @@ export function RowMenu(
 					alignOffset={0}
 					className="isolate z-50 outline-none"
 				>
-					<ContextMenu.Popup className={MENU_POPUP_FULL}>
+					<ContextMenu.Popup data-slot="context-menu-content" className={MENU_POPUP_FULL}>
 						<ContextMenu.Group>
 							{!lobby && !archived && (
 								<>

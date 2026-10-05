@@ -3,7 +3,7 @@
 Ace ships one application bundle containing the UI, Ace Helper, and the channel worker runtime.
 [Sparkle 2](https://sparkle-project.org/documentation/) verifies and replaces that whole bundle.
 Its installers are temporary processes; Ace Helper remains the persistent background service.
-The current release target is Apple silicon on macOS 14 or later.
+The current release target is Apple silicon on macOS 15 or later.
 
 ## Experience
 
@@ -62,9 +62,19 @@ authenticate its metadata or archive, and has no helper handoff. Ace instead ext
 application from Electrobun's build archive; its self-extracting wrapper and `Updater.applyUpdate()`
 are unused.
 
-The Sparkle SDK and Electrobun CLI downloads are pinned by version and SHA-256. Sparkle's license
-is included in the bundle. Code is signed inside out, including Ace Helper and Sparkle's nested
-installers. Paths containing spaces are passed as individual command arguments.
+The Sparkle SDK and Electrobun CLI downloads are pinned by version and SHA-256. Native desktop
+inspection builds the Swift package in `apps/desktop/native` with Swift 6.2 or newer; CI selects
+Xcode 26.2. `Package.resolved` pins Peekaboo 4.8.0 and its dependencies, and ordinary builds require
+those resolved versions. To intentionally update the lockfile, run
+`xcrun swift package --package-path apps/desktop/native resolve` and commit the resulting file.
+
+The bundle contains `libAceDesktop.dylib` and `ace-desktop-client`, with needed Swift runtime
+libraries discovered from their compiled dependencies. It does not ship Peekaboo's standalone app
+or CLI. Sparkle's license and the native dependencies' licenses and notices are included in
+Resources. Code is signed inside out, including the Swift runtimes, Ace Helper, and Sparkle's nested
+installers. The desktop client uses the app's actual bundle identifier followed by `.desktop-client`;
+the embedded bridge accepts only a client with that identifier and the app's Apple Team ID. Paths
+containing spaces are passed as individual command arguments.
 
 A release requires Developer ID signing, hardened runtime, notarization, and stapled tickets for
 both the app and disk image. The image contains the app and an Applications shortcut. Sparkle
@@ -119,12 +129,16 @@ build. Downloads go under `apps/desktop/artifacts/ci/<run-id>/`; the command che
 SHA-256 against its release manifest and reports the source revision.
 
 Use `stable` instead of `canary` for the main app. Building does not publish; add `--publish`
-explicitly to build and publish a release. Manual builds may run at any time. Native app
-inspection is still a separate dogfooding gap.
+explicitly to build and publish a release. Manual builds may run at any time. A channel can use
+[native desktop inspection](desktop-tools.md) to examine the installed app on its execution host.
 
-Keep the same Developer ID identity for installed development builds with
-`ACE_CODESIGN_IDENTITY`; replacing one with an ad-hoc signature can invalidate Ace Helper's
-macOS background permission.
+Native desktop inspection in development requires an Apple Development signing identity selected
+with `ACE_CODESIGN_IDENTITY`. Ad-hoc development builds still run, but inspection reports that a
+trusted Apple signature is required. Release builds use the Developer ID identity below.
+
+Keep the same signing identity for installed development builds with `ACE_CODESIGN_IDENTITY`.
+Changing from Apple Development to Developer ID, or to an ad-hoc signature, can invalidate
+Ace Helper's macOS launch constraint even when the Team ID stays the same.
 
 ## Credentials and first release
 
@@ -225,3 +239,13 @@ Packaged helper checks must also start with launchd's system-only PATH: Bun 1.4'
 Pass the imported PATH explicitly when resolving developer tools. The 0.0.7 helper reproduced the
 false missing-GitHub-CLI error; a compiled helper with the fix read real issues and PRs using the
 same restricted startup environment and existing GitHub login.
+
+[Canary 0.0.8](https://github.com/githubnext/ace2/actions/runs/37204148484), from `607d91e`,
+published the helper tool lookup fix. [Canary 0.0.9](https://github.com/githubnext/ace2/actions/runs/37238501439),
+from `5b7e614`, adds persistent GitHub page caching and the shared project sidebar.
+
+The 0.0.9 checks, release dispatch, and artifact download ran through an Ace terminal. CI passed
+type, formatting, and lint checks; signed and notarized the app and DMG; and verified the public
+archive before publishing the signed feed. The download matched the requested source revision
+and SHA-256, and the DMG passed local Gatekeeper and stapled-ticket checks as
+`Notarized Developer ID`. The public feed serves 0.0.9 with `Cache-Control: no-store`.

@@ -691,6 +691,48 @@ function ArchivedHeader({ onBack }: { onBack: () => void }) {
 	);
 }
 
+export function ProjectSidebar({
+	projectName,
+	repos,
+	selectedRepoId,
+	onRepoChange,
+	onRepoRemove,
+	onAddRepo,
+	children,
+	className,
+	...props
+}:
+	& ComponentPropsWithRef<"aside">
+	& Pick<
+		SessionSidebarProps,
+		"projectName" | "repos" | "selectedRepoId" | "onRepoChange" | "onRepoRemove" | "onAddRepo"
+	>)
+{
+	return (
+		<aside
+			className={cn(
+				"flex h-full w-64 min-w-56 flex-col overflow-hidden bg-sidebar text-sidebar-foreground select-none",
+				className,
+			)}
+			{...props}
+		>
+			<header className="flex h-10.5 shrink-0 items-center border-b border-border/60 pr-2 pl-3 dark:border-transparent">
+				<div className="flex min-w-0 flex-1 translate-y-0.5 items-center">
+					<ProjectPicker
+						projectName={projectName}
+						repos={repos}
+						selectedRepoId={selectedRepoId}
+						onRepoChange={onRepoChange}
+						onRepoRemove={onRepoRemove}
+						onAddRepo={onAddRepo}
+					/>
+				</div>
+			</header>
+			{children}
+		</aside>
+	);
+}
+
 function partition(groups: SessionSidebarGroup[], create: boolean) {
 	let total = count(groups);
 	let archived = groups.find((group) => group.id === "archived" && group.rows.length > 0);
@@ -847,26 +889,17 @@ export function SessionSidebar(
 
 	return (
 		<TooltipProvider>
-			<aside
+			<ProjectSidebar
 				ref={ref}
-				className={cn(
-					"flex h-full w-64 min-w-56 flex-col overflow-hidden bg-sidebar text-sidebar-foreground select-none",
-					className,
-				)}
+				className={className}
+				projectName={projectName}
+				repos={repos}
+				selectedRepoId={selectedRepoId}
+				onRepoChange={onRepoChange}
+				onRepoRemove={onRepoRemove}
+				onAddRepo={onAddRepo}
 				{...props}
 			>
-				<header className="flex h-10.5 shrink-0 items-center border-b border-border/60 pr-2 pl-3 dark:border-transparent">
-					<div className="flex min-w-0 flex-1 translate-y-0.5 items-center">
-						<ProjectPicker
-							projectName={projectName}
-							repos={repos}
-							selectedRepoId={selectedRepoId}
-							onRepoChange={onRepoChange}
-							onRepoRemove={onRepoRemove}
-							onAddRepo={onAddRepo}
-						/>
-					</div>
-				</header>
 				<div className="relative min-h-0 flex-1 overflow-hidden">
 					<motion.div
 						initial={false}
@@ -916,7 +949,7 @@ export function SessionSidebar(
 						</div>
 					</motion.div>
 				</div>
-			</aside>
+			</ProjectSidebar>
 		</TooltipProvider>
 	);
 }

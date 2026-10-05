@@ -11,6 +11,7 @@ import {
 } from "@earendil-works/pi-durable";
 
 import type { Delivery } from "./protocol";
+import { MetadataExtension } from "./metadata";
 import * as room from "./room";
 
 async function answer(api: ToolExecutionApi, id: EntryId, context: Context): Promise<string> {
@@ -56,7 +57,7 @@ export const Subagent: Extension = defineExtension({
 						ownership: { kind: "task", taskId: api.taskId },
 					});
 					await configure(tx, created.id, {
-						extensions: { remove: [Subagent] },
+						extensions: { remove: [Subagent, MetadataExtension] },
 						...(change ? { model: change } : {}),
 					});
 					return created.id;
@@ -82,7 +83,12 @@ export const Subagent: Extension = defineExtension({
 
 export type Directory = {
 	self: { id: string; name: string };
-	list(context: Context): Promise<{ id: string; name: string; project: string }[]>;
+	list(context: Context): Promise<{
+		id: string;
+		name: string;
+		project: string;
+		summary?: string;
+	}[]>;
 	deliver(delivery: Delivery, context: Context): Promise<void>;
 };
 
@@ -93,13 +99,15 @@ export function messaging(directory: Directory): Extension {
 		tools: [
 			defineTool({
 				name: "channels",
-				description: "List the channels on this host that you can message.",
+				description:
+					"List the channels on this host that you can message, with their rolling summaries.",
 				parameters: Type.Object({}),
 				replay: "safe",
 				execute: async (_args, _api, context) => {
 					const channels = await directory.list(context);
 					const lines = channels.map((channel) =>
 						`${channel.id}\t${channel.name}\t${channel.project}`
+						+ (channel.summary ? `\t${channel.summary.replace(/\s+/g, " ")}` : "")
 					);
 					return { content: [{ type: "text", text: lines.join("\n") || "No other channels." }] };
 				},
@@ -109,7 +117,9 @@ export function messaging(directory: Directory): Extension {
 				description:
 					"Post a message to another channel's chat. Set invoke to start that chat's agent on it; otherwise people and the agent there only see it. Delivery does not wait for an answer.",
 				parameters: Type.Object({
-					channel: Type.String({ description: "Channel id or name" }),
+					channel: Type.String({
+						description: "Channel id or unique name; use the id when names repeat",
+					}),
 					chat: Type.Optional(
 						Type.Number({ description: "Chat id; defaults to the channel's first chat" }),
 					),
@@ -120,9 +130,19 @@ export function messaging(directory: Directory): Extension {
 				replay: "safe",
 				execute: async (args, api, context) => {
 					const channels = await directory.list(context);
-					const target = channels.find((channel) => channel.id === args.channel)
-						|| channels.find((channel) => channel.name === args.channel);
-					if (!target) throw new Error(`No channel ${args.channel}`);
+					// Names can change after delivery; a recovered call must keep its original destination.
+					const saved = await api.memo<string>("channel", context);
+					const ref = saved || args.channel;
+					let target = channels.find((channel) => channel.id === ref);
+					if (!target && !saved) {
+						const matches = channels.filter((channel) => channel.name === ref);
+						if (matches.length > 1) {
+							throw new Error(`More than one channel is named ${ref}; use its channel id`);
+						}
+						target = matches[0];
+					}
+					if (!target) throw new Error(`No channel ${ref}`);
+					await api.memo("channel", target.id, context);
 					await directory.deliver({
 						channel: target.id,
 						...(args.chat === undefined ? {} : { chat: args.chat }),

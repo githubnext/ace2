@@ -6,6 +6,10 @@ the per-channel process. Ace keeps the process and drops the infrastructure.
 
 Words in this document have the meanings in [terms](terms.md).
 
+Ace is open source software that teams clone, fork, and operate on their own machines and in
+their own infrastructure or cloud accounts. Ace will not operate a hosted service. The tailnet
+is the sole authority for team membership and collaboration access; see [the team](#the-team).
+
 ## Layout
 
 | Path                 | Runs                    | Owns                                                                 |
@@ -20,13 +24,17 @@ Clients (the CLI and desktop app) attach to channels; a channel is not a client.
 
 The app's Issues and PRs pages read the selected project's GitHub repository through the host's
 GitHub CLI account. A peer can resolve the Git remote of a project already exposed by its channels;
-the app's own host performs authenticated GitHub reads. GitHub content is fetched on demand, not
-stored in channel history. GitHub issue and PR links open these pages inside Ace.
+the app's own host performs authenticated GitHub reads. The app caches GitHub responses in
+IndexedDB, scoped to its host connection. It refreshes in the background at startup and every
+three hours, keeping cached content visible while requests run or fail. GitHub content stays
+outside channel history. Issues and PRs share the Channels sidebar and project picker, with
+Open, Closed, and All filters in the sidebar. GitHub issue and PR links open these pages inside Ace.
 
 ## Channel
 
-A channel is one worker process over one [pi-durable](https://github.com/earendil-works/pi)
-Session stored in one SQLite file. A chat is one pi conversation in that Session.
+A channel owns one [pi-durable](https://github.com/earendil-works/pi) Session. A local channel runs
+as one worker process over one SQLite file; a hosted channel runs in a team-deployed cell. A chat
+is one pi conversation in that Session.
 
 - **Durable state is pi's.** Messages, runs, tool calls, and child chats are pi entries, tasks,
   and conversations. A crash resumes unfinished work from its last checkpoint; tools that are not
@@ -49,6 +57,11 @@ Session stored in one SQLite file. A chat is one pi conversation in that Session
 - **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
   `UsageDoc`, including compaction. The app shows input, output, cache tokens, and estimated USD
   at model catalog prices. Reopening the chat reads the same totals; Ace keeps no second ledger.
+- **Names and summaries are durable metadata.** The owner can rename a channel. The root chat's
+  agent names a randomly named channel and keeps a short summary as work progresses, preserving
+  deliberate names unless asked to rename. Metadata lives in a pi session document and is
+  projected into host listings. Watch events update open clients; the details sidebar shows the
+  full summary. Lane paths and branch prefixes keep the channel's original name.
 
 `packages/channel` must stay runtime-neutral: no `node:*`, `bun:*`, or Workers imports. The host
 injects storage, models, and the execution environment. This keeps hosted channels (a channel
@@ -56,8 +69,9 @@ inside a Durable Object, with tools served from a team machine) an adapter rathe
 
 Process per channel gives isolation and instant kill, and lets thousands of channels exist as
 files: a dormant channel is a closed SQLite file with no process. It is process isolation, not a
-boundary: every worker runs as the host's user and can read the others' files. Agents have full
-access by design, so the boundary that would matter is around tool execution, not the store.
+security boundary: every worker runs as the host's user and can read the others' files. Agents
+have full access to that user's execution environment by design. Collaborator invocation is
+controlled by one switch for all available tools.
 
 ## Host
 
@@ -76,9 +90,9 @@ channels also contribute their project paths. Only local owner connections can r
 the opened-project list; teammates see the project information already present in channel listings.
 
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
-for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment and anyone admitted to
-a channel can invoke its agent, so processes that run tools first move credential-like variables
-out of the environment; only the key lookup can read them.
+for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment. Participants allowed
+to invoke an agent can use all of its tools, so processes that run tools first move credential-like
+variables out of the environment; only the key lookup can read them.
 
 Workers resolve Keychain credentials on each model request, so adding, replacing, or removing a
 key through the app or CLI takes effect without restarting workers. Keychain access errors are
@@ -152,6 +166,18 @@ Git, shell, Tailscale, and directory diagnostics come from the host through the 
 boundary as provider settings. The project picker selects a local Git checkout; project creation
 errors remain in the form so the person can fix the path or provider setup.
 
+Agents inspect native windows through an injected desktop capability. The desktop embeds
+Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility and Screen
+Recording permissions. The host invokes a bundled client over a local Unix socket. The bridge
+accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
+signing team. Only
+application inventory, window inventory, and observation are exposed. The host bounds
+accessibility text and resizes screenshots before returning them. Quitting Ace stops inspection;
+Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
+Pi stores the result; channel clients project its images into the existing tool output. The collaborator-agent
+switch applies to desktop tools with the rest of the agent's tools. See
+[native desktop inspection](desktop-tools.md) for setup and the current observation-only scope.
+
 Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
 separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service
 is `ace-dev`. `ACE_CONFIG_HOME` and `ACE_KEYCHAIN_SERVICE` can target an isolated profile for
@@ -163,7 +189,8 @@ the handoff, signed feeds, hosting, and release credentials.
 
 ## Hosted channels
 
-`services/channel` runs the same `packages/channel` core in a Durable Object, one per channel.
+Teams deploy `services/channel` to run the same `packages/channel` core in a Durable Object,
+one per channel. Hosted describes channel placement, not an Ace-operated service.
 The object provides what the host's worker provides locally (single ownership of the store,
 isolation, and routing by channel ID) and adds hibernation and placement off any one machine.
 pi's portable SQLite core runs on the object's own SQL through `storage.ts`.
@@ -185,7 +212,8 @@ offline, and a call in flight when it drops is reported to the model as failed.
 ## Shared services
 
 Shared state that must outlive any one machine lives in cells: Durable Objects deployed to
-Cloudflare, or celld on a team machine. Each service is named for its job.
+the team's Cloudflare account, or celld on a team machine. The team deploys and operates these
+services. Each service is named for its job.
 
 `services/directory` holds the team's hosts and where each channel lives. Every host publishes its
 whole channel set on each change and every 30 seconds, then reads everyone's. It answers lookups
@@ -198,13 +226,24 @@ Lobbies (presence, notifications) are not built.
 
 ## The team
 
-The tailnet is the team: it decides which people and machines can reach a host. Every author is a
-Tailscale login, so a person is the same participant on every host. Within a channel there are no
-tool permissions; the owner can only turn agent invocation by others on or off.
+The tailnet is the team and the sole authority for team membership and collaboration access.
+Its identities and access rules decide which people and machines can reach each other. Ace has
+no separate accounts, invitations, roles, or team access controls. Every human author is a
+Tailscale login, so a person is the same participant on every host.
 
-Each host's gateway listens twice. Loopback serves the app as the host's owner. The machine's
-tailnet address takes host-to-host sockets only, names each caller with `tailscale whois`, and
-refuses anything with an `Origin` header, so a web page on a teammate's machine cannot act as them.
+The channel owner can turn collaborator agent invocation on or off with `ace share <channel> on|off`.
+This is one switch for all of the agent's available tools, including native desktop tools when
+supported. It prevents new collaborator invocations; active work continues until stopped or
+killed. There are no separate per-tool grants or approval policies within a channel.
+
+Local owner tokens and browser-origin checks authenticate local connections. Team-deployed
+services use `ACE_SECRET` to authenticate hosts and trust the participant identities those hosts
+supply; the services do not check tailnet membership themselves. These mechanisms carry the
+team's existing trust and do not define another way for a participant to join the team.
+
+Each host's gateway serves its owner's app over loopback. Its tailnet listeners name each caller
+with `tailscale whois` and accept peer hosts or the owner's browser from an allowed origin.
+Teammates use their own host to reach shared channels. Local-only settings remain on loopback.
 Hosts find online, untagged peers through `tailscale status`. A host shows its app every peer's
 channels and proxies their requests; the peer that runs a channel stamps every author. Only a
 channel's host creates it; only the host's owner, from any of their machines, archives, deletes,

@@ -30,6 +30,7 @@ jobs:
     timeout-minutes: 60
     environment: desktop-${{ inputs.channel }}
     env:
+      DEVELOPER_DIR: /Applications/Xcode_26.2.app/Contents/Developer
       ACE_CODESIGN_IDENTITY: ${{ vars.ACE_CODESIGN_IDENTITY }}
       ACE_UPDATE_URL: ${{ vars.ACE_UPDATE_URL }}
       ACE_UPDATE_PUBLIC_KEY: ${{ vars.ACE_UPDATE_PUBLIC_KEY }}

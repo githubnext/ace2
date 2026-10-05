@@ -38,11 +38,14 @@ to change.
 
 ## Tracking and PRs
 
-- [TODO.md](TODO.md) is the only tracker; don't open GitHub issues. Update it in the same commit
-  as the work.
+- [GitHub issues](https://github.com/githubnext/ace2/issues) are the only tracker. Link and update
+  relevant issues with the work. Group related work in meta issues with sub-issues ordered by
+  priority.
+- [Dogfooding](https://github.com/githubnext/ace2/issues/5) means everyone who works on Ace does
+  all Ace development in Ace. If Ace ships a surface (channels, diffs, terminals), use Ace's.
 - PR bodies follow [the template](.github/pull_request_template.md), including when created with
   `gh pr create --body`. Always fill in **Built in Ace**: if anything outside Ace was used, name it,
-  say why Ace couldn't do it, and add the gap to TODO.md.
+  say what it was used for and why Ace couldn't do it, and link an existing or new issue for the gap.
 
 ## Commands
 

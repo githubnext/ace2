@@ -283,6 +283,9 @@ export function SessionItem(
 	let open = canExpand && (expanded || hovered);
 	let status = selected ? "active" : undefined;
 	let expansion = open ? "true" : undefined;
+	let preview = data.summary && data.summary.length > 180
+		? `${data.summary.slice(0, 177).trimEnd()}…`
+		: data.summary;
 	let line = (
 		<>
 			<span className="@container grid size-6 place-items-center shrink-0 text-muted-foreground group-data-[status=active]/row:text-current/80 [&_svg]:size-4.5 [&_svg]:shrink-0">
@@ -344,6 +347,8 @@ export function SessionItem(
 					data-lifecycle={data.lifecycle}
 					data-expanded={expansion}
 					aria-current={selected ? "page" : undefined}
+					aria-description={preview}
+					title={preview}
 					onMouseEnter={enter}
 					onMouseLeave={leave}
 					className={buttonClass(hoverExpand, hasActions, data.online.length, className)}

@@ -492,6 +492,7 @@ type BarProps = {
 	edge?: boolean;
 	line?: boolean;
 	start?: boolean;
+	end?: boolean;
 	style?: CSSProperties;
 	onFork: (side: "right" | "bottom") => void;
 	can: (side: "right" | "bottom") => boolean;
@@ -512,6 +513,7 @@ function Bar({
 	edge,
 	line = true,
 	start,
+	end,
 	style,
 	onFork,
 	can,
@@ -530,7 +532,7 @@ function Bar({
 				edge
 					? "relative before:pointer-events-none before:absolute before:inset-y-0 before:left-0 before:z-10 before:w-px before:-translate-x-1/2 before:bg-border before:content-['']"
 					: ""
-			} ${line ? "border-b border-border" : ""} ${start ? "pl-8" : ""}`}
+			} ${line ? "border-b border-border" : ""} ${start ? "pl-8" : ""} ${end ? "pr-8" : ""}`}
 			style={style}
 		>
 			<div
@@ -859,6 +861,7 @@ export function Layout(props: Props) {
 								edge={pane.area[1][0] !== "CS"}
 								line={false}
 								start={pane.area[1][0] === "CS"}
+								end={pane.area[1][1] === "CE"}
 								style={{ gridColumn: column(pane), gridRow: "1" }}
 							/>
 						))}

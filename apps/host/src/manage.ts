@@ -57,9 +57,11 @@ export async function host(
 		method: "POST",
 		headers: await hostedAuth(),
 		body: JSON.stringify({
-			version: 1,
+			version: 2,
 			id: record.id,
 			name: record.name,
+			prefix: record.prefix,
+			named: record.named,
 			owner: record.owner,
 			project: record.project,
 			lanes: catalog.paths(record.id).lanes,

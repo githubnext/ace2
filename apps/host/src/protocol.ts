@@ -8,7 +8,7 @@ import type {
 	Request,
 } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 6;
+export const HOST_PROTOCOL = 7;
 
 export type HostInfo = {
 	app: "ace";
@@ -39,6 +39,9 @@ export type Listing = {
 	/** The machine running the channel, by its tailnet name. */
 	host: string;
 	name: string;
+	summary?: string;
+	/** Revision of the channel's projected name and summary. */
+	revision?: number;
 	owner: string;
 	project: string;
 	model?: ModelRef;
@@ -150,8 +153,13 @@ export type HostFrame =
 	| { channels: Listing[] }
 	| TerminalFrame;
 
-/** Terminal output as base64, since a chunk can split a UTF-8 sequence; then its exit code. */
-export type TerminalFrame = { terminal: string; data: string } | { terminal: string; exit: number };
+/**
+ * Terminal output as base64, since a chunk can split a UTF-8 sequence; then its exit code. A
+ * reattach starts with one `replay` frame of earlier output, whose queries must not be answered.
+ */
+export type TerminalFrame =
+	| { terminal: string; data: string; replay?: true }
+	| { terminal: string; exit: number };
 
 export type TerminalOpened = { terminal: string; cwd: string };
 

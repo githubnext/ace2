@@ -13,6 +13,7 @@ type ToolNode = {
 	args?: string;
 	input?: Record<string, unknown>;
 	result?: string;
+	images?: string[];
 	children?: ToolNode[];
 };
 
@@ -116,6 +117,7 @@ function toToolNode(t: Tool): ToolNode {
 	let args = summarizeArgs(t.arguments);
 	if (args) node.args = args;
 	if (t.result?.content) node.result = t.result.content;
+	if (t.result?.images?.length) node.images = t.result.images;
 	if (t.children?.length) node.children = t.children.map(toToolNode);
 	return node;
 }

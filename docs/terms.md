@@ -6,8 +6,8 @@ differently, correct the usage or change this file first.
 ## Places
 
 **Team**:
-The people and machines on one tailnet. The tailnet is the only authority on who and what can
-reach a host or channel.
+The people and machines on one tailnet. The tailnet is the sole authority for team membership
+and collaboration access. Ace has no separate accounts, invitations, or team access controls.
 _Avoid_: org, workspace
 
 **Host**:
@@ -15,7 +15,8 @@ One machine running Ace's host process. It owns and runs its channels.
 _Avoid_: server, node, VM
 
 **Hosted channel**:
-A channel that lives in a cell instead of on a host. Its tools run on its workspace.
+A channel that lives in a cell deployed by the team instead of on a host. Its tools run on its
+workspace. Hosted describes where the channel runs; Ace does not operate a hosting service.
 
 **Workspace**:
 The host that runs a hosted channel's tools, from lanes on its own disk. It connects out to the
@@ -43,8 +44,9 @@ shared objects such as the directory and lobbies, and hosted channels.
 ## Channels
 
 **Channel**:
-The durable unit shown in the sidebar. A channel lives on one host, runs as one worker process,
-is backed by one pi Session, and contains one or more chats. The UI calls it a channel.
+The durable unit shown in the sidebar, backed by one pi Session and containing one or more chats.
+A local channel runs as one worker process on its host; a hosted channel runs in a team-deployed
+cell. The UI calls it a channel.
 _Avoid_: session, room, thread
 
 **Chat**:
