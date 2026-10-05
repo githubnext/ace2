@@ -26,6 +26,7 @@ private enum Client {
 		guard (operation == "apps" && args.count == 2)
 			|| (operation == "windows" && args.count == 3)
 			|| (operation == "inspect" && args.count == 5)
+			|| (operation == "action" && args.count == 2)
 		else { throw ClientError.usage }
 		let identity = try SigningIdentity.current()
 		let client = PeekabooBridgeClient(
@@ -44,6 +45,8 @@ private enum Client {
 			overallTimeoutSec: 5
 		)
 		switch operation {
+		case "action":
+			return try await nativeAction(client)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
 			return try encode(Apps(
@@ -79,7 +82,7 @@ private enum Client {
 				traversalBudget: .init(maxDepth: 15, maxElementCount: 200, maxChildrenPerNode: 100),
 				requiresFreshAccessibilityTree: true
 			),
-			output: .init(includeImageData: true),
+			output: .init(path: path, saveSnapshot: true, includeImageData: true),
 			timeout: .init(overall: 20, detection: 15)
 		))
 		guard let target = observation.targetIdentity,
@@ -89,12 +92,12 @@ private enum Client {
 		let result = observation.payload
 		let image = try result.verifiedCaptureImageData(requirement: .requireDigest)
 		guard !image.isEmpty, image.count <= 32 * 1024 * 1024 else { throw ClientError.image }
-		// The Bridge owns observation; only this caller writes into the host's private temporary directory.
+		// The Bridge retains its own snapshot copy; the host removes this caller-visible artifact after resizing.
 		try image.write(to: URL(fileURLWithPath: path), options: [.atomic])
 		let data = Inspection(
 			application_name: result.target.app?.name,
 			window_title: result.target.window?.title,
-			snapshot_id: result.elements?.snapshotId,
+			snapshot_id: result.files.publishedSnapshotID,
 			element_count: result.elements?.metadata.elementCount ?? 0,
 			ui_elements: result.elements?.elements.all.map(Element.init) ?? [],
 			coordinate_context: result.elements?.metadata.captureCoordinateContext
@@ -142,7 +145,7 @@ private struct Message: Encodable {
 	let message: String
 }
 
-private struct Receipt: Encodable {
+struct Receipt: Encodable {
 	let pid: Int32
 	let window_id: Int
 	let process_start_identity_decimal: String
@@ -262,7 +265,7 @@ private enum ClientError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			"Usage: ace-desktop-client <socket> apps | windows <pid> | inspect <pid> <window> <absolute-output-path>"
+			"Usage: ace-desktop-client <socket> apps | windows <pid> | inspect <pid> <window> <absolute-output-path> | action < JSON"
 		case .target:
 			"The native observation did not confirm the requested process and window. Refresh the window list and try again."
 		case .image:

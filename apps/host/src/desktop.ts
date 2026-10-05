@@ -5,7 +5,15 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
 
-import type { Desktop, DesktopRequest, DesktopResult } from "@ace/channel/desktop";
+import {
+	type Desktop,
+	DESKTOP_KEYS,
+	type DesktopAction,
+	type DesktopOutcome,
+	type DesktopRequest,
+	type DesktopResult,
+	isDesktopAction,
+} from "@ace/channel/desktop";
 
 import { config } from "./config";
 
@@ -26,15 +34,24 @@ async function run(
 	args: string[],
 	signal: AbortSignal,
 	errorJson = false,
+	input?: string,
 ): Promise<string> {
 	signal.throwIfAborted();
 	try {
-		const { stdout } = await exec(path, args, {
+		const pending = exec(path, args, {
 			encoding: "utf8",
 			signal,
 			killSignal: "SIGKILL",
 			maxBuffer: MAX_OUTPUT,
 		});
+		let inputError: Error | undefined;
+		if (input !== undefined) {
+			// A signing or setup refusal can exit before reading stdin; its JSON still owns the outcome.
+			pending.child.stdin!.on("error", (error) => inputError = error);
+			pending.child.stdin!.end(input);
+		}
+		const { stdout } = await pending;
+		if (inputError && !stdout.trim()) throw inputError;
 		return stdout;
 	} catch (error) {
 		signal.throwIfAborted();
@@ -48,20 +65,26 @@ async function run(
 async function native(
 	args: string[],
 	signal: AbortSignal,
-	target?: Extract<DesktopRequest, { op: "inspect" }>,
+	options: {
+		target?: Extract<DesktopRequest, { op: "inspect" }>;
+		input?: string;
+		onDispatch?(): void;
+	} = {},
 ): Promise<Record<string, unknown>> {
 	const path = process.env.ACE_DESKTOP_CLIENT
 		|| join(dirname(process.execPath), "ace-desktop-client");
 	if (!existsSync(path)) {
 		throw new Error(
-			"Native inspection requires the Ace desktop app on this host. Source hosts can set ACE_DESKTOP_CLIENT to its bundled ace-desktop-client.",
+			"Native desktop tools require the Ace desktop app on this host. Source hosts can set ACE_DESKTOP_CLIENT to its bundled ace-desktop-client.",
 		);
 	}
 	const socket = join(config.home, "desktop.sock");
 	if (!existsSync(socket)) {
-		throw new Error("Open Ace on this host to enable native inspection.");
+		throw new Error("Open Ace on this host to enable native desktop tools.");
 	}
-	const output = await run(path, [socket, ...args], signal, true);
+	signal.throwIfAborted();
+	options.onDispatch?.();
+	const output = await run(path, [socket, ...args], signal, true, options.input);
 	let value: Reply;
 	try {
 		value = JSON.parse(output) as Reply;
@@ -73,15 +96,16 @@ async function native(
 	}
 	if (!value.success) {
 		const error = value.error;
-		const reason = error ? `${error.code}: ${error.message}` : "Native inspection failed";
+		const reason = error ? `${error.code}: ${error.message}` : "Native desktop operation failed";
 		const permission = error?.code.toLowerCase().includes("permission")
 			? " Check Ace's Accessibility and Screen Recording access in Ace Settings."
 			: "";
 		throw new Error(`${reason}.${permission}`);
 	}
 	if (!value.data || typeof value.data !== "object") {
-		throw new Error("The Ace native client returned no inspection data.");
+		throw new Error("The Ace native client returned no desktop data.");
 	}
+	const { target } = options;
 	if (target) {
 		const receipt = value.target_receipt;
 		if (!receipt) {
@@ -92,9 +116,11 @@ async function native(
 				"Native inspection returned a different application or window. Refresh the desktop inventory and select the target again.",
 			);
 		}
-		return { ...value.data, target_receipt: receipt };
 	}
-	return value.data;
+	return {
+		...value.data,
+		...(value.target_receipt ? { target_receipt: value.target_receipt } : {}),
+	};
 }
 
 function bounded(data: Record<string, unknown>, field: string): string {
@@ -171,7 +197,7 @@ async function inspect(
 	const directory = await mkdtemp(join(tmpdir(), "ace-desktop-"));
 	try {
 		const path = join(directory, "capture.png");
-		const data = await native(["inspect", pid, window, path], signal, request);
+		const data = await native(["inspect", pid, window, path], signal, { target: request });
 		const { image, width, height } = await screenshot(path, join(directory, "image.jpg"), signal);
 		const { screenshot_raw: _raw, screenshot_annotated: _annotated, ...observation } = data;
 		const text = bounded({
@@ -189,22 +215,110 @@ async function inspect(
 	}
 }
 
-export const desktop: Desktop = async (request, context) => {
-	if (process.platform !== "darwin") {
-		throw new Error("Native desktop inspection requires macOS 15 or later.");
+function validateAction(request: DesktopAction) {
+	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
+		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
-	if (!request || !["apps", "windows", "inspect"].includes(request.op)) {
+	if (request.op === "key") {
+		if (!DESKTOP_KEYS.includes(request.key)) throw new Error("Choose one supported basic key.");
+		return;
+	}
+	if (typeof request.element !== "string" || !request.element || request.element.length > 256) {
+		throw new Error("Choose an element ID from the inspected snapshot.");
+	}
+	if (request.op === "type" && (typeof request.text !== "string" || request.text.length > 8192)) {
+		throw new Error("Desktop text must be a string of at most 8192 characters.");
+	}
+}
+
+function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): DesktopResult {
+	let text = JSON.stringify({ action: data });
+	if (Buffer.byteLength(text) > MAX_TEXT) {
+		text = JSON.stringify({
+			action: { outcome, target_receipt: data.target_receipt },
+			warning: "Native action metadata exceeded the result limit. Inspect the current state.",
+		});
+	}
+	return { text, outcome, isError: outcome !== "completed" };
+}
+
+async function act(request: DesktopAction, signal: AbortSignal): Promise<DesktopResult> {
+	let dispatched = false;
+	let data: Record<string, unknown>;
+	try {
+		validateAction(request);
+		data = await native(["action"], signal, {
+			input: JSON.stringify(request),
+			onDispatch() {
+				dispatched = true;
+			},
+		});
+		if (!["completed", "refused", "unknown"].includes(String(data.outcome))) {
+			throw new Error("The Ace native client returned no action outcome.");
+		}
+	} catch (error) {
+		const outcome = dispatched ? "unknown" : "refused";
+		return actionResult({
+			outcome,
+			reason: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
+			message: dispatched
+				? "The desktop action may have partially run. Inspect the current state before retrying. Stopping does not undo input already delivered."
+				: "The desktop action was not sent to the native desktop.",
+		}, outcome);
+	}
+	const outcome = data.outcome as DesktopOutcome;
+	if (outcome !== "completed") return actionResult(data, outcome);
+	// Observation is separate from delivery: its failure must not turn completed input into a retry.
+	try {
+		const receipt = data.target_receipt as Reply["target_receipt"];
+		if (!receipt?.process_start_identity_decimal) {
+			throw new Error("No exact-window action receipt.");
+		}
+		const observation = await inspect({
+			op: "inspect",
+			pid: receipt.pid,
+			window: receipt.window_id,
+		}, signal);
+		const fresh = JSON.parse(observation.text) as Record<string, unknown>;
+		const current = fresh.target_receipt as Reply["target_receipt"];
+		if (current?.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
+			throw new Error("The target application changed after the action.");
+		}
+		return {
+			text: bounded({ ...fresh, action: data }, "ui_elements"),
+			image: observation.image,
+			outcome,
+			isError: false,
+		};
+	} catch (error) {
+		return actionResult({
+			...data,
+			observation_error: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
+			message:
+				"The action completed, but a fresh observation was unavailable. Inspect again to verify the result; do not repeat the action blindly.",
+		}, outcome);
+	}
+}
+
+export const desktop: Desktop = async (request, context) => {
+	if (!request || !["apps", "windows", "inspect", "click", "type", "key"].includes(request.op)) {
 		throw new Error("Unknown native desktop request.");
+	}
+	if (process.platform !== "darwin") {
+		const reason = "Native desktop tools require macOS 15 or later.";
+		if (isDesktopAction(request)) return actionResult({ outcome: "refused", reason }, "refused");
+		throw new Error(reason);
 	}
 	const deadline = new AbortController();
 	const timer = setTimeout(
-		() => deadline.abort(new Error("Native desktop inspection timed out after 30 seconds.")),
+		() => deadline.abort(new Error("Native desktop operation timed out after 30 seconds.")),
 		30_000,
 	);
 	const signal = context.abortSignal
 		? AbortSignal.any([context.abortSignal, deadline.signal])
 		: deadline.signal;
 	try {
+		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
 		const args = request.op === "apps"
 			? ["apps"]

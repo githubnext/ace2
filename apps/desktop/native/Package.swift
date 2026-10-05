@@ -20,7 +20,11 @@ let package = Package(
 		),
 		.target(
 			name: "AceDesktop",
-			dependencies: ["AceSigning", .product(name: "PeekabooBridge", package: "Peekaboo")],
+			dependencies: [
+				"AceSigning",
+				.product(name: "PeekabooBridge", package: "Peekaboo"),
+				.product(name: "PeekabooAutomationKit", package: "Peekaboo"),
+			],
 			path: "sources/desktop"
 		),
 		.executableTarget(
@@ -29,6 +33,7 @@ let package = Package(
 				"AceSigning",
 				.product(name: "PeekabooBridge", package: "Peekaboo"),
 				.product(name: "PeekabooAutomationKit", package: "Peekaboo"),
+				.product(name: "PeekabooFoundation", package: "Peekaboo"),
 			],
 			path: "sources/client"
 		),
