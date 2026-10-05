@@ -38,6 +38,9 @@ find the client alongside Ace Helper automatically.
   before focusing it, using the refreshed target for the later action.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
+  Set `mode` to `pixels` for an explicit read-only screenshot when Accessibility is unavailable.
+  Pixel inspection verifies the same exact target and image content but returns no reusable action
+  snapshot or element IDs. The default mode is `accessibility`.
 - `desktop_click` clicks one observed Accessibility element once.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
@@ -90,6 +93,19 @@ Captures are resized and compressed before entering pi's existing channel histor
 image payloads are bounded so a result also fits the storage limits of a team-deployed hosted
 channel. Incomplete accessibility observations retain their warnings. A missing app, missing
 permission, or unavailable window is reported in the tool result.
+
+A failed native inspection retains the original error and attempts a bounded inventory read for
+the requested process and window. This reports whether the app is active or hidden, whether the
+window is on screen or minimized, and its advertised Accessibility capability. These are later
+observations, not a diagnosis of the earlier failure. Missing items in a partial inventory do not
+prove that the app or window closed. An inventory timeout does not replace the inspection error.
+
+Retry an incomplete Accessibility read once. For a changed capture receipt, Peekaboo already retries
+the passive capture once while preserving the exact target checks. If inspection still fails, use
+the inventories to reassess the target or explicitly request `pixels` for visual evidence. Pixel
+inspection can also fail if the exact window is unavailable; it never substitutes another window
+or removes target validation. Neither inspection mode activates a window or changes focus. A failed
+observation after completed input preserves that completed action and its original outcome.
 
 ## Outcomes and interruption
 
