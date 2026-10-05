@@ -10,6 +10,8 @@ type Env = {
 export type Publication = {
 	/** The host's owner, by tailnet login. */
 	login: string;
+	/** The owner's GitHub login, when the host's GitHub CLI is signed in. */
+	github?: string;
 	/** Tailnet address, when the host has one. */
 	address?: string;
 	channels: { id: string }[];
@@ -87,7 +89,10 @@ export default {
 		const host = HOST.exec(pathname);
 		if (host && request.method === "PUT") {
 			const publication = await request.json<Publication>();
-			if (typeof publication.login !== "string" || !Array.isArray(publication.channels)) {
+			if (
+				typeof publication.login !== "string" || !Array.isArray(publication.channels)
+				|| (publication.github !== undefined && typeof publication.github !== "string")
+			) {
 				return new Response("Invalid publication", { status: 400 });
 			}
 			await directory.publish(host[1], publication);

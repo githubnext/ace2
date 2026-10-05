@@ -15,14 +15,20 @@ import { desktop } from "./desktop";
 
 export type Page = "dashboard" | "channels" | "issues" | "prs";
 
-export function Navigation({ page, user, onPage, onSettings }: {
+export function Navigation({ page, user, github, onPage, onSettings }: {
 	page: Page;
 	user: string;
+	/** Shows the owner's GitHub avatar; initials without one. */
+	github?: string;
 	onPage: (page: Page) => void;
 	onSettings: () => void;
 }) {
 	return (
-		<Nav footer={<UserMenu name={user || "Ace"} side="right" onSettings={onSettings} />}>
+		<Nav
+			footer={
+				<UserMenu name={user || "Ace"} handle={github} side="right" onSettings={onSettings} />
+			}
+		>
 			<NavList>
 				<NavListLink
 					href="#dashboard"

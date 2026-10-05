@@ -101,6 +101,24 @@ async function gh<T>(args: string[]): Promise<T> {
 	return JSON.parse(out) as T;
 }
 
+let owner: string | undefined;
+let checked = 0;
+
+/**
+ * The owner's GitHub login from gh, for avatars. Unknown until resolved; a missing or signed-out
+ * gh is checked again at most every five minutes, so signing in later takes effect.
+ */
+export function login(changed: () => void): string | undefined {
+	if (!owner && Date.now() - checked > 300_000) {
+		checked = Date.now();
+		gh<{ login: string }>(["api", "user"]).then((user) => {
+			owner = user.login;
+			changed();
+		}, () => {});
+	}
+	return owner;
+}
+
 export const REMOTES = ["config", "--local", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"];
 
 /** The GitHub repository in `git config` output for REMOTES, preferring gh's chosen base. */

@@ -8,7 +8,7 @@ import type {
 	Request,
 } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 8;
+export const HOST_PROTOCOL = 9;
 
 export type HostInfo = {
 	app: "ace";
@@ -56,7 +56,11 @@ export type Listing = {
 	hosted?: string;
 };
 
-export type Hello = { user: string; host: string };
+/** `github` is the host owner's GitHub login, when its GitHub CLI is signed in. */
+export type Hello = { user: string; host: string; github?: string };
+
+/** GitHub logins by participant (Tailscale login), from this host, its peers, and the directory. */
+export type People = Record<string, string>;
 
 /** Tabs belong to a connected client's layout, not the durable channel. */
 export type Tab = {
@@ -185,6 +189,8 @@ export type HostFrame =
 	| { settings: true }
 	/** Opened projects belong to the local owner and are never sent to tailnet peers. */
 	| { projects: Project[] }
+	/** Sent to local clients when known GitHub logins change. */
+	| { people: People }
 	/**
 	 * Pushed when any reachable host's catalog changes. A local client sees every reachable host's
 	 * channels; a tailnet peer sees only this host's.

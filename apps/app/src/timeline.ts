@@ -1,3 +1,4 @@
+import type { People } from "@ace/host/protocol";
 import type { Event } from "@ace/ui";
 
 import type { Item, Tool } from "./transcript";
@@ -48,6 +49,7 @@ export function toEvents(
 	topic: string,
 	busy: boolean,
 	draft: { text: string; model?: string },
+	people: People,
 ): Event[] {
 	const events = items.map((item) => {
 		const base = {
@@ -60,8 +62,13 @@ export function toEvents(
 		if (item.kind === "message") {
 			return {
 				...base,
-				// Authors are Tailscale logins; the name before the domain reads as a handle.
-				sender: { kind: "user", value: item.author, display: item.author.split("@")[0]! },
+				// Authors are Tailscale logins; without a known GitHub login, the name before the domain
+				// reads as a handle.
+				sender: {
+					kind: "user",
+					value: item.author,
+					display: people[item.author] || item.author.split("@")[0]!,
+				},
 				content: [
 					text(item.invoked && !/(^|\s)@ace\b/i.test(item.text) ? `@ace ${item.text}` : item.text),
 					...(item.images || []).map((image) => ({

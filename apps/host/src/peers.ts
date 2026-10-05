@@ -4,7 +4,7 @@ import { isIP } from "node:net";
 import { config } from "./config";
 import { GatewayClient } from "./gateway-client";
 import { log } from "./log";
-import type { Listing } from "./protocol";
+import type { Hello, Listing, People } from "./protocol";
 import { type Machine, peers } from "./tailnet";
 
 /** Hosts serve their tailnet listener on the same port unless told otherwise. */
@@ -15,8 +15,11 @@ export function url(machine: Machine): string {
 	return `ws://${address}:${port()}/ws`;
 }
 
+/** `github` is the peer owner's GitHub login, from its hello. */
+type Peer = { machine: Machine; client: GatewayClient; github?: string };
+
 /** One listing connection per online peer, kept only while the peer answers. */
-const hosts = new Map<string, { machine: Machine; client: GatewayClient }>();
+const hosts = new Map<string, Peer>();
 const listeners = new Set<() => void>();
 
 function emit() {
@@ -36,6 +39,14 @@ async function discover(signal: AbortSignal) {
 	for (const [name, machine] of online) {
 		if (hosts.has(name)) continue;
 		const client = new GatewayClient(url(machine));
+		const host: Peer = { machine, client };
+		client.onOpen = () => {
+			client.request<Hello>({ op: "hello" }).then((hello) => {
+				if (hello.github === host.github) return;
+				host.github = hello.github;
+				emit();
+			}, () => {});
+		};
 		let status = client.status;
 		client.subscribe(() => {
 			if (client.status !== status) {
@@ -49,7 +60,7 @@ async function discover(signal: AbortSignal) {
 			}
 			emit();
 		});
-		hosts.set(name, { machine, client });
+		hosts.set(name, host);
 	}
 }
 
@@ -73,6 +84,13 @@ export function listings(): Listing[] {
 	return [...hosts.values()].flatMap(({ client }) =>
 		client.status === "open" ? client.channels : []
 	);
+}
+
+/** Reachable peers' owners' GitHub logins. */
+export function people(): People {
+	const people: People = {};
+	for (const { machine, github } of hosts.values()) if (github) people[machine.login] = github;
+	return people;
 }
 
 /** The peer that runs a channel, if it is reachable. */

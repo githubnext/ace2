@@ -6,6 +6,7 @@ import type {
 	HostFrame,
 	HostRequest,
 	Listing,
+	People,
 	Project,
 	Request,
 	TabRename,
@@ -34,6 +35,7 @@ export class GatewayClient {
 	status: Status = "connecting";
 	channels: Listing[] = [];
 	projects: Project[] = [];
+	people: People = {};
 	settingsVersion = 0;
 	/** Called after every connect so watches can be re-established. */
 	onOpen?: () => void;
@@ -91,6 +93,10 @@ export class GatewayClient {
 		if ("rename" in frame) return void this.#rename(frame.rename, socket);
 		if ("projects" in frame) {
 			this.projects = frame.projects;
+			return this.#emit();
+		}
+		if ("people" in frame) {
+			this.people = frame.people;
 			return this.#emit();
 		}
 		if ("settings" in frame) {

@@ -126,6 +126,7 @@ export function App() {
 	const channels = useSyncExternalStore(host.subscribe, () => host.channels);
 	const opened = useSyncExternalStore(host.subscribe, () => host.projects);
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
+	const people = useSyncExternalStore(host.subscribe, () => host.people);
 	const [hello, setHello] = useState<Hello>({ user: "", host: "" });
 	const [page, setPage] = useLocalStorage<Page>("ace:page", "dashboard");
 	const [project, setProject] = useLocalStorage<string | undefined>("ace:project-id", undefined);
@@ -294,6 +295,7 @@ export function App() {
 						<Navigation
 							page={page}
 							user={hello.user}
+							github={people[hello.user]}
 							onPage={setPage}
 							onSettings={() => setSettings(true)}
 						/>

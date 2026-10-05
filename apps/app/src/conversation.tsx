@@ -1,9 +1,10 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 
 import { Button, Timeline } from "@ace/ui";
 import type { Listing } from "@ace/host/protocol";
 
 import { Composer } from "./composer";
+import { host } from "./host";
 import { toEvents } from "./timeline";
 import { useTranscript } from "./transcript";
 import { Usage } from "./usage";
@@ -26,13 +27,25 @@ export function Conversation(
 	const transcript = useTranscript(channel.id, id);
 	const chat = transcript.info?.chats.find((value) => value.id === id);
 	const model = chat?.model || channel.model;
+	const people = useSyncExternalStore(host.subscribe, () => host.people);
 	const events = useMemo(
 		() =>
 			toEvents(transcript.items, channel.id, transcript.busy, {
 				text: transcript.draft,
 				model: model?.modelId,
-			}),
-		[transcript.items, channel.id, transcript.busy, transcript.draft, model],
+			}, people),
+		[transcript.items, channel.id, transcript.busy, transcript.draft, model, people],
+	);
+	// Keyed by Tailscale login for message authors and by GitHub login for mentions.
+	const avatars = useMemo(
+		() =>
+			Object.fromEntries(
+				Object.entries(people).flatMap(([login, github]) => {
+					const src = `https://github.com/${github}.png?size=64`;
+					return [[login, src], [github, src]];
+				}),
+			),
+		[people],
 	);
 	const results = useMemo(
 		() =>
@@ -58,6 +71,7 @@ export function Conversation(
 							toolbar={false}
 							working={transcript.busy || undefined}
 							currentUser={{ login: user }}
+							avatars={avatars}
 							intro={{ name: channel.name, createdAt: Math.floor(channel.created / 1000) }}
 						/>
 					)
