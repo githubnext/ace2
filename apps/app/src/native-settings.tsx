@@ -8,6 +8,7 @@ type Permission = Extract<NativeAction, { op: "permission" }>["permission"];
 const permissions = [
 	{ key: "accessibility", label: "Accessibility" },
 	{ key: "screenRecording", label: "Screen Recording" },
+	{ key: "eventSynthesizing", label: "Keyboard input" },
 ] as const;
 
 const states: Record<NativeState["state"], string> = {
@@ -68,24 +69,24 @@ export function NativeStatus(
 
 	const value = result.value;
 	const needsPermission = value?.state === "ready"
-		&& (!value.accessibility || !value.screenRecording);
+		&& permissions.some(({ key }) => !value[key]);
 	const error = action.error || result.error || value?.error;
 
 	return (
-		<section className="space-y-2" aria-label="Native inspection">
-			<h3 className="font-medium">Native inspection</h3>
+		<section className="space-y-2" aria-label="Computer use">
+			<h3 className="font-medium">Computer use</h3>
 			<p role="status">
 				{needsPermission
 					? "Permissions needed"
 					: value
 					? states[value.state]
 					: result.error
-					? "Could not check native inspection"
-					: "Checking native inspection…"}
+					? "Could not check computer use"
+					: "Checking computer use…"}
 			</p>
 			<p className="text-muted-foreground">
 				Keep Ace open on the host running the channel's tools. For a hosted channel, that is its
-				workspace. The channel's collaborator agent setting also applies to native inspection.
+				workspace. The channel's collaborator agent setting also applies to computer use.
 			</p>
 			<div className="space-y-2">
 				{permissions.map(({ key, label }) => (

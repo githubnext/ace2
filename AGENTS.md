@@ -43,6 +43,9 @@ to change.
   priority.
 - [Dogfooding](https://github.com/githubnext/ace2/issues/5) means everyone who works on Ace does
   all Ace development in Ace. If Ace ships a surface (channels, diffs, terminals), use Ace's.
+- File bugs and missing capabilities observed while dogfooding, or update the matching issue,
+  and link them from the [dogfooding meta issue](https://github.com/githubnext/ace2/issues/5).
+- Open focused pull requests for changes. Keep independent work in separate PRs.
 - PR bodies follow [the template](.github/pull_request_template.md), including when created with
   `gh pr create --body`. Always fill in **Built in Ace**: if anything outside Ace was used, name it,
   say what it was used for and why Ace couldn't do it, and link an existing or new issue for the gap.
@@ -52,6 +55,7 @@ to change.
 ```sh
 bun install
 bun ace --help   # CLI
+bun ace tabs --json  # discover open windows and tabs before targeting a tab rename
 bun ace backup <channel> <new-directory>  # local channel data, including committed WAL entries
 bun types        # type checks
 bun run ci       # dprint + oxlint

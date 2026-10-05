@@ -90,6 +90,47 @@ writeFileSync(
 );
 const frameworks = join(contents, "Frameworks");
 mkdirSync(frameworks, { recursive: true });
+run([
+	"xcrun",
+	"swift",
+	"package",
+	"--package-path",
+	native,
+	"--force-resolved-versions",
+	"resolve",
+]);
+const resolved = JSON.parse(readFileSync(join(native, "Package.resolved"), "utf8")) as {
+	pins: { identity: string; state: { version: string; revision: string } }[];
+};
+const checkouts = join(native, ".build", "checkouts");
+const dependencies = new Map(readdirSync(checkouts).map((name) => [name.toLowerCase(), name]));
+const peekaboo = resolved.pins.find(({ identity }) => identity === "peekaboo");
+const revision = "4d43dc9d80cd2aa3787a27f54b76d692db1dcf8f";
+if (peekaboo?.state.version !== "4.8.0" || peekaboo.state.revision !== revision) {
+	throw new Error("The native click patch requires Peekaboo 4.8.0 at its pinned revision");
+}
+const checkout = dependencies.get("peekaboo");
+if (!checkout) throw new Error("The resolved Peekaboo checkout is missing");
+const git = ["git", "-C", join(checkouts, checkout)];
+const head = Bun.spawnSync([...git, "rev-parse", "HEAD"]);
+if (!head.success || head.stdout.toString().trim() !== revision) {
+	throw new Error(
+		`The Peekaboo checkout must be at ${revision} before applying the native click patch`,
+	);
+}
+// Self-targeted AXPress must release MainActor while retaining the operation lane: githubnext/ace2#61.
+const patch = join(native, "patches", "peekaboo-click.patch");
+const forward = Bun.spawnSync([...git, "apply", "--check", patch]);
+if (forward.success) {
+	run([...git, "apply", patch]);
+} else {
+	const reverse = Bun.spawnSync([...git, "apply", "--reverse", "--check", patch]);
+	if (!reverse.success) {
+		throw new Error(
+			`The Peekaboo click patch neither applies nor is already applied. Resolve checkout drift before building.\n${forward.stderr}\n${reverse.stderr}`,
+		);
+	}
+}
 const swiftBuild = [
 	"xcrun",
 	"swift",
@@ -121,11 +162,6 @@ run([
 	"--destination",
 	frameworks,
 ]);
-const resolved = JSON.parse(readFileSync(join(native, "Package.resolved"), "utf8")) as {
-	pins: { identity: string }[];
-};
-const checkouts = join(native, ".build", "checkouts");
-const dependencies = new Map(readdirSync(checkouts).map((name) => [name.toLowerCase(), name]));
 for (const { identity } of resolved.pins) {
 	const checkout = dependencies.get(identity);
 	if (!checkout) throw new Error(`The resolved native dependency ${identity} is missing`);

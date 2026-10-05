@@ -7,11 +7,14 @@ import {
 	type ReactNode,
 	type Ref,
 	useEffect,
+	useEffectEvent,
+	useLayoutEffect,
 	useState,
 	useSyncExternalStore,
 } from "react";
-import { createPortal } from "react-dom";
+import { createPortal, flushSync } from "react-dom";
 
+import type { TabRename, WindowState } from "@ace/host/protocol";
 import * as Split from "@ace/split-tabs";
 import {
 	Button,
@@ -41,6 +44,7 @@ import {
 	IconX,
 } from "@ace/ui/icons";
 
+import { host } from "../host";
 import { Bar as Header } from "./bar";
 import { Grip } from "./grip";
 import { Rename } from "./rename";
@@ -650,6 +654,7 @@ function useLayout({ id, name, chat, changed, onTabClose }: Props) {
 	const [meta, setMeta] = useState<Meta>(data.meta);
 	const [diff, setDiff] = useState(data.diff);
 	const state = useSyncExternalStore(api.subscribe, api.get, api.get);
+	const status = useSyncExternalStore(host.subscribe, () => host.status);
 	const { view, css, grips, grid, flat, desktop, box, start: resize } = useResize(
 		api,
 		state,
@@ -664,6 +669,43 @@ function useLayout({ id, name, chat, changed, onTabClose }: Props) {
 	useEffect(() => {
 		write(id, state, meta, diff);
 	}, [id, state, meta, diff]);
+
+	const snapshot = useEffectEvent((): WindowState => {
+		const active = new Set(view.panes.map((pane) => pane.active));
+		return {
+			channel: { id, name },
+			tabs: [...items.values()].map((item) => ({
+				id: item.uid,
+				name: item.name,
+				type: item.kind,
+				active: active.has(item.uid),
+			})),
+		};
+	});
+	const persist = useEffectEvent(() => write(id, api.get(), meta, diff));
+	const command = useEffectEvent((request: TabRename) => {
+		if (request.expires <= Date.now()) throw new Error("Tab rename expired");
+		if (request.channel !== id) throw new Error("This window is showing another channel");
+		if (!api.get().tabs.includes(request.tab)) throw new Error("Tab is no longer open");
+		if (request.tab === CHAT) throw new Error("Rename the channel to change its Chat tab");
+		// The host must acknowledge the name that the client has actually rendered and saved.
+		flushSync(() => rename(request.tab, request.name, false));
+		persist();
+		return snapshot();
+	});
+
+	useLayoutEffect(() => {
+		host.onRename = command;
+		return () => {
+			host.onRename = undefined;
+			host.request({ op: "window", value: null }).catch(() => {});
+		};
+	}, []);
+
+	useEffect(() => {
+		if (status !== "open") return;
+		host.request({ op: "window", value: snapshot() }).catch(() => {});
+	}, [id, name, state, meta, flat, status]);
 
 	// New changes open a Diff tab behind the Chat tab once; closing it keeps it closed until the
 	// changes clear and new ones appear.
@@ -758,14 +800,15 @@ function useLayout({ id, name, chat, changed, onTabClose }: Props) {
 		if (data) onTabClose?.(uid, data);
 	}
 
-	function rename(uid: string, name: string) {
+	function rename(uid: string, name: string, restoreFocus = true) {
 		if (uid === CHAT) return;
 		const label = name.trim() || undefined;
+		if (label && label.length > 80) throw new Error("Tab names must be 80 characters or fewer");
 		setMeta((meta) => {
 			const value = meta[uid] || fallback(uid);
 			return value.name === label ? meta : { ...meta, [uid]: { ...value, name: label } };
 		});
-		requestAnimationFrame(() => focus(uid));
+		if (restoreFocus) requestAnimationFrame(() => focus(uid));
 	}
 
 	function update(uid: string, patch: Partial<Content>) {

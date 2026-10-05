@@ -148,6 +148,13 @@ on the tailnet listener, including requests from the owner's other machines. A h
 binds discovery to the owner token, listening port, and process before the desktop or CLI opens
 the app. As with channels, this does not isolate Ace from tools running as the same OS user.
 
+Local app windows report their current channel and tabs to the host while connected. The owner
+can list these windows and rename one tab through the CLI. A rename targets a window, channel,
+and tab ID, so switching channels before the request arrives rejects it. The host returns success
+after the target window applies the change. Tab names stay in the client's existing layout state;
+they do not rename channels, chats, or another participant's tabs. The window registry is transient,
+and these operations use the authenticated loopback connection, never a tailnet peer.
+
 On macOS, a bundled LaunchAgent runs Ace Helper as the logged-in user. A small native bridge calls
 `SMAppService` to register it after first-launch consent and expose its approval status. Registration
 starts the helper immediately and at subsequent logins. A disabled background item is left for the
@@ -166,17 +173,28 @@ Git, shell, Tailscale, and directory diagnostics come from the host through the 
 boundary as provider settings. The project picker selects a local Git checkout; project creation
 errors remain in the form so the person can fix the path or provider setup.
 
-Agents inspect native windows through an injected desktop capability. The desktop embeds
-Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility and Screen
-Recording permissions. The host invokes a bundled client over a local Unix socket. The bridge
+Agents inspect and operate native windows through an injected desktop capability. The desktop embeds
+Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility, Screen
+Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
-signing team. Only
-application inventory, window inventory, and observation are exposed. The host bounds
-accessibility text and resizes screenshots before returning them. Quitting Ace stops inspection;
+signing team. Tools expose application and window inventories, observation, element or screenshot
+clicks, scrolling, atomic drags, replacement of editable field values, text selection, and keys or shortcuts. Screenshot
+points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
+snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+Separate activation, focus, and restore tools accept generation-bound inventory targets, with exact
+window bounds where applicable. The native service revalidates those receipts before dispatch;
+activation and focus explicitly change the foreground desktop. Inspection never activates a target
+implicitly. App-only action receipts refresh inventories without inventing a selected window.
+Pi records their intent and never automatically replays an interrupted action. Results distinguish
+completed operations, refusals before dispatch, and uncertain delivery. The host bounds
+accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
+exact-target capture checks without publishing action authority; failed observations retain their
+error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
-Pi stores the result; channel clients project its images into the existing tool output. The collaborator-agent
+Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
+coordinates concurrent native operations. The collaborator-agent
 switch applies to desktop tools with the rest of the agent's tools. See
-[native desktop inspection](desktop-tools.md) for setup and the current observation-only scope.
+[native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
 Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
 separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service

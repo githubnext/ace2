@@ -14,24 +14,27 @@ import {
 	type TextLineReader,
 } from "@earendil-works/pi-durable/env";
 
-import type { Desktop, DesktopRequest, DesktopResult } from "./desktop";
+import { type Desktop, type DesktopRequest, type DesktopResult, isDesktopAction } from "./desktop";
 import type { Metadata } from "./protocol";
 
 declare function btoa(data: string): string;
 declare function atob(data: string): string;
 
+// Numeric IDs remain accepted from hosts running an older version.
+type CallId = string | number;
+
 /** Channel to workspace. */
 export type Call =
-	| { call: number; method: Method | "desktop"; cwd: string; args: unknown[] }
-	| { cancel: number };
+	| { call: CallId; method: Method | "desktop"; cwd: string; args: unknown[] }
+	| { cancel: CallId };
 
 /** Metadata is projected by the workspace host even when no client watches the channel. */
 export type WorkspaceMessage = Call | { metadata: Metadata };
 
 /** Workspace to channel. */
 export type Reply =
-	| { call: number; output: string }
-	| { call: number; result: Result<unknown, Failure> };
+	| { call: CallId; output: string }
+	| { call: CallId; result: Result<unknown, Failure> };
 
 type Failure = {
 	name: "FileError" | "ExecutionError";
@@ -96,14 +99,34 @@ function rebuild(f: Failure): Error {
 		: new ExecutionError(f.code as ExecutionError["code"], f.message);
 }
 
+function desktopFailure(outcome: "refused" | "unknown", reason: string): DesktopResult {
+	return {
+		outcome,
+		isError: true,
+		text: JSON.stringify({
+			outcome,
+			reason,
+			message: outcome === "unknown"
+				? "The desktop action may have partially run. Inspect the target's current state before retrying. Stopping does not undo input already delivered."
+				: "The desktop action was not sent to the native desktop.",
+		}),
+	};
+}
+
 /** The channel's side: one connection to the workspace, shared by every chat's environment. */
 export class Link {
 	#send?: (call: Call) => void;
+	#generation: string;
 	#next = 1;
 	#pending = new Map<
-		number,
+		CallId,
 		{ resolve(result: Result<unknown, Error>): void; output?(text: string): void }
 	>();
+
+	constructor(generation: string) {
+		// A workspace socket can survive the runtime that issued its previous calls.
+		this.#generation = generation;
+	}
 
 	/** Attach the workspace's connection, replacing any earlier one. */
 	attach(send: (call: Call) => void): void {
@@ -147,11 +170,27 @@ export class Link {
 				: new FileError("unknown", "The workspace is offline");
 			return Promise.resolve(err(error));
 		}
-		const call = this.#next++;
+		const call = `${this.#generation}:${this.#next++}`;
 		const signal = context.abortSignal;
 		if (signal?.aborted) return Promise.resolve(err(new ExecutionError("aborted", "Aborted")));
 		return new Promise((resolve) => {
-			const abort = () => send({ cancel: call });
+			const failed = (error: unknown) => {
+				const pending = this.#pending.get(call);
+				this.#pending.delete(call);
+				pending?.resolve(err(
+					new ExecutionError(
+						"unknown",
+						error instanceof Error ? error.message : String(error),
+					),
+				));
+			};
+			const abort = () => {
+				try {
+					send({ cancel: call });
+				} catch (error) {
+					failed(error);
+				}
+			};
 			signal?.addEventListener("abort", abort, { once: true });
 			this.#pending.set(call, {
 				resolve(result) {
@@ -160,12 +199,22 @@ export class Link {
 				},
 				output,
 			});
-			send({ call, method, cwd, args: args.map(encode) });
+			try {
+				send({ call, method, cwd, args: args.map(encode) });
+			} catch (error) {
+				failed(error);
+			}
 		});
 	}
 
 	async desktop(request: DesktopRequest, context: Context): Promise<DesktopResult> {
+		const action = isDesktopAction(request);
+		if (action && !this.#send) return desktopFailure("refused", "The workspace is offline");
+		if (action && context.abortSignal?.aborted) {
+			return desktopFailure("refused", "The desktop action was cancelled before dispatch");
+		}
 		const result = await this.request("desktop", "", [request], context);
+		if (!result.ok && action) return desktopFailure("unknown", result.error.message);
 		if (!result.ok) throw result.error;
 		return result.value as DesktopResult;
 	}
@@ -218,11 +267,17 @@ export function serve(
 	send: (reply: Reply) => void,
 	desktop?: Desktop,
 ) {
-	const running = new Map<number, { abort: AbortController; done: Promise<void> }>();
+	const running = new Map<CallId, { abort: AbortController; done: Promise<void> }>();
 	let closed = false;
 	const handle = async (call: Call) => {
 		if ("cancel" in call) return running.get(call.cancel)?.abort.abort();
 		if (closed) {
+			if (call.method === "desktop" && isDesktopAction(call.args[0] as DesktopRequest)) {
+				return send({
+					call: call.call,
+					result: ok(desktopFailure("refused", "The workspace disconnected before dispatch")),
+				});
+			}
 			return send({
 				call: call.call,
 				result: err(failure(new Error("The workspace disconnected"))),
@@ -241,8 +296,19 @@ export function serve(
 		try {
 			const args = call.args.map(decode);
 			if (call.method === "desktop") {
-				if (!desktop) throw new Error("Native desktop inspection is unavailable on this workspace");
-				const value = await desktop(args[0] as DesktopRequest, context);
+				const request = args[0] as DesktopRequest;
+				if (!desktop) {
+					if (!isDesktopAction(request)) {
+						throw new Error("Native desktop inspection is unavailable on this workspace");
+					}
+					return send({
+						call: call.call,
+						result: ok(
+							desktopFailure("refused", "Native desktop actions are unavailable on this workspace"),
+						),
+					});
+				}
+				const value = await desktop(request, context);
 				return send({ call: call.call, result: ok(value) });
 			}
 			const target = env(call.cwd);

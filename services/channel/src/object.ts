@@ -50,7 +50,7 @@ const log: Log = (level, event, fields) => {
  * host stays connected. Client sockets stream live pi events and keep the object awake.
  */
 export class HostedChannel extends DurableObject<Env> {
-	#link = new Link();
+	#link = new Link(crypto.randomUUID());
 	#channel?: Promise<Channel>;
 
 	#config(): Config | undefined {

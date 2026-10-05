@@ -8,7 +8,9 @@ import type {
 	Listing,
 	Project,
 	Request,
+	TabRename,
 	TerminalFrame,
+	WindowState,
 } from "./protocol";
 
 type Pending = {
@@ -35,6 +37,8 @@ export class GatewayClient {
 	settingsVersion = 0;
 	/** Called after every connect so watches can be re-established. */
 	onOpen?: () => void;
+	/** The mounted channel layout owns tab names and acknowledges changes after persisting them. */
+	onRename?: (request: TabRename) => WindowState | Promise<WindowState>;
 
 	constructor(readonly url: string, private readonly token?: string) {
 		this.#connect();
@@ -67,7 +71,7 @@ export class GatewayClient {
 		});
 		socket.addEventListener(
 			"message",
-			(message) => this.#receive(JSON.parse(String(message.data)) as HostFrame),
+			(message) => this.#receive(JSON.parse(String(message.data)) as HostFrame, socket),
 		);
 		socket.addEventListener("close", () => {
 			for (const pending of this.#pending.values()) {
@@ -83,7 +87,8 @@ export class GatewayClient {
 		});
 	}
 
-	#receive(frame: HostFrame) {
+	#receive(frame: HostFrame, socket: WebSocket) {
+		if ("rename" in frame) return void this.#rename(frame.rename, socket);
 		if ("projects" in frame) {
 			this.projects = frame.projects;
 			return this.#emit();
@@ -103,6 +108,21 @@ export class GatewayClient {
 		if (!pending?.watch || !frame.ok) this.#pending.delete(frame.id);
 		if (frame.ok) return pending?.resolve(frame.value);
 		pending?.reject(new Error(frame.error));
+	}
+
+	async #rename(request: TabRename, socket: WebSocket) {
+		if (socket !== this.#socket || socket.readyState !== WebSocket.OPEN) return;
+		let result: Extract<HostRequest, { op: "tab-result" }>["result"];
+		try {
+			if (request.expires <= Date.now()) throw new Error("Tab rename expired");
+			if (!this.onRename) throw new Error("No channel is open in this window");
+			result = { ok: true, value: await this.onRename(request) };
+		} catch (error) {
+			result = { ok: false, error: (error as Error).message };
+		}
+		// A reply belongs to the connection that received the command, never its replacement.
+		if (socket !== this.#socket || socket.readyState !== WebSocket.OPEN) return;
+		this.request({ op: "tab-result", call: request.call, result }).catch(() => {});
 	}
 
 	/** A hosted channel can advance while its workspace's catalog is offline. */
