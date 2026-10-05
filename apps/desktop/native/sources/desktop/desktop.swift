@@ -69,6 +69,7 @@ private final class Desktop {
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
 						.selectText, .targetedScroll,
 						.activateApplication, .focusWindow, .restoreWindow,
+						.moveWindow, .resizeWindow,
 					],
 					hostKind: .gui,
 					requestTimeoutSeconds: 25

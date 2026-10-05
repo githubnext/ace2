@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, activate apps, focus or restore windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, activate apps, focus, restore, move or resize windows, click observed controls, replace editable
 field values, select text, send keys or shortcuts, and scroll on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -38,6 +38,13 @@ find the client alongside Ace Helper automatically.
 - `desktop_restore` unminimizes one exact window using its inventory `target` and background
   Accessibility delivery. It does not promise foreground focus. Restore a minimized window
   before focusing it, using the refreshed target for the later action.
+- `desktop_move` sets the top-left origin of one exact window using its inventory `target` and
+  a `position` with finite `x` and `y` in global desktop logical points. Negative coordinates are
+  allowed; these are not normalized screenshot coordinates.
+- `desktop_resize` sets one exact window's `size`, with positive finite `width` and `height` in
+  desktop logical points. Move and resize use background Accessibility without activating the app.
+  The native service verifies the resulting geometry; an app may constrain its position or size.
+  Read the outcome and actual refreshed bounds before continuing.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
   Set `mode` to `pixels` for an explicit read-only screenshot when Accessibility is unavailable.
@@ -74,13 +81,16 @@ matching rows omitted from the filtered response; narrow the query if needed. Se
 change native inventory completeness or warnings, and an empty match is not proof an app stopped.
 
 Choose the application from the inventory and the window from that application's window list.
-Activation, focus, and restore use inventory targets directly, so a failed inspection does not
+Activation, focus, restore, move, and resize use inventory targets directly, so a failed inspection does not
 prevent explicit recovery. Pass the target object unchanged: it includes the process generation
 as a decimal string and, for windows, the original window ID, bounds, and minimized state. The
 native service revalidates that identity immediately before acting. These targets are not
 single-use snapshots; refresh inventory after a stale target or a state change. Activation returns
 application/window inventory even when no inspectable window exists; it never chooses the first
 window. Inspection stays passive and never activates or restores a target automatically.
+After moving or resizing, use the new target from the returned window inventory: the old bounds
+are stale. Later inventory or inspection failure preserves the completed geometry action and does
+not authorize repeating it. Interrupted geometry changes can be partial and are never replayed automatically.
 
 Inspect the window before clicking or entering input. Pass its `snapshot_id` as `snapshot`. Type and select take the
 literal `element` ID from that observation. Click and scroll take exactly one `element` or `point`.
@@ -105,7 +115,7 @@ mouse or keyboard input when a background route is unavailable. Pointer actions 
 physical pointer. The target app can still respond by changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
 emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop,
-clipboard operations, foreground interaction, application launch, window geometry/close, menus, and dialogs remain later slices of
+clipboard operations, foreground interaction, application launch, window close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and

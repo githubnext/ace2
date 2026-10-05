@@ -58,10 +58,37 @@ struct ManagementTarget: Codable {
 
 private struct ManagementRequest: Decodable {
 	enum Operation: String, Decodable {
-		case activate, focus, restore
+		case activate, focus, restore, move, resize
+	}
+	struct Position: Decodable {
+		let x: Double
+		let y: Double
+	}
+	struct Size: Decodable {
+		let width: Double
+		let height: Double
 	}
 	let op: Operation
 	let target: ManagementTarget
+	let position: Position?
+	let size: Size?
+
+	func validate() throws {
+		switch op {
+		case .move:
+			guard let position, size == nil, position.x.isFinite, position.y.isFinite else {
+				throw ManagementError("Window position must contain finite x and y in desktop logical points.")
+			}
+		case .resize:
+			guard let size, position == nil, size.width.isFinite, size.height.isFinite,
+				size.width > 0, size.height > 0
+			else { throw ManagementError("Window size must contain positive finite width and height in desktop logical points.") }
+		default:
+			guard position == nil, size == nil else {
+				throw ManagementError("Only move or resize accepts requested window geometry.")
+			}
+		}
+	}
 }
 
 private struct ManagementError: LocalizedError {
@@ -97,6 +124,7 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 	do {
 		let request = try readManagement()
 		result.action = request.op.rawValue
+		try request.validate()
 		let process = try request.target.processIdentity()
 		let window: WindowMutationIdentity?
 		if request.op == .activate {
@@ -142,9 +170,23 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		case .restore:
 			operation = .restoreWindow
 			outcome = try await client.restoreWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!).outcome
+		case .move:
+			operation = .moveWindow
+			let position = request.position!
+			outcome = try await client.moveWindowResult(
+				target: .windowId(window!.windowID), expectedIdentity: window!,
+				to: CGPoint(x: position.x, y: position.y)
+			).outcome
+		case .resize:
+			operation = .resizeWindow
+			let size = request.size!
+			outcome = try await client.resizeWindowResult(
+				target: .windowId(window!.windowID), expectedIdentity: window!,
+				to: CGSize(width: size.width, height: size.height)
+			).outcome
 		}
 		result.native_outcome = outcome
-		// Restore's convenience result omits targetIdentity; the client's accepted signed receipt retains it.
+		// Restore and geometry results omit targetIdentity; the client's accepted signed receipt retains it.
 		guard let signed = await client.lastOperationReceipt(), signed.payload.operation == operation,
 			let outcome, signed.payload.outcome?.outcome == outcome
 		else { throw ManagementError("The management action returned without its matching verified operation receipt and outcome.") }
