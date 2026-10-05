@@ -6,7 +6,7 @@ import PeekabooFoundation
 
 private struct ActionRequest: Decodable {
 	enum Operation: String, Decodable {
-		case click, type, key, select, scroll, drag
+		case click, type, key, select, scroll
 	}
 
 	let op: Operation
@@ -22,10 +22,6 @@ private struct ActionRequest: Decodable {
 	let kind: String?
 	let direction: String?
 	let amount: Int?
-	let from: PointerPoint?
-	let to: PointerPoint?
-	let button: String?
-	let duration_ms: Int?
 
 	func validate() throws {
 		guard !snapshot.isEmpty, snapshot.utf16.count <= 256 else {
@@ -42,9 +38,6 @@ private struct ActionRequest: Decodable {
 		}
 		if op != .scroll, direction != nil || amount != nil {
 			throw ActionError("Only scrolling accepts direction or amount.")
-		}
-		if op != .drag, from != nil || to != nil || button != nil || duration_ms != nil {
-			throw ActionError("Only dragging accepts endpoints, button, or duration.")
 		}
 		if op != .click, op != .scroll, point != nil {
 			throw ActionError("Only clicks or scrolling accept a target point.")
@@ -67,15 +60,6 @@ private struct ActionRequest: Decodable {
 					let amount, (1...20).contains(amount)
 				else { throw ActionError("Choose up, down, left, or right and 1 to 20 native scroll units.") }
 			}
-		case .drag:
-			guard element == nil, text == nil, key == nil, let from, let to, from != to else {
-				throw ActionError("Choose distinct normalized screenshot points for the drag endpoints.")
-			}
-			try from.validate()
-			try to.validate()
-			guard button == nil || ExactWindowHeldPointerButton(rawValue: button!) != nil,
-				ExactWindowDragRequest.durationMillisecondsRange.contains(duration_ms ?? 500)
-			else { throw ActionError("Choose a left or right drag lasting 1 to 10000 milliseconds.") }
 		case .type, .select:
 			guard let element, !element.isEmpty, element.utf16.count <= 256, key == nil else {
 				throw ActionError("Choose a literal element ID from the inspected snapshot.")
@@ -108,7 +92,7 @@ private struct ActionRequest: Decodable {
 	}
 }
 
-private struct PointerPoint: Decodable, Equatable {
+private struct PointerPoint: Decodable {
 	let x: Double
 	let y: Double
 
@@ -230,8 +214,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			scrollWindow = try .init(identity: identity, bounds: bounds, focusedElement: context.focusedElement)
 		}
 		var point: CGPoint?
-		var drag: ExactWindowDragRequest?
-		if request.point != nil || request.op == .drag {
+		if request.point != nil {
 			// Normalized coordinates survive host image resizing; authority stays in the bridge's capture.
 			let authority = try SnapshotTargetReceiptPlanner.assemble(
 				snapshotID: request.snapshot, detectionResult: detection
@@ -240,15 +223,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 				window.bounds.contains(captured), !detection.screenshotPath.isEmpty
 			else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
 			point = try request.point?.mapped(in: authority)
-			if request.op == .drag {
-				drag = try ExactWindowDragRequest(
-					snapshotID: request.snapshot, target: window,
-					from: request.from!.mapped(in: authority), to: request.to!.mapped(in: authority),
-					durationMilliseconds: request.duration_ms ?? 500,
-					button: request.button.flatMap(ExactWindowHeldPointerButton.init(rawValue:)) ?? .left
-				)
-				try drag!.validate()
-			}
+
 		}
 		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
 		invoked = true
@@ -268,8 +243,6 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 				target: request.element, point: point, snapshotId: request.snapshot,
 				expectedWindow: scrollWindow!, foreground: false
 			)))
-		case .drag:
-			evidence = try await ActionEvidence(client.dragExactWindow(drag!))
 		case .type:
 			evidence = try await ActionEvidence(client.setValueWithOutcome(
 				target: request.element!, value: .string(request.text!), snapshotId: request.snapshot

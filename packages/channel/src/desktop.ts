@@ -29,14 +29,6 @@ export type DesktopRequest =
 		direction: DesktopDirection;
 		amount: number;
 	}
-	| {
-		op: "drag";
-		snapshot: string;
-		from: DesktopPoint;
-		to: DesktopPoint;
-		button?: DesktopButton;
-		duration_ms?: number;
-	}
 	| { op: "type"; snapshot: string; element: string; text: string }
 	| {
 		op: "select";
@@ -52,10 +44,8 @@ export type DesktopRequest =
 export type DesktopPoint = { x: number; y: number };
 export const DESKTOP_CLICKS = ["single", "double", "right", "middle", "triple"] as const;
 export const DESKTOP_DIRECTIONS = ["up", "down", "left", "right"] as const;
-export const DESKTOP_BUTTONS = ["left", "right"] as const;
 export type DesktopClick = (typeof DESKTOP_CLICKS)[number];
 export type DesktopDirection = (typeof DESKTOP_DIRECTIONS)[number];
-export type DesktopButton = (typeof DESKTOP_BUTTONS)[number];
 
 export const DESKTOP_KEYS = [
 	"enter",
@@ -128,7 +118,7 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" }
+	{ op: "click" | "type" | "key" | "select" | "scroll" }
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -141,8 +131,7 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
-		|| request.op === "select" || request.op === "scroll"
-		|| request.op === "drag";
+		|| request.op === "select" || request.op === "scroll";
 }
 
 function result(value: DesktopResult): ToolExecutionResult {
@@ -232,21 +221,6 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async (args, api, context) => act({ op: "scroll", ...args }, api, context),
-			}),
-			defineTool({
-				name: "desktop_drag",
-				description:
-					"Press, move in a straight line, and release inside the exact window from a fresh desktop_inspect result. Pass snapshot_id as snapshot; from/to are distinct normalized screenshot points (x from its left edge, y from its top edge, each >= 0 and < 1). button defaults to left, with right also supported. duration_ms defaults to 500 and must be 1 to 10000. The native bridge owns the whole gesture and release cleanup; no button stays held across calls. Background delivery never moves the physical pointer or switches windows. Unsupported or changed windows are refused. The snapshot is single-use; inspect the result, and never blindly repeat an interrupted drag because part may already have run.",
-				parameters: Type.Object({
-					snapshot,
-					from: point,
-					to: point,
-					button: Type.Optional(Type.Union(DESKTOP_BUTTONS.map((value) => Type.Literal(value)))),
-					duration_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 10000 })),
-				}),
-				replay: "unsafe",
-				executionMode: "sequential",
-				execute: async (args, api, context) => act({ op: "drag", ...args }, api, context),
 			}),
 			defineTool({
 				name: "desktop_type",

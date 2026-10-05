@@ -178,7 +178,7 @@ Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
 signing team. Tools expose application and window inventories, observation, element or screenshot
-clicks, scrolling, atomic drags, replacement of editable field values, text selection,
+clicks, scrolling, replacement of editable field values, text selection,
 and keys or shortcuts. Screenshot points are normalized and mapped through the snapshot's native
 capture geometry. Actions use background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
