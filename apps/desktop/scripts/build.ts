@@ -58,7 +58,7 @@ async function dev(): Promise<void> {
 	let host: Subprocess | undefined;
 	let app: Subprocess | undefined;
 	let stopped = false;
-	// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
+	// The native launcher retains and terminates only the app instance opened by this run.
 	const stop = () => {
 		stopped = true;
 		if (app) return app.kill();
@@ -122,7 +122,7 @@ async function dev(): Promise<void> {
 		}
 		console.log(`Ace-dev ${identifier} (${profile}): ${config.home}, port ${config.port}`);
 		if (stopped) return;
-		app = Bun.spawn([join(bin, "launcher")], {
+		app = Bun.spawn([join(bin, "ace-dev-launcher"), join(bin, "..", "..")], {
 			cwd: bin,
 			env,
 			stdio: ["ignore", "inherit", "inherit"],

@@ -26,6 +26,19 @@ const profile = channel === "dev" && !process.env.ACE_DEV_INSTALL
 	: undefined;
 writeFileSync(join(contents, "Resources", "profile.json"), JSON.stringify({ profile }));
 const native = fileURLToPath(new URL("../native", import.meta.url));
+if (channel === "dev") {
+	run([
+		"xcrun",
+		"clang",
+		"-fobjc-arc",
+		"-mmacosx-version-min=15.0",
+		"-framework",
+		"AppKit",
+		join(native, "dev.m"),
+		"-o",
+		join(bin, "ace-dev-launcher"),
+	]);
+}
 const swift = Bun.spawnSync(["xcrun", "swift", "--version"]);
 const swiftVersion = /Swift version (\d+)\.(\d+)/.exec(swift.stdout.toString());
 if (

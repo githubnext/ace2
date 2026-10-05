@@ -225,7 +225,9 @@ identity and local signing identity, so macOS grants one Ace-dev permission entr
 profile in the signed bundle derives each checkout's port, data, preferences, Keychain service,
 native client identifier, and persistent WebKit partition from the checkout path, and only
 uses the host that `bun run dev` starts from the same checkout. It never registers Ace Helper, so
-testing a branch cannot replace or reuse an installed helper. `ACE_CONFIG_HOME` and
+testing a branch cannot replace or reuse an installed helper. The dev runner opens the exact app
+through LaunchServices so macOS attributes permission checks to Ace-dev rather than its parent
+terminal or coding app, and tracks that instance for shutdown. `ACE_CONFIG_HOME` and
 `ACE_KEYCHAIN_SERVICE` can target an isolated profile for other smoke checks. Sparkle checks for updates while Ace is open;
 installation explicitly pauses and unregisters the helper before replacing the application. The
 relaunched app restores hosting and resumes interrupted workers. See [updates](updates.md) for

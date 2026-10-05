@@ -146,6 +146,10 @@ and Ace's grouped permission in macOS background-item settings.
 
 Test a checkout's desktop changes with `bun run dev` from its `apps/desktop`. It builds that
 checkout's `Ace-dev.app`, starts the checkout's own host from source, and opens the app against it.
+The runner opens the exact app bundle through macOS LaunchServices. Launching its executable
+directly can attribute desktop permission checks to the launching terminal or coding app instead
+of Ace-dev, even when Ace-dev is enabled in System Settings. A small development launcher tracks
+the exact opened app so stopping the run quits that instance and then its source host.
 The host serves the checkout's freshly built `apps/app/dist`. Quitting the app stops the host and
 its workers; Ctrl-C or SIGTERM to the command quits the app first. If the host exits, the window
 closes. The command blocks while the app runs, so an agent starts it in the background and stops
