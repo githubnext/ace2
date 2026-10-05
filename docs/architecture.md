@@ -31,6 +31,10 @@ outside channel history. Issues and PRs share the Channels sidebar and project p
 Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
 action creates a channel in the selected project and invokes its agent with the item's title and URL.
 
+Avatars come from GitHub logins. Each host resolves its owner's login with `gh api user`, returns
+it from `hello` to peers, and publishes it to the directory. The app maps message authors'
+Tailscale logins to GitHub avatars and shows initials when no login is known.
+
 ## Channel
 
 A channel owns one [pi-durable](https://github.com/earendil-works/pi) Session. A local channel runs

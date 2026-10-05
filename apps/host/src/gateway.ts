@@ -24,6 +24,7 @@ import {
 	type HostInfo,
 	type HostRequest,
 	type Listing,
+	type People,
 } from "./protocol";
 import { type Machine, self, whois } from "./tailnet";
 import { checkKey, removeKey, setKey, setModel, settings } from "./settings";
@@ -99,6 +100,26 @@ function broadcast() {
 	for (const socket of sockets) {
 		socket.send(JSON.stringify({ channels: listings(socket.data) } satisfies HostFrame));
 	}
+	peopleChanged();
+}
+
+/** Fresher sources win: the directory, then reachable peers, then this host's own owner. */
+function people(): People {
+	const known: People = {};
+	for (const host of directory.read().hosts) if (host.github) known[host.login] = host.github;
+	Object.assign(known, peers.people());
+	const own = github.login(peopleChanged);
+	if (own) known[catalog.user] = own;
+	return known;
+}
+
+let sent = "";
+
+function peopleChanged(): void {
+	const frame = JSON.stringify({ people: people() } satisfies HostFrame);
+	if (frame === sent) return;
+	sent = frame;
+	for (const socket of sockets) if (!socket.data.peer) socket.send(frame);
 }
 
 function projectsChanged(): void {
@@ -234,7 +255,7 @@ async function handle(
 			}
 			return;
 		case "hello":
-			return { user: client.user, host: name };
+			return { user: client.user, host: name, github: github.login(peopleChanged) };
 		case "channels":
 			return listings(client);
 		case "projects":
@@ -376,6 +397,7 @@ function websocket(): Bun.WebSocketHandler<Client> {
 			log("info", "gateway.open", { user: socket.data.user, peer: socket.data.peer });
 			if (!socket.data.peer) {
 				socket.send(JSON.stringify({ projects: projects.list() } satisfies HostFrame));
+				socket.send(JSON.stringify({ people: people() } satisfies HostFrame));
 			}
 		},
 		async message(socket, raw) {
@@ -570,7 +592,11 @@ export async function serve(port: number): Promise<never> {
 	if (closing) return new Promise(() => {});
 	if (machine) name = machine.name;
 	const address = machine ? { address: machine.address } : {};
-	const publish = directory.watch({ name, login: catalog.user, ...address }, local, broadcast);
+	const publish = directory.watch(
+		() => ({ name, login: catalog.user, github: github.login(peopleChanged), ...address }),
+		local,
+		broadcast,
+	);
 	log("info", "host.tailnet", machine ? { name, address: machine.address } : { tailscale: false });
 	cleanup.push(publish.stop);
 	if (machine) {

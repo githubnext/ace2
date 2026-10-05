@@ -12,7 +12,8 @@ import type { Listing } from "./protocol";
 
 const HEARTBEAT = 30_000;
 
-type Host = { name: string; login: string; address?: string; seen: number };
+/** `github` is the owner's GitHub login, so clients can show avatars for their messages. */
+type Host = { name: string; login: string; github?: string; address?: string; seen: number };
 
 const config = join(catalog.home, "directory.json");
 
@@ -55,7 +56,7 @@ async function call(path: string, init?: RequestInit): Promise<Response> {
  * refresh. Failures keep the last answer, so an unreachable directory never hides channels.
  */
 export function watch(
-	self: { name: string; login: string; address?: string },
+	self: () => Omit<Host, "seen">,
 	channels: () => Listing[],
 	onChange: () => void,
 ) {
@@ -65,9 +66,10 @@ export function watch(
 		if (!url() || pending || controller.signal.aborted) return;
 		pending = true;
 		try {
-			await call(`/hosts/${encodeURIComponent(self.name)}`, {
+			const host = self();
+			await call(`/hosts/${encodeURIComponent(host.name)}`, {
 				method: "PUT",
-				body: JSON.stringify({ ...self, channels: channels() }),
+				body: JSON.stringify({ ...host, channels: channels() }),
 				signal: controller.signal,
 			});
 			known = await (await call("/", { signal: controller.signal })).json();
