@@ -39,11 +39,16 @@ revalidates the retained editor, selection, active app, and process generation b
 unit. Other targets use Peekaboo's target-only window preparation, including its guarded blank
 native title-bar click. The route is fixed before input and never switches after partial delivery.
 Preparation and delivery form one native outcome; partial preparation remains uncertain input and
-cannot authorize a retry or early restoration of private clipboard contents. Typed refusal causes
+cannot authorize a retry. If the paste key was never posted, clipboard restoration is safe even
+when preparation or modifier input was emitted. Typed refusal causes
 retain the native guard diagnostic without exposing clipboard contents or the compared text.
 An observed meaningful edit authorizes generation-checked restoration; uncertain consumption
 leaves the replacement or preserves newer contents, never restoring private prior contents
 while a paste may still be pending. It has no typing fallback or delayed restore journal.
+The existing clipboard gate durably reserves the target process generation before the paste key.
+Unresolved delivery blocks later automated clipboard writes until a live read confirms the intended
+edit or that exact process generation ends. Only reservation metadata survives a GUI restart;
+no clipboard contents, hashes, or deferred restoration are persisted.
 
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and applies each patch before compiling Swift. A repeated build accepts each only when its reverse

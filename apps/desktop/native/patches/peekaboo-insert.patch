@@ -1,8 +1,188 @@
+diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardPasteTransactionGate.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardPasteTransactionGate.swift
+--- a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardPasteTransactionGate.swift
++++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardPasteTransactionGate.swift
+@@ -79,6 +79,8 @@
+         case unsafeDirectory(path: String)
+         case unsafeLockFile(path: String)
+         case lockTimeout(path: String)
++        case invalidReservation(path: String)
++        case transactionUnavailable
+ 
+         var errorDescription: String? {
+             switch self {
+@@ -93,6 +95,10 @@
+                 return "Clipboard paste transaction lock is not a regular file owned by the current user: \(path)"
+             case let .lockTimeout(path):
+                 return "Timed out waiting for the exclusive clipboard paste transaction lock at \(path)."
++            case let .invalidReservation(path):
++                return "Clipboard paste reservation at \(path) is unreadable or unsupported. No new clipboard mutation was admitted; recover it only after the original receiver has terminated."
++            case .transactionUnavailable:
++                return "Clipboard paste reservation requires the active transaction gate."
+             }
+         }
+     }
+@@ -102,6 +108,134 @@
+ 
+     /// Serializes callers in a shared host before they enter the file-lock wait loop.
+     @MainActor private static var isActive = false
++    @TaskLocal private static var transaction: Transaction?
++    @MainActor private static var pendingProof: PendingProof?
++
++    private struct Reservation: Codable, Sendable {
++        let version: Int
++        let id: UUID
++        let pid: Int32
++        let processStartIdentity: UInt64
++        let windowID: Int
++    }
++
++    private struct PendingProof: Sendable {
++        let id: UUID
++        let path: String
++        let canRelease: @MainActor @Sendable () async -> Bool
++    }
++
++    @MainActor
++    private final class Transaction {
++        let descriptor: Int32
++        let path: String
++        var active = true
++        var reservation: Reservation?
++
++        init(descriptor: Int32, path: String) {
++            self.descriptor = descriptor; self.path = path
++        }
++
++        func read() throws -> Reservation? {
++            var info = stat()
++            guard fstat(self.descriptor, &info) == 0 else { throw self.failure("inspect reservation") }
++            if info.st_size == 0 { return nil }
++            guard info.st_size > 0, info.st_size <= 2048 else { throw GateError.invalidReservation(path: self.path) }
++            var data = Data(count: Int(info.st_size))
++            let count = data.withUnsafeMutableBytes { pread(self.descriptor, $0.baseAddress!, $0.count, 0) }
++            guard count == data.count,
++                  let value = try? JSONDecoder().decode(Reservation.self, from: data),
++                  value.version == 1, value.pid > 0, value.processStartIdentity > 0, value.windowID > 0
++            else { throw GateError.invalidReservation(path: self.path) }
++            return value
++        }
++
++        func write(_ value: Reservation?) throws {
++            let data = try value.map { try JSONEncoder().encode($0) } ?? Data()
++            guard ftruncate(self.descriptor, 0) == 0 else { throw self.failure("truncate reservation") }
++            var offset = 0
++            while offset < data.count {
++                let written = data.withUnsafeBytes {
++                    pwrite(self.descriptor, $0.baseAddress!.advanced(by: offset), $0.count - offset, off_t(offset))
++                }
++                if written < 0, errno == EINTR { continue }
++                guard written > 0 else { throw self.failure("write reservation") }
++                offset += written
++            }
++            guard fsync(self.descriptor) == 0 else { throw self.failure("sync reservation") }
++            self.reservation = value
++        }
++
++        private func failure(_ operation: String) -> GateError {
++            .systemCall(operation: operation, path: self.path, code: errno)
++        }
++    }
++
++    /// Called synchronously immediately before primary paste-key delivery, never after it.
++    /// The deferred proof is bounded and read-only; it must not retain the prior clipboard backup.
++    @MainActor
++    public static func reservePaste(
++        process: ApplicationProcessIdentity, windowID: Int,
++        canRelease: @escaping @MainActor @Sendable () async -> Bool) throws -> UUID
++    {
++        guard let transaction, transaction.active, transaction.reservation == nil else {
++            throw GateError.transactionUnavailable
++        }
++        let value = Reservation(version: 1, id: UUID(), pid: process.processIdentifier,
++                                processStartIdentity: process.processStartIdentity, windowID: windowID)
++        // A failed metadata write cannot be followed by V delivery. Preserve uncertain disk state on cleanup failure.
++        transaction.reservation = value
++        do { try transaction.write(value) }
++        catch {
++            try? transaction.write(nil)
++            throw error
++        }
++        self.pendingProof = PendingProof(id: value.id, path: transaction.path, canRelease: canRelease)
++        return value.id
++    }
++
++    @MainActor
++    public static func releasePaste(_ id: UUID) throws {
++        guard let transaction, transaction.active, transaction.reservation?.id == id else {
++            throw GateError.transactionUnavailable
++        }
++        try transaction.write(nil)
++        if self.pendingProof?.id == id { self.pendingProof = nil }
++    }
++
++    @MainActor
++    public static var hasUnresolvedPaste: Bool { self.transaction?.reservation != nil }
++
++    @MainActor
++    private static func admit(_ transaction: Transaction) async throws {
++        transaction.reservation = try transaction.read()
++        guard let reservation = transaction.reservation else {
++            if self.pendingProof?.path == transaction.path { self.pendingProof = nil }
++            return
++        }
++        var resolved = self.processGenerationTerminated(reservation)
++        if !resolved, let proof = self.pendingProof,
++           proof.path == transaction.path, proof.id == reservation.id
++        {
++            resolved = await proof.canRelease()
++        }
++        if resolved {
++            try self.releasePaste(reservation.id)
++            return
++        }
++        throw DesktopActionFailure.preDispatchRefusal(
++            reason: .targetUnavailable,
++            message: "A previous clipboard paste to process \(reservation.pid), window \(reservation.windowID) remains unresolved.",
++            hint: "No new clipboard mutation was sent. Inspect the original receiver; its observed consumption or original process termination must resolve ownership first.")
++    }
++
++    private static func processGenerationTerminated(_ reservation: Reservation) -> Bool {
++        switch SystemIdentityResolver.processStartIdentityObservation(reservation.pid) {
++        case let .identity(current): current != reservation.processStartIdentity
++        case .absent: true
++        case .permissionDenied, .unavailable: false
++        }
++    }
+ 
+     @MainActor
+     public static func withExclusiveTransaction<T: Sendable>(
+@@ -164,7 +298,21 @@
+         defer { flock(fd, LOCK_UN) }
+ 
+         try self.checkLockDeadline(deadline, now: now(), path: standardizedLockPath)
+-        return try await operation()
++        let transaction = Transaction(descriptor: fd, path: standardizedLockPath)
++        defer { transaction.active = false }
++        return try await Self.$transaction.withValue(transaction) {
++            do { try await self.admit(transaction) }
++            catch is CancellationError { throw CancellationError() }
++            catch let failure as DesktopActionFailure { throw failure }
++            catch {
++                throw DesktopActionFailure.preDispatchRefusal(
++                    reason: .targetUnavailable,
++                    message: "Shared clipboard ownership could not be verified before this operation.",
++                    hint: error.localizedDescription)
++            }
++            try Task.checkCancellation()
++            return try await operation()
++        }
+     }
+ 
+     @MainActor
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
-index 01f93dbb9..8f0944745 100644
 --- a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
-@@ -288,10 +288,19 @@ ClipboardReadAccessProviding {
+@@ -288,10 +288,19 @@
          return .init(policy: policy)
      }
  
@@ -23,7 +203,7 @@ index 01f93dbb9..8f0944745 100644
          guard self.pasteboard.changeCount == originalChangeCount else {
              throw ClipboardTemporaryWriteError.snapshotChanged
          }
-@@ -326,7 +335,9 @@ ClipboardReadAccessProviding {
+@@ -326,7 +335,9 @@
          }
      }
  
@@ -34,7 +214,7 @@ index 01f93dbb9..8f0944745 100644
          guard let items = self.pasteboard.pasteboardItems else {
              throw ClipboardTemporaryWriteError.snapshotUnavailable
          }
-@@ -336,14 +347,24 @@ ClipboardReadAccessProviding {
+@@ -336,14 +347,24 @@
              }
              return []
          }
@@ -60,18 +240,39 @@ index 01f93dbb9..8f0944745 100644
              }
          }
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/HotkeyService.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/HotkeyService.swift
-index e0b58b1fa..66a512f49 100644
 --- a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/HotkeyService.swift
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/HotkeyService.swift
-@@ -197,6 +197,7 @@ public final class HotkeyService {
+@@ -197,6 +197,8 @@
          automationTarget: UIAutomationTarget,
          clipboardClaim: GeneralPasteboardWriteClaim? = nil,
          prepareBackgroundWindow: Bool = false,
 +        laneIsOwned: Bool = false,
++        beforePrimaryKeyDown: (@MainActor @Sendable () throws -> Void)? = nil,
          deliveryValidator: (@MainActor @Sendable () async throws -> Void)? = nil) async throws
          -> UIAutomationActionResult<UIInputExecutionResult>
      {
-@@ -347,7 +348,12 @@ public final class HotkeyService {
+@@ -209,8 +211,9 @@
+         try BackgroundHotkeyPolicy.validate(keys: keys)
+         let parsedKeys = try Self.parsedKeys(keys)
+         let plannedChord = try? self.makeHotkeyPlan(parsedKeys)
+-        if clipboardClaim != nil || prepareBackgroundWindow {
++        if clipboardClaim != nil || prepareBackgroundWindow || beforePrimaryKeyDown != nil {
+             guard automationTarget.exactWindow != nil, holdDuration > 0,
++                  beforePrimaryKeyDown == nil || clipboardClaim != nil,
+                   !prepareBackgroundWindow ||
+                   (clipboardClaim != nil && automationTarget.exactWindow?.focusedElement != nil),
+                   let plannedChord,
+@@ -329,7 +332,8 @@
+                     let outcome = try await self.performTargetedHotkey(
+                         parsedKeys: parsedKeys, plannedChord: plannedChord, holdDuration: holdDuration,
+                         holdNanoseconds: holdNanoseconds,
+-                        automationTarget: automationTarget, targetValidator: targetValidator)
++                        automationTarget: automationTarget, targetValidator: targetValidator,
++                        beforePrimaryKeyDown: beforePrimaryKeyDown)
+                     guard prepareBackgroundWindow else { return outcome }
+                     preparation.record(.outcome(outcome))
+                     guard let result = preparation.successResolution().outcome else {
+@@ -347,7 +351,12 @@
              finalize: self.operationFinalizer)
          let result: UIAutomationActionResult<UIInputExecutionResult>
          do {
@@ -85,12 +286,69 @@ index e0b58b1fa..66a512f49 100644
          } catch let error as ActionInputError where error == .unsupported(.actionUnsupported) &&
              automationTarget.exactWindow != nil &&
              strategy.strategy == .actionOnly
+@@ -368,7 +377,8 @@
+         holdDuration: Int,
+         holdNanoseconds: UInt64,
+         automationTarget: UIAutomationTarget,
+-        targetValidator: @escaping @MainActor @Sendable () async throws -> Void) async throws -> DesktopActionOutcome
++        targetValidator: @escaping @MainActor @Sendable () async throws -> Void,
++        beforePrimaryKeyDown: (@MainActor @Sendable () throws -> Void)?) async throws -> DesktopActionOutcome
+     {
+         guard let targetProcessIdentifier = automationTarget.processIdentifier else {
+             throw PeekabooError.invalidInput("Targeted hotkey requires a process target")
+@@ -383,7 +393,8 @@
+             holdNanoseconds: holdNanoseconds,
+             targetProcessIdentifier: targetProcessIdentifier,
+             deliveryValidator: targetValidator,
+-            cleanupProcessIdentity: automationTarget.exactWindow?.identity.processIdentity)
++            cleanupProcessIdentity: automationTarget.exactWindow?.identity.processIdentity,
++            beforePrimaryKeyDown: beforePrimaryKeyDown)
+ 
+         do {
+             if holdDuration <= 0 {
+@@ -458,7 +469,8 @@
+         holdNanoseconds: UInt64,
+         targetProcessIdentifier: pid_t,
+         deliveryValidator: (@MainActor @Sendable () async throws -> Void)? = nil,
+-        cleanupProcessIdentity: ApplicationProcessIdentity? = nil) async throws
++        cleanupProcessIdentity: ApplicationProcessIdentity? = nil,
++        beforePrimaryKeyDown: (@MainActor @Sendable () throws -> Void)? = nil) async throws
+         -> Int
+     {
+         guard self.postEventAccessEvaluator() else {
+@@ -476,7 +488,8 @@
+                 holdNanoseconds: holdNanoseconds,
+                 targetProcessIdentifier: targetProcessIdentifier,
+                 deliveryValidator: deliveryValidator,
+-                cleanupProcessIdentity: cleanupProcessIdentity)
++                cleanupProcessIdentity: cleanupProcessIdentity,
++                beforePrimaryKeyDown: beforePrimaryKeyDown)
+         }
+ 
+         var pressedModifierKeyCodes: Set<Int64> = []
+@@ -544,7 +557,8 @@
+         holdNanoseconds: UInt64,
+         targetProcessIdentifier: pid_t,
+         deliveryValidator: (@MainActor @Sendable () async throws -> Void)?,
+-        cleanupProcessIdentity: ApplicationProcessIdentity) async throws -> Int
++        cleanupProcessIdentity: ApplicationProcessIdentity,
++        beforePrimaryKeyDown: (@MainActor @Sendable () throws -> Void)?) async throws -> Int
+     {
+         var state = HeldHotkeyState()
+ 
+@@ -567,6 +581,7 @@
+             try await self.validateDelivery(
+                 deliveryValidator,
+                 emittedUnitCount: state.emittedUnitCount)
++            try beforePrimaryKeyDown?()
+             state.primaryKeyIsDown = true
+             self.eventPoster(eventPlan.primaryKeyDownEvent, targetProcessIdentifier)
+             state.emittedUnitCount += 1
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift
 new file mode 100644
-index 000000000..f8eab46b1
 --- /dev/null
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift
-@@ -0,0 +1,266 @@
+@@ -0,0 +1,315 @@
 +import AppKit
 +import ApplicationServices
 +import Foundation
@@ -120,6 +378,7 @@ index 000000000..f8eab46b1
 +    public let target_receipt: LiteralInsertReceipt?
 +    public var clipboard_changed = false
 +    public var clipboard_cleanup = "not_needed"
++    public var clipboard_ownership = "released"
 +    public var consumption = "unverified"
 +    public var requires_fresh_observation = false
 +    public var error: LiteralInsertError?
@@ -130,6 +389,12 @@ index 000000000..f8eab46b1
 +    func literalInsert(
 +        text: String, target: UIAutomationTarget.ExactWindow, clipboard: ClipboardService,
 +        checkActive: @escaping @MainActor @Sendable () throws -> Void) async throws -> LiteralInsertResult
++}
++
++@MainActor
++private final class LiteralInsertReservation {
++    var token: UUID?
++    var resolved = false
 +}
 +
 +extension UIAutomationService: LiteralInsertServiceProtocol {
@@ -177,6 +442,7 @@ index 000000000..f8eab46b1
 +            process_start_identity_decimal: String(target.identity.ownerProcessStartIdentity)))
 +        var possibleInput = false
 +        var claim: GeneralPasteboardWriteClaim?
++        let reservation = LiteralInsertReservation()
 +        do {
 +            try checkActive()
 +            try await self.validateLiteralInsertBaseline(baseline, target: target, retained: retained)
@@ -185,11 +451,43 @@ index 000000000..f8eab46b1
 +            let write = ClipboardWriteRequest(representations: ClipboardWriteRequest.textRepresentations(from: Data(text.utf8)))
 +            let written = try transaction.writeWithClaim(write)
 +            claim = written.claim
++            let writeClaim = written.claim
 +            try checkActive()
 +            possibleInput = true
 +            let input = try await self.hotkeyService.hotkey(
 +                keys: "cmd,v", holdDuration: 50, automationTarget: .exactWindow(target),
 +                clipboardClaim: written.claim, prepareBackgroundWindow: prepareBackgroundWindow, laneIsOwned: true,
++                beforePrimaryKeyDown: {
++                    let token = try ClipboardPasteTransactionGate.reservePaste(
++                        process: target.identity.processIdentity, windowID: target.identity.windowID)
++                    {
++                        if reservation.resolved { return true }
++                        guard meaningful, clipboard.literalInsertChangeCount == writeClaim.changeCount else { return false }
++                        do {
++                            let observed = try await self.literalInsertState(target, retained: retained)
++                            return observed?.matches(text: expectedText, location: expectedLocation, length: 0) == true
++                                && clipboard.literalInsertChangeCount == writeClaim.changeCount
++                        } catch { return false }
++                    }
++                    reservation.token = token
++                    do {
++                        // Persistence can block; cancellation and ownership must still hold before V is posted.
++                        try checkActive()
++                        guard clipboard.literalInsertChangeCount == writeClaim.changeCount,
++                              SystemIdentityResolver.processStartIdentity(target.identity.ownerProcessIdentifier)
++                                == target.identity.ownerProcessStartIdentity else {
++                            throw Self.literalInsertRefusal("Clipboard ownership or the original receiving process changed before paste delivery.")
++                        }
++                        guard prepareBackgroundWindow || Self.literalInsertTargetIsActive(target) else {
++                            throw Self.literalInsertRefusal("The exact receiving app is no longer active; observe it before another insertion.")
++                        }
++                    } catch {
++                        reservation.resolved = true
++                        try? ClipboardPasteTransactionGate.releasePaste(token)
++                        reservation.token = nil
++                        throw error
++                    }
++                },
 +                deliveryValidator: {
 +                    try checkActive()
 +                    try await self.validateLiteralInsertBaseline(baseline, target: target, retained: retained)
@@ -239,6 +537,14 @@ index 000000000..f8eab46b1
 +                    catch { observed = nil }
 +                    if observed?.matches(text: expectedText, location: expectedLocation, length: 0) == true {
 +                        result.consumption = "observed"
++                        reservation.resolved = true
++                        if let token = reservation.token {
++                            do { try ClipboardPasteTransactionGate.releasePaste(token) }
++                            catch {
++                                result.error = .init(code: "CLIPBOARD_OWNERSHIP_RELEASE_FAILED",
++                                    message: "The edit was observed, but shared clipboard ownership could not be released.")
++                            }
++                        }
 +                        if result.native_outcome?.state == .dispatchedUnverified || result.native_outcome?.state == .confirmedChange {
 +                            result.outcome = "completed"
 +                        }
@@ -253,7 +559,7 @@ index 000000000..f8eab46b1
 +                }
 +            }
 +        }
-+        if !possibleInput || result.consumption == "observed" {
++        if reservation.token == nil || result.consumption == "observed" {
 +            do { result.clipboard_cleanup = try transaction.cleanup().status.rawValue }
 +            catch {
 +                result.clipboard_cleanup = "failed"
@@ -271,6 +577,7 @@ index 000000000..f8eab46b1
 +                    hint: "Inspect the exact receiver before another input; do not repeat the insertion blindly.")
 +            }
 +        }
++        result.clipboard_ownership = ClipboardPasteTransactionGate.hasUnresolvedPaste ? "reserved" : "released"
 +        guard result.clipboard_changed else {
 +            throw Self.literalInsertRefusal(result.error?.message ?? "Literal insertion was refused before clipboard mutation.")
 +        }
@@ -359,7 +666,6 @@ index 000000000..f8eab46b1
 +}
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeLiteralInsert.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeLiteralInsert.swift
 new file mode 100644
-index 000000000..273c03056
 --- /dev/null
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeLiteralInsert.swift
 @@ -0,0 +1,71 @@
@@ -435,10 +741,9 @@ index 000000000..273c03056
 +    }
 +}
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
-index df9a75c7e..d854fc868 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
-@@ -36,6 +36,7 @@ public enum PeekabooBridgePermissionKind: String, Codable, Sendable {
+@@ -36,6 +36,7 @@
  
  public enum PeekabooBridgeOperation: String, Codable, Sendable, CaseIterable, Hashable {
      // Core
@@ -447,10 +752,9 @@ index df9a75c7e..d854fc868 100644
      case requestPostEventPermission
      case daemonStatus
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
-index 1ac317362..edf9431d6 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
-@@ -29,6 +29,7 @@ extension PeekabooBridgeOperation {
+@@ -29,6 +29,7 @@
  
      /// Operations enabled by default for remote helper hosts.
      public static let remoteDefaultAllowlist: Set<PeekabooBridgeOperation> = [
@@ -459,10 +763,9 @@ index 1ac317362..edf9431d6 100644
          .requestPostEventPermission,
          .daemonStatus,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
-index 3d1027e12..2b8309318 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
-@@ -60,6 +60,10 @@ extension PeekabooBridgeOperationResultSemantics {
+@@ -60,6 +60,10 @@
          }
  
          return switch operation {
@@ -474,10 +777,9 @@ index 3d1027e12..2b8309318 100644
              descriptor(
                  completion: .readOnly,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
-index f32b8a34e..2a3bce012 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
-@@ -3,7 +3,8 @@ import Foundation
+@@ -3,7 +3,8 @@
  extension PeekabooBridgeOperationResultSemantics.ResponseFamily {
      func matches(_ response: PeekabooBridgeResponse) -> Bool {
          switch (self, response) {
@@ -488,10 +790,9 @@ index f32b8a34e..2a3bce012 100644
               (.applicationMutationInventory, .applicationMutationInventory),
               (.applications, .applications),
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
-index 348a981fa..654c77a55 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
-@@ -123,7 +123,8 @@ extension PeekabooBridgeResponse {
+@@ -123,7 +123,8 @@
                  bounds: termination.receipt.windowBounds)]
          case let .error(envelope):
              return envelope.actionTargetReceipt.map { [DesktopTargetEvidenceAdapter.evidence(receipt: $0)] } ?? []
@@ -502,10 +803,9 @@ index 348a981fa..654c77a55 100644
               .permissionsStatus,
               .daemonStatus,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
-index 38d231856..3b4734f13 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
-@@ -54,6 +54,7 @@ enum PeekabooBridgeOperationResultSemantics {
+@@ -54,6 +54,7 @@
      }
  
      enum ResponseFamily: Hashable, Sendable {
@@ -514,10 +814,9 @@ index 38d231856..3b4734f13 100644
          case application
          case applicationMutationInventory
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
-index 4a5d8c5ec..36daeb570 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
-@@ -446,7 +446,8 @@ extension PeekabooBridgeOperationResultSemantics {
+@@ -446,7 +446,8 @@
              .performAction(target: payload.target, actionName: payload.actionName)
          case let .selectText(payload):
              .selectText(target: payload.target, request: payload.request)
@@ -527,7 +826,7 @@ index 4a5d8c5ec..36daeb570 100644
               .projectedAction,
               .handshake,
               .permissionsStatus,
-@@ -596,7 +597,7 @@ extension PeekabooBridgeOperationResultSemantics {
+@@ -596,7 +597,7 @@
              .suspectedNoop,
          ]
          switch request.operation {
@@ -537,10 +836,9 @@ index 4a5d8c5ec..36daeb570 100644
          case .requestPostEventPermission, .browserExecute, .swipe, .drag, .moveMouse,
               .clickMenuItem, .clickMenuItemByName, .clickMenuExtra,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
-index 7e1a536d7..21f7862e6 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
-@@ -247,7 +247,7 @@ extension PeekabooBridgeRequest {
+@@ -247,7 +247,7 @@
      /// never own the desktop lane or mutation watermark: its child re-enters this same Bridge and
      /// each nested tool call owns its own exact-target lane and signed receipt.
      var bypassesOuterDesktopMutationLane: Bool {
@@ -550,10 +848,9 @@ index 7e1a536d7..21f7862e6 100644
  }
  
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
-index 04192ef5c..8d3e670d8 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
-@@ -6,6 +6,7 @@ public enum PeekabooBridgeRequest: Codable, Sendable {
+@@ -6,6 +6,7 @@
      indirect case attestedOperation(PeekabooBridgeAttestedOperationRequest)
      indirect case projectedAction(PeekabooBridgeProjectedActionRequest)
      case handshake(PeekabooBridgeHandshake)
@@ -561,7 +858,7 @@ index 04192ef5c..8d3e670d8 100644
      case permissionsStatus
      case requestPostEventPermission
      case daemonStatus
-@@ -134,6 +135,7 @@ extension PeekabooBridgeRequest {
+@@ -134,6 +135,7 @@
          case let .attestedOperation(payload): payload.request.operation
          case let .projectedAction(payload): payload.request.operation
          case .handshake: .permissionsStatus
@@ -569,7 +866,7 @@ index 04192ef5c..8d3e670d8 100644
          case .permissionsStatus: .permissionsStatus
          case .requestPostEventPermission: .requestPostEventPermission
          case .daemonStatus: .daemonStatus
-@@ -262,6 +264,7 @@ public enum PeekabooBridgeResponse: Codable, Sendable {
+@@ -262,6 +264,7 @@
      case operationSessionRollover(PeekabooBridgeOperationSessionRefusal)
      indirect case projectedAction(PeekabooBridgeProjectedActionResponse)
      case handshake(PeekabooBridgeHandshakeResponse)
@@ -578,10 +875,9 @@ index 04192ef5c..8d3e670d8 100644
      case daemonStatus(PeekabooDaemonStatus)
      case agentExecutionTrace(PeekabooBridgeAgentExecutionTraceResponse)
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
-index f8e063669..d68c1b59b 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
-@@ -12,6 +12,8 @@ extension PeekabooBridgeServer {
+@@ -12,6 +12,8 @@
          permissions: PermissionsStatus) async throws -> PeekabooBridgeHandledResponse
      {
          switch request.operation {
@@ -591,10 +887,9 @@ index f8e063669..d68c1b59b 100644
              return try await .init(
                  response: self.handleCoreRequest(request, peer: peer, permissions: permissions))
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
-index 5e84b8c02..64827d9db 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
-@@ -105,6 +105,7 @@ public final class PeekabooBridgeServer {
+@@ -105,6 +105,7 @@
          }
      }
  

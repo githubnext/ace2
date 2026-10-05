@@ -271,6 +271,7 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 				target_receipt: data.target_receipt,
 				clipboard_changed: data.clipboard_changed,
 				clipboard_cleanup: data.clipboard_cleanup,
+				clipboard_ownership: data.clipboard_ownership,
 				consumption: data.consumption,
 			},
 			warning: "Native action metadata exceeded the result limit. Inspect the current state.",

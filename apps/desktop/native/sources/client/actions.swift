@@ -105,6 +105,7 @@ private struct ActionResult: Encodable {
 	var selection: TextSelectionResult?
 	var clipboard_changed: Bool?
 	var clipboard_cleanup: String?
+	var clipboard_ownership: String?
 	var consumption: String?
 	var requires_fresh_observation = false
 	var error: ActionMessage?
@@ -114,6 +115,7 @@ private struct ActionMessage: Encodable {
 	let code: String
 	let message: String
 	var hint: String?
+	var cause: String?
 }
 
 private struct ActionReply: Encodable {
@@ -171,10 +173,11 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			result.native_outcome = insertion.native_outcome
 			result.clipboard_changed = insertion.clipboard_changed
 			result.clipboard_cleanup = insertion.clipboard_cleanup
+			result.clipboard_ownership = insertion.clipboard_ownership
 			result.consumption = insertion.consumption
 			result.requires_fresh_observation = insertion.requires_fresh_observation
 			if let error = insertion.error {
-				result.error = ActionMessage(code: error.code, message: error.message, hint: error.hint)
+				result.error = ActionMessage(code: error.code, message: error.message, hint: error.hint, cause: error.cause)
 			}
 			guard let target = insertion.target_receipt,
 				target.pid == identity.ownerProcessIdentifier, target.window_id == identity.windowID,

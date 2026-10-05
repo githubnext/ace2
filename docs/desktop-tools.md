@@ -31,6 +31,9 @@ find the client alongside Ace Helper automatically.
 ## Tools
 
 - `desktop_apps` lists running native applications and their process IDs.
+  Activity and visibility come from separate observations of the same process generation.
+  When unavailable, their `is_active_known` or `is_hidden_known` flag is false and the corresponding
+  value is omitted; missing metadata does not remove the application from the inventory.
 - `desktop_windows` lists windows for an application process ID.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
@@ -97,13 +100,13 @@ Action results distinguish three outcomes:
 - `unknown`: input may have been delivered or partially delivered, but its outcome is uncertain.
   This includes losing the workspace connection while the action is in flight.
 
-Insertion reports input delivery, `consumption`, `clipboard_changed`, and `clipboard_cleanup`
-separately. Direct native delivery reports `window_targeted_events` with four units: Command and V
+Insertion reports input delivery, `consumption`, `clipboard_changed`, `clipboard_cleanup`, and
+`clipboard_ownership` separately. Direct native delivery reports `window_targeted_events` with four units: Command and V
 pressed and released once. Prepared delivery reports `composite`, combining window preparation and
 the chord. Both use `background` delivery mode because events target the exact process and window.
 Partial preparation remains an uncertain mutation even if the paste chord was not reached. Ace keeps the bounded
-prior clipboard contents only in the GUI's memory. It restores
-them after observing a meaningful expected text or selection change in the exact receiving
+prior clipboard contents only in the GUI's memory. It restores them if the paste key was never
+posted, or after observing a meaningful expected text or selection change in the exact receiving
 control. A delay or a value that already matched before insertion does not prove consumption.
 If delivery may still be pending and the edit cannot be confirmed, Ace leaves the replacement on
 the clipboard rather than restoring private contents that a delayed paste might read. It preserves
@@ -111,11 +114,14 @@ newer copied contents. The result reports this as unverified consumption and ret
 no later automatic restore is scheduled. Abrupt GUI termination can also prevent restoration.
 Prior clipboard contents never enter channel history.
 
-The clipboard gate currently covers the native request, not unresolved paste delivery after that
-request returns. Another channel can replace an unverified payload before the first receiver reads
-it. Cross-channel ownership through uncertain delivery and restart is tracked in
-[#78](https://github.com/githubnext/ace2/issues/78); an `unknown` result does not establish that a
-later automated clipboard change is isolated from that paste.
+Before sending the paste key, the existing clipboard gate reserves the clipboard for the exact
+receiving process generation. Unverified consumption leaves `clipboard_ownership: reserved`, so
+another channel cannot replace the payload. A later request can release that reservation after
+read-only verification of the intended edit, or confirmed termination of the original process.
+This never repeats input or restores the old clipboard later. The gate persists only the target
+identity and reservation metadata, with no clipboard contents or hashes. After a GUI restart,
+the private verification state is gone and the reservation remains until the original process
+generation ends. Ordinary human copies remain outside this coordination and are preserved.
 
 Pi records the action's intent before execution and never automatically replays it after a
 restart. It stores outcomes and interruption guidance in its existing tool history; Ace does not
