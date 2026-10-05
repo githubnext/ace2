@@ -49,10 +49,36 @@ private enum Client {
 			return try await nativeAction(client)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
+			var metadata: [ServiceApplicationInfo] = []
+			var warnings: [String] = []
+			do {
+				metadata = try await client.listApplications()
+			} catch {
+				try Task.checkCancellation()
+				warnings.append("Application presentation metadata was unavailable; activity and visibility are unknown.")
+			}
+			let grouped = Dictionary(grouping: metadata, by: \.processIdentifier)
+			var matched: [Int32: ServiceApplicationInfo] = [:]
+			for app in inventory.items {
+				guard let generation = app.processStartIdentity, generation > 0 else { continue }
+				let candidates = (grouped[app.processIdentifier] ?? []).filter { $0.processStartIdentity == generation }
+				if candidates.count == 1 { matched[app.processIdentifier] = candidates[0] }
+			}
+			let active = metadata.filter(\.isActive)
+			let activityKnown = active.count == 1
+				&& active[0].processStartIdentity != nil
+				&& matched[active[0].processIdentifier]?.processStartIdentity == active[0].processStartIdentity
+			if !activityKnown {
+				warnings.append("No unique active application with matching process-generation identity was observed; activity is unknown.")
+			}
+			if matched.count < inventory.items.count {
+				warnings.append("Some applications lacked presentation metadata matching their process generation; their activity and visibility are unknown.")
+			}
 			return try encode(Apps(
-				apps: inventory.items.map(App.init),
+				apps: inventory.items.map { App($0, metadata: matched[$0.processIdentifier], activityKnown: activityKnown) },
 				inventory_completeness: inventory.completeness.rawValue,
-				inventory_warnings: inventory.warnings
+				inventory_warnings: inventory.warnings,
+				metadata_warnings: warnings
 			))
 		case "windows":
 			let pid = try processID(args[2])
@@ -155,27 +181,32 @@ private struct Apps: Encodable {
 	let apps: [App]
 	let inventory_completeness: String
 	let inventory_warnings: [String]
+	let metadata_warnings: [String]
 }
 
 private struct App: Encodable {
 	let name: String
 	let pid: Int32
 	let bundle_id: String?
-	let is_active: Bool
-	let is_hidden: Bool
-	let is_hidden_known: Bool?
+	let is_active: Bool?
+	let is_active_known: Bool
+	let is_hidden: Bool?
+	let is_hidden_known: Bool
 	let process_start_identity_decimal: String?
 	let warnings: [String]?
 
-	init(_ app: ServiceApplicationInfo) {
+	init(_ app: ServiceApplicationInfo, metadata: ServiceApplicationInfo?, activityKnown: Bool) {
 		name = app.name
 		pid = app.processIdentifier
 		bundle_id = app.bundleIdentifier
-		is_active = app.isActive
-		is_hidden = app.isHidden
-		is_hidden_known = app.isHiddenKnown
+		// Mutation inventory supplies identity, not presentation state. Missing reads must stay unknown.
+		is_active_known = metadata != nil && activityKnown
+		is_active = is_active_known ? metadata?.isActive : nil
+		is_hidden_known = metadata?.isHiddenKnown == true
+		is_hidden = is_hidden_known ? metadata?.isHidden : nil
 		process_start_identity_decimal = app.processStartIdentity.map(String.init)
-		warnings = app.metadataWarnings
+		let combined = (app.metadataWarnings ?? []) + (metadata?.metadataWarnings ?? [])
+		warnings = combined.isEmpty ? nil : Array(Set(combined)).sorted()
 	}
 }
 
