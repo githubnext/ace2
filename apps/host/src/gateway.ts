@@ -69,6 +69,9 @@ function local(): Listing[] {
 			created,
 			state,
 		};
+		const { root, repo } = projects.checkout(project);
+		listing.root = root;
+		if (repo) listing.repo = repo;
 		if (hosted) listing.hosted = hosted;
 		return listing;
 	});
@@ -253,7 +256,9 @@ async function handle(
 				);
 			}
 			const known = client.peer
-				? catalog.list().some((channel) => channel.project === request.project)
+				? catalog.list().some((channel) =>
+					projects.checkout(channel.project).root === request.project
+				)
 				: projects.list().some((project) => project.path === request.project);
 			if (!known) throw new Error("Open this project in Ace first");
 			return github.project(request.project);

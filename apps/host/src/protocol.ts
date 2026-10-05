@@ -43,7 +43,12 @@ export type Listing = {
 	/** Revision of the channel's projected name and summary. */
 	revision?: number;
 	owner: string;
+	/** The checkout the channel works in, which may be a Git worktree of its project. */
 	project: string;
+	/** The project `project` belongs to: its repository's main checkout on the channel's host. */
+	root?: string;
+	/** The project's GitHub repository as owner/name. */
+	repo?: string;
 	model?: ModelRef;
 	created: number;
 	state: ChannelState;
@@ -74,7 +79,13 @@ export type TabRename = {
 export type TabResult = { ok: true; value: WindowState } | { ok: false; error: string };
 
 /** A folder opened on this host, independent of its channels and provider setup. */
-export type Project = { path: string; name: string };
+export type Project = {
+	/** The repository's main checkout, or the folder itself outside Git. */
+	path: string;
+	name: string;
+	/** The GitHub repository as owner/name. */
+	repo?: string;
+};
 
 export type ProviderId = "anthropic" | "openai";
 
