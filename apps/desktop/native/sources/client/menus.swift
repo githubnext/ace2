@@ -41,8 +41,11 @@ private struct MenuError: LocalizedError {
 }
 
 func nativeMenus(_ client: PeekabooBridgeClient) async throws -> Data {
-	let input = FileHandle.standardInput.readDataToEndOfFile()
-	guard input.count <= 4096 else { throw MenuError("Menu inventory requires one exact application target.") }
+	var input = Data()
+	while let chunk = try FileHandle.standardInput.read(upToCount: 4096), !chunk.isEmpty {
+		guard input.count + chunk.count <= 4096 else { throw MenuError("Menu inventory requires one exact application target.") }
+		input.append(chunk)
+	}
 	let target = try JSONDecoder().decode(MenuRequest.self, from: input).target
 	guard target.window_id == nil, target.bounds == nil, target.is_minimized == nil else {
 		throw MenuError("Menu inventory takes an application target from desktop_apps.")
