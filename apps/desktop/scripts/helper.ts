@@ -159,6 +159,7 @@ const patches = [
 	"peekaboo-clipboard-image.patch",
 	"peekaboo-launch.patch",
 	"peekaboo-clipboard-files.patch",
+	"peekaboo-point-focus.patch",
 ]
 	.map((name) => join(native, "patches", name));
 const temporary = mkdtempSync(join(tmpdir(), "ace-native-patches-"));
