@@ -70,7 +70,7 @@ private final class Desktop {
 						.listApplications, .listWindows, .listMenus, .menuCommand, .desktopObservation,
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
-						.selectText, .literalInsert, .clipboardTextRead, .clipboardImageRead, .clipboardTextWrite, .targetedScroll, .exactWindowDrag,
+						.selectText, .literalInsert, .clipboardTextRead, .clipboardImageRead, .clipboardFilesRead, .clipboardTextWrite, .targetedScroll, .exactWindowDrag,
 						.launchApplicationWithOptions, .activateApplication, .quitApplication, .backgroundCloseWindow,
 						.focusWindow, .minimizeWindow, .restoreWindow,
 						.moveWindow, .resizeWindow,
