@@ -182,7 +182,9 @@ replacement of editable field values, text selection, and keys or shortcuts. Act
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
-accessibility text and resizes screenshots before returning them. Quitting Ace stops desktop tools;
+accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
+exact-target capture checks without publishing action authority; failed observations retain their
+error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
 coordinates concurrent native operations. The collaborator-agent
