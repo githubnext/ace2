@@ -279,6 +279,19 @@ export function App() {
 		}
 	}
 
+	async function archiveInactive(project: string) {
+		try {
+			const count = await host.request<number>({ op: "archive-inactive", project });
+			toast(
+				count
+					? `Archived ${count} inactive channel${count === 1 ? "" : "s"}`
+					: "No inactive channels",
+			);
+		} catch (error) {
+			toast.error("Could not archive channels", { description: (error as Error).message });
+		}
+	}
+
 	async function rename(name: string) {
 		if (!renaming) return;
 		await host.channel(renaming.id, { op: "rename", author: hello.user, name: name.trim() });
@@ -349,6 +362,9 @@ export function App() {
 													channel: item.uid,
 													archived: item.lifecycle !== "archived",
 												})
+											: undefined}
+										onArchiveInactive={local && connected
+											? () => void archiveInactive(current.path)
 											: undefined}
 										onDelete={local && connected
 											? (item) => void change({ op: "delete", channel: item.uid })
