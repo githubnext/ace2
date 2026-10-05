@@ -203,6 +203,44 @@ async function screenshot(input: string, output: string, signal: AbortSignal) {
 	throw new Error("The screenshot could not be resized within the result limit.");
 }
 
+function clipboardImage(data: Record<string, unknown>): DesktopResult {
+	if (typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)) {
+		throw new Error("The native clipboard image read returned an unsupported response.");
+	}
+	if (!data.present) {
+		if (data.image !== undefined || data.source !== undefined) {
+			throw new Error("An absent clipboard image returned unexpected image data.");
+		}
+		return { text: JSON.stringify(data) };
+	}
+	const preview = data.image as Record<string, unknown> | undefined;
+	const source = data.source as Record<string, unknown> | undefined;
+	if (
+		!preview || !source || typeof preview.data !== "string"
+		|| !["image/png", "image/jpeg"].includes(String(preview.mimeType))
+		|| ![preview.width, preview.height].every((value) =>
+			typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 1600
+		)
+		|| preview.data.length > Math.ceil(MAX_IMAGE / 3) * 4
+	) throw new Error("The native clipboard image preview is missing or exceeds its limits.");
+	const bytes = Buffer.from(preview.data, "base64");
+	if (
+		!bytes.length || bytes.length > MAX_IMAGE || bytes.length !== preview.bytes
+		|| bytes.toString("base64") !== preview.data
+	) throw new Error("The native clipboard image preview is not a complete bounded image.");
+	const { data: encoded, ...metadata } = preview;
+	const text = JSON.stringify({
+		present: true,
+		change_count: data.change_count,
+		source,
+		preview: metadata,
+	});
+	if (Buffer.byteLength(text) > MAX_TEXT) {
+		throw new Error("The clipboard image metadata exceeds the result limit.");
+	}
+	return { text, image: { mimeType: preview.mimeType as string, data: encoded as string } };
+}
+
 async function inspect(
 	request: Extract<DesktopRequest, { op: "inspect" }>,
 	signal: AbortSignal,
@@ -719,7 +757,11 @@ export const desktop: Desktop = async (request, context) => {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
 		if (request.op === "clipboard-read") {
+			if (request.format !== undefined && request.format !== "text" && request.format !== "image") {
+				throw new Error("Choose text or image clipboard format.");
+			}
 			const data = await native(["clipboard"], signal, { input: JSON.stringify(request) });
+			if (request.format === "image") return clipboardImage(data);
 			if (
 				typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
 				|| (data.present ? typeof data.text !== "string" : data.text !== undefined)

@@ -219,11 +219,14 @@ restore journal or automatic retry is created. Clipboard read policy is reported
 The same clipboard gate retains a content-free reservation while a dispatched paste is unresolved.
 Later automated writes require observed consumption or termination of the exact receiver process
 generation. The reservation survives GUI restart; clipboard contents and comparison state do not.
-Explicit clipboard tools read complete bounded plain text or persistently replace it; they do not
-paste. Reads use the existing silent permission policy and require a stable generation, without
-entering or releasing the mutation gate. Writes enter that same gate, including its pending-paste
-admission, and expose content-free native outcomes without window inspection. Explicit read text
-enters ordinary tool history; no clipboard store or permission layer is added.
+Explicit clipboard tools read complete bounded plain text or an image preview, or persistently
+replace plain text; they do not paste. Reads use the existing silent permission policy and require
+a stable generation, without entering or releasing the mutation gate. The GUI copies one bounded
+image representation, renders an oriented preview off its main actor, and verifies the generation
+again. Source and preview metadata stay distinct; the bounded preview uses the existing image
+result and durable history without clipboard files or a second store. Writes enter the same gate,
+including pending-paste admission, and expose content-free native outcomes without window inspection.
+Explicitly read content enters ordinary tool history as observed data; no permission layer is added.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves

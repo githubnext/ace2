@@ -8,7 +8,11 @@ private struct ClipboardRequest: Decodable {
 		case read = "clipboard-read"
 		case write = "clipboard-write"
 	}
+	enum Format: String, Decodable {
+		case text, image
+	}
 	let op: Operation
+	let format: Format?
 	let text: String?
 }
 
@@ -45,12 +49,20 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
 				message: "Clipboard reads do not accept text.")
 		}
+		if request.format == .image {
+			let result = try await client.clipboardImageRead()
+			return try JSONEncoder().encode(ClipboardReply(data: result))
+		}
 		let result = try await client.clipboardTextRead()
 		return try JSONEncoder().encode(ClipboardReply(data: result))
 	}
 	var result = ClipboardWriteResult()
 	var invoked = false
 	do {
+		guard request.format == nil else {
+			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
+				message: "Clipboard format applies only to reads; writes accept plain text.")
+		}
 		guard let text = request.text, text.utf16.count <= 8192 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
 				message: "Clipboard text must contain at most 8192 UTF-16 code units.")
