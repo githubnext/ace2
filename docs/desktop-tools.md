@@ -1,7 +1,7 @@
 # Native desktop tools
 
 Ace's pi harness can inspect applications and windows, activate apps, focus or restore windows, click observed controls, replace editable
-field values, select text, send keys or shortcuts, and scroll on the machine running the channel's tools. It uses
+field values, select text, send keys or shortcuts, scroll, and drag on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -48,6 +48,15 @@ find the client alongside Ace Helper automatically.
 - `desktop_scroll` scrolls an observed element or screenshot point `up`, `down`, `left`, or `right`.
   `amount` is 1 to 20 native units: Accessibility pages/actions or window-routed wheel ticks, depending
   on the target. It is not a pixel distance; inspect the resulting position before continuing.
+- `desktop_drag` performs one straight-line press, move, and release between `from` and `to`
+  screenshot points inside the same captured window. `button` defaults to `left`, with `right`
+  also supported. `duration_ms` defaults to 500 and accepts 1 to 10000 milliseconds. The native
+  bridge owns the whole gesture, including release cleanup after cancellation or client death.
+  No pointer button stays held across tool calls; a drag cannot cross windows. Accepted native
+  delivery does not prove that the application moved or dropped anything; verify the effect with
+  a fresh `desktop_inspect`. An inactive view may ignore the gesture, as observed during native
+  validation. If observation shows no effect, explicitly use `desktop_focus`, then inspect again
+  before deciding on another action. Ace does not automatically switch to foreground delivery.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
@@ -107,7 +116,7 @@ Control and keyboard tools use targeted background delivery. They do not activat
 mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
 physical pointer. The target app can still respond by changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop,
+emulated with held keys or mouse buttons across calls. Literal insertion,
 clipboard operations, foreground interaction, application launch, window geometry/close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
