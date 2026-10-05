@@ -170,8 +170,8 @@ WebKit directories are left intact; their UI preferences are not copied into the
 
 These builds never register or attach to Ace Helper. Without their host they report that it is
 missing and quit, and helper controls in the menu and Settings are unavailable. Opening a checkout's
-build from Finder works only while its `bun run dev` host is running. Use the installed Ace-dev or
-Canary to test Ace Helper itself.
+build from Finder works only while its `bun run dev` host is running. Use installed Canary to test
+Ace Helper itself. Do not install a source checkout's app in `/Applications`.
 
 Development builds sign every executable with one identity: `ACE_CODESIGN_IDENTITY` when set,
 otherwise the repository's local Git setting `ace.codesignIdentity`. Set the
@@ -203,6 +203,12 @@ and replacement, picker cancellation, and starting a channel. Quit and run it ag
 history should remain available.
 
 ### Installed Ace-dev
+
+This helper-testing mode cannot coexist with source dev builds. They share the same app identity,
+and macOS can resolve a registered helper from another copy even though source apps never
+register it. For routine development, use `bun desktop dev` alongside installed Canary. Before
+switching from installed Ace-dev to source development, stop Ace Helper in Settings → This Mac,
+quit Ace-dev, and remove its installed bundle. Keep its data directories.
 
 The installed `/Applications/Ace-dev.app` uses `dev.ace.desktop.dev`, port 4141, the `ace-dev`
 catalog and Keychain service, and `~/Library/Application Support/Ace-dev` for preferences. It runs

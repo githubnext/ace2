@@ -136,6 +136,8 @@ Native desktop inspection in development requires an Apple Development signing i
 with `ace.codesignIdentity` or `ACE_CODESIGN_IDENTITY` (see [UI testing](desktop.md#ui-testing)). Development builds refuse missing or ad-hoc signing, and use one fixed
 app identity across checkouts so permissions survive rebuilds. Release builds use the Developer ID identity below.
 
+Use source dev builds alongside installed Canary. The optional installed development helper mode
+must not coexist with source dev copies (see [installed Ace-dev](desktop.md#installed-ace-dev)).
 Keep the same signing identity for installed development builds.
 Changing from Apple Development to Developer ID, or to an ad-hoc signature, can invalidate
 Ace Helper's macOS launch constraint even when the Team ID stays the same.
