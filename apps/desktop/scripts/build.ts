@@ -101,6 +101,7 @@ async function dev(): Promise<void> {
 		ACE_CONFIG_HOME: config.settings,
 		ACE_KEYCHAIN_SERVICE: config.keychain,
 		ACE_PORT: String(config.port),
+		ACE_DESKTOP_CLIENT: join(bin, "ace-desktop-client"),
 	});
 	host = Bun.spawn([
 		process.execPath,
