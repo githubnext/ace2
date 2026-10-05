@@ -198,12 +198,15 @@ signing team. Tools expose application and window inventories, observation, elem
 clicks, scrolling, atomic drags, replacement of editable field values, text selection/insertion, and keys or shortcuts. Screenshot
 points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
-Separate activation, quit, focus, restore, move, and resize tools accept generation-bound inventory targets, with exact
+Separate activation, quit, close, focus, restore, move, and resize tools accept generation-bound inventory targets, with exact
 window bounds where applicable. The native service revalidates those receipts before dispatch;
 activation and focus explicitly change the foreground desktop. Inspection never activates a target
 implicitly. App-only action receipts refresh inventories without inventing a selected window.
 Normal quit reports completion only after native termination confirmation; an accepted request that
 leaves the app running stays uncertain. It never retries, force-quits, or chooses a dialog response.
+Exact-window close selects one supported background Accessibility route before input and never
+falls through after dispatch. Confirmed disappearance survives later inventory failure; an accepted
+close that remains open is uncertain with unsafe retry and fresh inventory when available.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed
 window targets; the original bounds remain part of the pre-mutation identity check.
 Literal insertion uses one GUI-owned temporary plain-text paste, with the existing native mutation

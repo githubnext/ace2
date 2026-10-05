@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, activate or quit apps, focus, restore, move or resize windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, activate or quit apps, close, focus, restore, move or resize windows, click observed controls, replace editable
 field values, select and insert text, send keys or shortcuts, scroll, drag, and read or write plain-text clipboard contents on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -68,6 +68,15 @@ find the client alongside Ace Helper automatically.
   Its native outcome reports one dispatched operation still running and marks retry unsafe.
   Inspect a selected window and resolve any dialog deliberately before choosing another action.
   A later inventory failure or missing app does not change the original quit outcome.
+- `desktop_close` requests close of one exact window using its unchanged `target` from
+  `desktop_windows`. It selects one supported background Accessibility action and checks the
+  original process generation, window ID and bounds immediately before delivery. Restore a
+  minimized window explicitly first. A completed result means native verification confirmed the
+  window disappeared. An accepted request that leaves the window open remains `unknown` with
+  unsafe retry; it may be waiting on an unsaved-work dialog. The result refreshes inventories
+  without inspecting a closed window or automatically choosing a dialog. A later inventory
+  failure or missing app preserves the original native outcome. There is no foreground fallback,
+  forced close, automatic retry, or dialog response.
 - `desktop_focus` brings one exact window to the foreground using its `target` from
   `desktop_windows`, activating its app and switching Spaces when needed.
 - `desktop_restore` unminimizes one exact window using its inventory `target` and background
@@ -135,7 +144,7 @@ matching rows omitted from the filtered response; narrow the query if needed. Se
 change native inventory completeness or warnings, and an empty match is not proof an app stopped.
 
 Choose the application from the inventory and the window from that application's window list.
-Activation, quit, focus, restore, move, and resize use inventory targets directly, so a failed inspection does not
+Activation, quit, close, focus, restore, move, and resize use inventory targets directly, so a failed inspection does not
 prevent explicit recovery. Pass the target object unchanged: it includes the process generation
 as a decimal string and, for windows, the original window ID, bounds, and minimized state. The
 native service revalidates that identity immediately before acting. These targets are not

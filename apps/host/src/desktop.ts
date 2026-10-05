@@ -507,7 +507,11 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		}, outcome);
 	}
 	const outcome = data.outcome as DesktopOutcome;
-	if (request.op === "quit" && outcome === "unknown" && data.terminated === false) {
+	if (
+		outcome === "unknown"
+		&& ((request.op === "quit" && data.terminated === false)
+			|| (request.op === "close" && data.target_receipt))
+	) {
 		return await observeManagement(request, data, signal);
 	}
 	if (outcome !== "completed" || request.op === "clipboard-write") {
@@ -560,7 +564,7 @@ async function observeManagement(
 	signal: AbortSignal,
 ): Promise<DesktopResult> {
 	const data: Record<string, unknown> = { action };
-	const outcome = request.op === "quit" && action.outcome === "unknown" ? "unknown" : "completed";
+	const outcome = action.outcome === "unknown" ? "unknown" : "completed";
 	const receipt = action.target_receipt as Reply["target_receipt"];
 	if (
 		!receipt || receipt.pid !== request.target.pid
@@ -583,8 +587,10 @@ async function observeManagement(
 		data.application_inventory_warnings = apps.inventory_warnings;
 		const app = apps.apps.find((app) => app.pid === receipt.pid);
 		data.application = app || null;
-		// Quit's native receipt owns termination evidence; later inventory cannot undo or establish it.
-		if (!app && request.op === "quit") return managementResult(data, action, outcome);
+		// The native receipt owns close/quit evidence; later inventory cannot undo or establish it.
+		if (!app && (request.op === "quit" || request.op === "close")) {
+			return managementResult(data, action, outcome);
+		}
 		if (!app) throw new Error("The target application was not returned by the later inventory.");
 		if (app.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
 			throw new Error("The application changed process generation after the action.");
@@ -603,7 +609,7 @@ async function observeManagement(
 				"Later window inventory could not be bound to the original application generation.",
 			);
 		}
-		if (request.op === "activate" || request.op === "quit") {
+		if (request.op === "activate" || request.op === "quit" || request.op === "close") {
 			return managementResult(data, action, outcome);
 		}
 		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
@@ -638,7 +644,7 @@ async function observeManagement(
 		);
 		data.message = outcome === "completed"
 			? "The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly."
-			: "Termination was not confirmed and later inventory was unavailable. Refresh the target before choosing any further action; do not blindly retry or force quit.";
+			: "Native completion was not confirmed and later inventory was unavailable. Refresh the target before choosing any further action; do not blindly repeat the request.";
 		return managementResult(data, action, outcome);
 	}
 }
@@ -682,6 +688,7 @@ export const desktop: Desktop = async (request, context) => {
 			"drag",
 			"activate",
 			"quit",
+			"close",
 			"focus",
 			"restore",
 			"move",

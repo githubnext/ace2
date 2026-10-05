@@ -22,7 +22,7 @@ export type DesktopWindowTarget = DesktopAppTarget & {
 export type DesktopManagement =
 	| { op: "activate"; target: DesktopAppTarget }
 	| { op: "quit"; target: DesktopAppTarget }
-	| { op: "focus" | "restore"; target: DesktopWindowTarget }
+	| { op: "focus" | "restore" | "close"; target: DesktopWindowTarget }
 	| { op: "move"; target: DesktopWindowTarget; position: { x: number; y: number } }
 	| { op: "resize"; target: DesktopWindowTarget; size: { width: number; height: number } };
 
@@ -159,6 +159,7 @@ export type DesktopAction = Extract<
 			| "drag"
 			| "activate"
 			| "quit"
+			| "close"
 			| "focus"
 			| "restore"
 			| "move"
@@ -184,7 +185,7 @@ export function isDesktopAction(request: DesktopRequest): request is DesktopActi
 
 export function isDesktopManagement(request: DesktopRequest): request is DesktopManagement {
 	return request.op === "activate" || request.op === "quit" || request.op === "focus"
-		|| request.op === "restore"
+		|| request.op === "restore" || request.op === "close"
 		|| request.op === "move" || request.op === "resize";
 }
 
@@ -309,6 +310,15 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async ({ target }, api, context) => act({ op: "quit", target }, api, context),
+			}),
+			defineTool({
+				name: "desktop_close",
+				description:
+					"Request normal close of one exact native window using its unchanged target from desktop_windows. Uses one supported background Accessibility action without activating the app. Native checks bind the process generation, window ID and original bounds. Restore a minimized window explicitly first. This can open an unsaved-work dialog. completed means native verification confirmed the window disappeared; accepted but unfinished close remains unknown with fresh inventory when available. Inspect any remaining window or dialog deliberately. Ace never retries, force-closes, or answers a dialog. Never blindly repeat an interrupted close.",
+				parameters: Type.Object({ target: windowTarget }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target }, api, context) => act({ op: "close", target }, api, context),
 			}),
 			defineTool({
 				name: "desktop_focus",
