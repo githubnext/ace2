@@ -5,6 +5,7 @@
 	"license": "MIT",
 	"exports": {
 		".": "./src/index.ts",
+		"./desktop": "./src/desktop.ts",
 		"./models": "./src/models.ts",
 		"./protocol": "./src/protocol.ts",
 		"./workspace": "./src/workspace.ts"

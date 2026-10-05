@@ -9,7 +9,7 @@ export type Tool = {
 	call: string;
 	name: string;
 	args: unknown;
-	result?: { error: boolean; text: string };
+	result?: { error: boolean; text: string; images?: Image[] };
 };
 
 export type Item =
@@ -99,7 +99,14 @@ export function apply(state: Transcript, event: Event): Transcript {
 							...(event.stopped ? { stopped: true } : {}),
 							tools: item.tools.map((tool) =>
 								tool.call === event.call
-									? { ...tool, result: { error: event.error, text: event.text } }
+									? {
+										...tool,
+										result: {
+											error: event.error,
+											text: event.text,
+											...(event.images ? { images: event.images } : {}),
+										},
+									}
 									: tool
 							),
 						}

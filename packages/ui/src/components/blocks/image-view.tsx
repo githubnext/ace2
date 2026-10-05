@@ -1,7 +1,14 @@
 import { cell, DEFAULT_H, DEFAULT_W, GRID_GAP, type Item, type Picture } from "./image-layout";
 
 function ImageView(
-	{ src, w, h, alt, width }: { src: string; w: number; h: number; alt: string; width: number },
+	{ src, w, h, alt, width, fit: objectFit = "cover" }: {
+		src: string;
+		w: number;
+		h: number;
+		alt: string;
+		width: number;
+		fit?: "cover" | "contain";
+	},
 ) {
 	let scale = Math.min(1, width / w);
 	let fit = Math.round(w * scale);
@@ -28,7 +35,7 @@ function ImageView(
 			src={src}
 			alt={alt}
 			className="rounded-lg squircle contain-strict shadow-[inset_0_0_0_1px_rgb(0_0_0/0.14)] dark:shadow-[inset_0_0_0_1px_rgb(255_255_255/0.12)]"
-			style={{ inlineSize: fit, maxInlineSize: "100%", blockSize: height, objectFit: "cover" }}
+			style={{ inlineSize: fit, maxInlineSize: "100%", blockSize: height, objectFit }}
 		/>
 	);
 }

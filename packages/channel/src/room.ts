@@ -1,4 +1,4 @@
-import type { ImageContent, Message, TextContent, UserMessage } from "@earendil-works/pi-ai";
+import type { ImageContent, Message, UserMessage } from "@earendil-works/pi-ai";
 import {
 	defineEntry,
 	type EntryRecord,
@@ -65,9 +65,9 @@ export function draft(author: string, text: string, timestamp: number, images?: 
 	};
 }
 
-function images(message: UserMessage): Image[] | undefined {
+export function images(message: Message): Image[] | undefined {
 	if (typeof message.content === "string") return;
-	const found = message.content.flatMap((block: TextContent | ImageContent) =>
+	const found = message.content.flatMap((block) =>
 		block.type === "image" ? [{ mimeType: block.mimeType, data: block.data }] : []
 	);
 	return found.length ? found : undefined;

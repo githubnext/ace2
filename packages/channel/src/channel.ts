@@ -27,6 +27,7 @@ import { CodingTools } from "@earendil-works/pi-durable/tools";
 import { type Directory, messaging, Subagent } from "./agents";
 import { instructions } from "./context";
 import { changes, patch } from "./changes";
+import { type Desktop, desktop } from "./desktop";
 import { lanes, LanesDoc } from "./lanes";
 import { failure, type Log, logging, scoped } from "./log";
 import { metadata, MetadataDoc, validateName } from "./metadata";
@@ -67,6 +68,7 @@ export type Options = {
 	storage: Storage;
 	models: Models;
 	env(cwd: string): ExecutionEnv;
+	desktop?: Desktop;
 	directory: Directory;
 	/** Publish a projection of committed metadata to the runtime's channel catalog. */
 	onMetadata?(value: Metadata): void;
@@ -95,6 +97,7 @@ export class Channel {
 		const registry = createRegistry();
 		registry.install(logging(log));
 		registry.install(CodingTools);
+		if (options.desktop) registry.install(desktop(options.desktop));
 		registry.install(lanes({ ...options, name: options.prefix || options.name }));
 		registry.install(Subagent);
 		registry.install(metadata((value) => channel.#changed(value)));
@@ -519,12 +522,14 @@ function events(entry: EntryRecord): Event[] {
 	if (message?.role === "toolResult") {
 		const stopped = ToolResultEntry.is(entry)
 			&& entry.data.diagnostics.some(({ code }) => code === "aborted");
+		const images = room.images(message);
 		return [{
 			kind: "result",
 			chat,
 			call: message.toolCallId,
 			error: message.isError,
 			text: room.text(message),
+			...(images ? { images } : {}),
 			...(stopped ? { stopped: true } : {}),
 		}];
 	}

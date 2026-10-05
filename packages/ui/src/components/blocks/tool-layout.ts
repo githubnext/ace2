@@ -22,6 +22,7 @@ type ToolData = {
 	agent?: Tool["agent"];
 	args?: string;
 	result?: string;
+	images?: string[];
 };
 /** Tool names whose result is a verbatim file body and should be highlighted
  *  by the file's extension. Normalized via `normalize()` so PascalCase,

@@ -1,7 +1,7 @@
 import { Electroview } from "electrobun/view";
 import type { MouseEvent } from "react";
 
-import type { DesktopRPC, HelperAction, UpdateAction } from "@ace/desktop/protocol";
+import type { DesktopRPC, HelperAction, NativeAction, UpdateAction } from "@ace/desktop/protocol";
 
 import { nativeToken } from "./host";
 
@@ -20,6 +20,7 @@ export const desktop = view && token
 		lights: (expanded: boolean) => rpc.request.lights({ token, expanded }),
 		zoom: () => rpc.request.zoom({ token }),
 		helper: (action: HelperAction) => rpc.request.helper({ token, action }),
+		native: (action: NativeAction) => rpc.request.native({ token, action }),
 		updates: (action: UpdateAction) => rpc.request.updates({ token, action }),
 	}
 	: undefined;

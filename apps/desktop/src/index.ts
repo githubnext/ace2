@@ -7,6 +7,7 @@ import { appUrl, token } from "@ace/host/auth";
 import { desktop } from "@ace/host/config";
 
 import { helper as control } from "./helper";
+import { native as inspection } from "./native";
 import type { DesktopRPC } from "./protocol";
 import { updates as updater } from "./updates";
 import { windowStyle } from "./window";
@@ -20,6 +21,7 @@ const { channel, identifier, version } = await Bun.file(join(resources, "version
 desktop(channel);
 const helper = control(identifier);
 const updates = updater(helper, version, channel);
+const native = inspection(identifier);
 const url = appUrl();
 const secret = token();
 let window: BrowserWindow | undefined;
@@ -44,14 +46,7 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
 			},
 			project: async ({ token }) => {
 				authorize(token);
-				const paths = await Utils.openFileDialog({
-					startingFolder: homedir(),
-					canChooseFiles: false,
-					canChooseDirectory: true,
-					allowsMultipleSelection: false,
-				});
-				// The SDK splits paths on commas, even for a single selected folder.
-				return paths.join(",") || null;
+				return native.project(homedir());
 			},
 			helper: ({ token, action }) => {
 				authorize(token);
@@ -63,6 +58,10 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
 			updates: ({ token, action }) => {
 				authorize(token);
 				return updates.act(action);
+			},
+			native: ({ token, action }) => {
+				authorize(token);
+				return native.act(action);
 			},
 		},
 		messages: {},
@@ -156,11 +155,22 @@ ApplicationMenu.setApplicationMenu([
 ]);
 
 Electrobun.events.on("reopen", () => show());
+let quitting = false;
+let stopped = false;
 Electrobun.events.on("before-quit", (event) => {
 	if (ready && updates.busy() && updates.status().phase !== "restarting") {
 		event.response = { allow: false };
 		show("updates");
+		return;
 	}
+	if (stopped) return;
+	event.response = { allow: false };
+	if (quitting) return;
+	quitting = true;
+	void native.stop().catch(console.error).finally(() => {
+		stopped = true;
+		Utils.quit();
+	});
 });
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : String(error);
@@ -240,6 +250,7 @@ async function start(): Promise<void> {
 	}
 	ready = true;
 	show();
+	native.start();
 	updates.start();
 }
 

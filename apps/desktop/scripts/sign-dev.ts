@@ -11,4 +11,9 @@ if (process.env.ELECTROBUN_BUILD_ENV === "dev") {
 	const app = join(build, name);
 	const identity = process.env.ACE_CODESIGN_IDENTITY || "-";
 	sign(app, identity);
+	if (identity === "-") {
+		console.warn(
+			"Native desktop inspection requires an Apple Development signature. Set ACE_CODESIGN_IDENTITY and rebuild to enable it.",
+		);
+	}
 }

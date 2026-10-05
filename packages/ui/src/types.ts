@@ -24,7 +24,7 @@ export type Tool = {
 	arguments: Record<string, unknown>;
 	status: "plan" | "start" | "pending" | "success" | "error";
 	agent?: Tool.Agent;
-	result?: { content: string };
+	result?: { content: string; images?: string[] };
 	children?: Tool[];
 };
 
