@@ -28,7 +28,13 @@ export type DesktopRequest =
 	| { op: "apps" }
 	| { op: "windows"; pid: number }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
-	| { op: "click"; snapshot: string; element: string }
+	| {
+		op: "click";
+		snapshot: string;
+		element?: string;
+		point?: DesktopPoint;
+		kind?: DesktopClick;
+	}
 	| { op: "type"; snapshot: string; element: string; text: string }
 	| {
 		op: "select";
@@ -40,6 +46,10 @@ export type DesktopRequest =
 		selection?: DesktopSelection;
 	}
 	| { op: "key"; snapshot: string; key: DesktopKey; modifiers?: DesktopModifier[] };
+
+export type DesktopPoint = { x: number; y: number };
+export const DESKTOP_CLICKS = ["single", "double", "right", "middle", "triple"] as const;
+export type DesktopClick = (typeof DESKTOP_CLICKS)[number];
 
 export const DESKTOP_KEYS = [
 	"enter",
@@ -169,6 +179,10 @@ export function desktop(execute: Desktop): Extension {
 		}, { additionalProperties: false }),
 		is_minimized: Type.Boolean(),
 	}, { additionalProperties: false });
+	const point = Type.Object({
+		x: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
+		y: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
+	});
 	return defineExtension({
 		name: "ace-desktop",
 		tools: [
@@ -234,12 +248,16 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_click",
 				description:
-					"Click one Accessibility element from a fresh desktop_inspect result on this channel's execution host. Pass its snapshot_id as snapshot and its element ID as element. The snapshot binds the action to that application process and window and is single-use. Stale or unsupported targets are refused. Inspect again after the action; never repeat an interrupted action without checking the current state.",
-				parameters: Type.Object({ snapshot, element }),
+					"Click one element or screenshot point from a fresh desktop_inspect result on this channel's execution host. Pass snapshot_id as snapshot and exactly one of the literal element ID or point. A point uses normalized image coordinates: x is the fraction from the screenshot's left edge, y from its top edge, each >= 0 and < 1. kind defaults to single; double, right, middle, and triple are also supported. Coordinates stay bound to the captured window, even when the screenshot was resized. Stale or unsupported targets are refused without activation or global input. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input.",
+				parameters: Type.Object({
+					snapshot,
+					element: Type.Optional(element),
+					point: Type.Optional(point),
+					kind: Type.Optional(Type.Union(DESKTOP_CLICKS.map((value) => Type.Literal(value)))),
+				}),
 				replay: "unsafe",
 				executionMode: "sequential",
-				execute: async ({ snapshot, element }, api, context) =>
-					act({ op: "click", snapshot, element }, api, context),
+				execute: async (args, api, context) => act({ op: "click", ...args }, api, context),
 			}),
 			defineTool({
 				name: "desktop_type",

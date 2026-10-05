@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import {
 	type Desktop,
+	DESKTOP_CLICKS,
 	DESKTOP_KEYS,
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
@@ -222,7 +223,7 @@ async function inspect(
 				width,
 				height,
 				note:
-					"Screenshot resized; Accessibility bounds remain in their original coordinate system.",
+					"Screenshot resized; Accessibility bounds remain in their original coordinate system. Pointer points use fractions of this image: x from the left edge and y from the top, each >= 0 and < 1.",
 			},
 		}, "ui_elements");
 		return { text, image };
@@ -240,6 +241,17 @@ async function inspect(
 		};
 	} finally {
 		await rm(directory, { recursive: true, force: true });
+	}
+}
+
+function validatePoint(point: unknown) {
+	if (!point || typeof point !== "object" || !("x" in point) || !("y" in point)) {
+		throw new Error("Choose a normalized screenshot point with x and y coordinates.");
+	}
+	for (const value of [point.x, point.y]) {
+		if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value >= 1) {
+			throw new Error("Screenshot point coordinates must be at least 0 and less than 1.");
+		}
 	}
 }
 
@@ -305,6 +317,21 @@ function validateAction(request: DesktopAction) {
 	if (isDesktopManagement(request)) return validateManagement(request);
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
+	}
+	if (request.op === "click") {
+		if ((request.element === undefined) === (request.point === undefined)) {
+			throw new Error("Choose exactly one observed element ID or normalized screenshot point.");
+		}
+		if (request.point !== undefined) validatePoint(request.point);
+		else if (
+			typeof request.element !== "string" || !request.element || request.element.length > 256
+		) {
+			throw new Error("Choose an element ID from the inspected snapshot.");
+		}
+		if (request.kind !== undefined && !DESKTOP_CLICKS.includes(request.kind)) {
+			throw new Error("Choose single, double, right, middle, or triple click.");
+		}
+		return;
 	}
 	if (request.op === "key") {
 		if (!DESKTOP_KEYS.includes(request.key)) throw new Error("Choose one supported key.");
