@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, activate or quit apps, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, launch, activate or quit apps, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
 field values, select and insert text, send keys or shortcuts, scroll, drag, read clipboard text or images, and write plain-text clipboard contents on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -9,7 +9,7 @@ same result appears in the chat's expandable tool output, including after reopen
 When desktop tools are available, the harness also supplies native-first app-control guidance.
 Agents use these tools for app interaction, follow concrete refusal recovery hints, and inspect
 after uncertain input instead of replaying it. Shell commands remain appropriate for builds,
-files, launching apps with `open`, and preparing clipboard fixtures directly. Before using a
+files and preparing clipboard fixtures directly. Before using a
 fallback, the agent explains the missing native capability and why the fallback is needed.
 Existing user authorization still applies; this guidance adds no separate approval requirement.
 AppleScript and other Apple Events callers can trigger a separate macOS Automation prompt for
@@ -66,6 +66,16 @@ find the client alongside Ace Helper automatically.
   Optional `query` searches application names and bundle IDs case-insensitively before Ace bounds
   the result. Use a nonblank query of at most 256 characters to find apps omitted from a large list.
 - `desktop_windows` lists windows for an application process ID.
+- `desktop_launch` takes `application: { path: "/Applications/Example.app" }` or
+  `application: { bundle_id: "com.example.app" }`. It deliberately launches or activates the app
+  in the foreground and may switch Spaces. A path selects a particular app copy; a bundle ID lets
+  macOS choose the installation. It opens no documents or URLs, requests no extra instance, and
+  does not relaunch. The result preserves the signed native process target in `action.application`
+  and returns fresh inventory when available. Completion confirms native launch/readiness and
+  activation, not a visible or usable window. One native launch may include several counted
+  activation attempts. Timeout or interruption remains `unknown`: LaunchServices can open the app
+  later, and the native operation retains its lane until it settles. Observe `desktop_apps`
+  before choosing another action; do not blindly repeat the launch.
 - `desktop_activate` brings a running application to the foreground using its `target` from
   `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
 - `desktop_quit` requests normal quit of one running application using its exact `target` from
@@ -163,6 +173,8 @@ native service revalidates that identity immediately before acting. These target
 single-use snapshots; refresh inventory after a stale target or a state change. Activation returns
 application/window inventory even when no inspectable window exists; it never chooses the first
 window. Inspection stays passive and never activates or restores a target automatically.
+Launch obtains a new signed process target from its explicit application selector; later inventory
+failure preserves that confirmed launch instead of suggesting that it should be repeated.
 After moving or resizing, use the new target from the returned window inventory: the old bounds
 are stale. Later inventory or inspection failure preserves the completed geometry action and does
 not authorize repeating it. Interrupted geometry changes can be partial and are never replayed automatically.

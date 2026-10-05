@@ -207,6 +207,11 @@ leaves the app running stays uncertain. It never retries, force-quits, or choose
 Exact-window close selects one supported background Accessibility route before input and never
 falls through after dispatch. Confirmed disappearance survives later inventory failure; an accepted
 close that remains open is uncertain with unsafe retry and fresh inventory when available.
+Explicit launch accepts an absolute app path or bundle ID and deliberately requests foreground
+launch/readiness through the native global mutation lane. The signed response binds the selector
+to the resulting process generation; later inventory failure preserves that result. Launch exposes
+no document/URL, extra-instance, or relaunch options. The app may still open after caller timeout
+or interruption, so uncertain launch is never replayed and native ownership lasts until it settles.
 Minimize verifies native window state and returns fresh inventory without capturing the minimized
 window; restoring it remains an explicit action with a refreshed target.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed
