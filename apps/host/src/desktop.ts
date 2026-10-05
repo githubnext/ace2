@@ -615,6 +615,8 @@ async function observeManagement(
 		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
 			throw new Error("The exact window was not returned by the later inventory.");
 		}
+		// Minimization intentionally removes the visible capture target; refreshed inventory owns its state.
+		if (request.op === "minimize") return managementResult(data, action);
 		const observation = await inspect({
 			op: "inspect",
 			pid: receipt.pid,
@@ -690,6 +692,7 @@ export const desktop: Desktop = async (request, context) => {
 			"quit",
 			"close",
 			"focus",
+			"minimize",
 			"restore",
 			"move",
 			"resize",
