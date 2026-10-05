@@ -1,5 +1,5 @@
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
-index 8f09447..618950f 100644
+index 8f09447..117a940 100644
 --- a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
 @@ -53,6 +53,13 @@ public struct ClipboardReadResult: Sendable {
@@ -56,8 +56,8 @@ index 8f09447..618950f 100644
 +        return result
 +    }
 +
-+    private static func plainTextReadRefusal(_ message: String) -> DesktopActionFailure {
-+        .preDispatchRefusal(reason: .invalidRequest, message: message)
++    private static func plainTextReadRefusal(_ message: String) -> PeekabooError {
++        .invalidInput(message)
 +    }
 +
      public func prepareTemporaryWrite() throws -> any ClipboardTemporaryWriteTransaction {
