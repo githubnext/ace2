@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import PeekabooAutomationKit
 import PeekabooBridge
@@ -5,7 +6,7 @@ import PeekabooFoundation
 
 private struct ActionRequest: Decodable {
 	enum Operation: String, Decodable {
-		case click, type, key, select
+		case click, type, key, select, scroll, drag
 	}
 
 	let op: Operation
@@ -17,6 +18,14 @@ private struct ActionRequest: Decodable {
 	let prefix: String?
 	let suffix: String?
 	let selection: String?
+	let point: PointerPoint?
+	let kind: String?
+	let direction: String?
+	let amount: Int?
+	let from: PointerPoint?
+	let to: PointerPoint?
+	let button: String?
+	let duration_ms: Int?
 
 	func validate() throws {
 		guard !snapshot.isEmpty, snapshot.utf16.count <= 256 else {
@@ -28,8 +37,46 @@ private struct ActionRequest: Decodable {
 		if op != .select, prefix != nil || suffix != nil || selection != nil {
 			throw ActionError("Only text selection accepts prefix, suffix, or selection.")
 		}
+		if op != .click, kind != nil {
+			throw ActionError("Only clicks accept a click kind.")
+		}
+		if op != .scroll, direction != nil || amount != nil {
+			throw ActionError("Only scrolling accepts direction or amount.")
+		}
+		if op != .drag, from != nil || to != nil || button != nil || duration_ms != nil {
+			throw ActionError("Only dragging accepts endpoints, button, or duration.")
+		}
+		if op != .click, op != .scroll, point != nil {
+			throw ActionError("Only clicks or scrolling accept a target point.")
+		}
 		switch op {
-		case .click, .type, .select:
+		case .click, .scroll:
+			guard (element == nil) != (point == nil), text == nil, key == nil else {
+				throw ActionError("Choose exactly one observed element ID or normalized screenshot point.")
+			}
+			if let element, element.isEmpty || element.utf16.count > 256 {
+				throw ActionError("Choose a literal element ID from the inspected snapshot.")
+			}
+			try point?.validate()
+			if op == .click {
+				guard kind == nil || pointerClicks.contains(kind!) else {
+					throw ActionError("Choose single, double, right, middle, or triple click.")
+				}
+			} else {
+				guard let direction, ScrollDirection(rawValue: direction) != nil,
+					let amount, (1...20).contains(amount)
+				else { throw ActionError("Choose up, down, left, or right and 1 to 20 native scroll units.") }
+			}
+		case .drag:
+			guard element == nil, text == nil, key == nil, let from, let to, from != to else {
+				throw ActionError("Choose distinct normalized screenshot points for the drag endpoints.")
+			}
+			try from.validate()
+			try to.validate()
+			guard button == nil || ExactWindowHeldPointerButton(rawValue: button!) != nil,
+				ExactWindowDragRequest.durationMillisecondsRange.contains(duration_ms ?? 500)
+			else { throw ActionError("Choose a left or right drag lasting 1 to 10000 milliseconds.") }
+		case .type, .select:
 			guard let element, !element.isEmpty, element.utf16.count <= 256, key == nil else {
 				throw ActionError("Choose a literal element ID from the inspected snapshot.")
 			}
@@ -46,8 +93,6 @@ private struct ActionRequest: Decodable {
 				if let selection, TextSelectionType(rawValue: selection) == nil {
 					throw ActionError("Choose text, cursor_before, or cursor_after selection.")
 				}
-			} else if text != nil {
-				throw ActionError("A click does not accept text.")
 			}
 		case .key:
 			guard element == nil, text == nil, let key, keyboardKeys.contains(key) else {
@@ -63,6 +108,28 @@ private struct ActionRequest: Decodable {
 	}
 }
 
+private struct PointerPoint: Decodable, Equatable {
+	let x: Double
+	let y: Double
+
+	func validate() throws {
+		guard x.isFinite, y.isFinite, (0..<1).contains(x), (0..<1).contains(y) else {
+			throw ActionError("Screenshot point coordinates must be at least 0 and less than 1.")
+		}
+	}
+
+	func mapped(in authority: SnapshotTargetReceipt.CoordinateAuthority) throws -> CGPoint {
+		let point = try CaptureCoordinateMapper.globalPoint(
+			for: CGPoint(x: x, y: y), in: .normalized, context: authority.context
+		)
+		guard authority.target.bounds.contains(point) else {
+			throw ActionError("The screenshot point is outside its exact captured window.")
+		}
+		return point
+	}
+}
+
+private let pointerClicks: Set<String> = ["single", "double", "right", "middle", "triple"]
 private let keyboardModifiers: Set<String> = ["command", "control", "option", "shift"]
 private let keyboardKeys: Set<String> = {
 	var keys: Set<String> = [
@@ -156,18 +223,48 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		if request.op == .key, context.focusedElement == nil {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
 		}
+		let window = try UIAutomationTarget.ExactWindow(identity: identity, bounds: bounds)
+		var point: CGPoint?
+		var drag: ExactWindowDragRequest?
+		if request.point != nil || request.op == .drag {
+			// Normalized coordinates survive host image resizing; authority stays in the bridge's capture.
+			let authority = try SnapshotTargetReceiptPlanner.assemble(
+				snapshotID: request.snapshot, detectionResult: detection
+			).receipt.requireCoordinateAuthority()
+			guard authority.target == window, let captured = authority.context.logicalBounds,
+				window.bounds.contains(captured), !detection.screenshotPath.isEmpty
+			else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
+			point = try request.point?.mapped(in: authority)
+			if request.op == .drag {
+				drag = try ExactWindowDragRequest(
+					snapshotID: request.snapshot, target: window,
+					from: request.from!.mapped(in: authority), to: request.to!.mapped(in: authority),
+					durationMilliseconds: request.duration_ms ?? 500,
+					button: request.button.flatMap(ExactWindowHeldPointerButton.init(rawValue:)) ?? .left
+				)
+				try drag!.validate()
+			}
+		}
 		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
 		invoked = true
 		let evidence: ActionEvidence
 		switch request.op {
 		case .click:
 			evidence = try await ActionEvidence(client.clickWithOutcome(
-				target: .elementId(request.element!),
-				clickType: .single,
+				target: point.map(ClickTarget.coordinates) ?? .elementId(request.element!),
+				clickType: request.kind.flatMap(ClickType.init(rawValue:)) ?? .single,
 				snapshotId: request.snapshot,
 				windowEvidence: .init(identity: identity, bounds: bounds),
 				allowsAccessibilityValueDelivery: true
 			))
+		case .scroll:
+			evidence = try await ActionEvidence(client.scrollWithOutcome(.init(
+				direction: ScrollDirection(rawValue: request.direction!)!, amount: request.amount!,
+				target: request.element, point: point, snapshotId: request.snapshot,
+				expectedWindow: window, foreground: false
+			)))
+		case .drag:
+			evidence = try await ActionEvidence(client.dragExactWindow(drag!))
 		case .type:
 			evidence = try await ActionEvidence(client.setValueWithOutcome(
 				target: request.element!, value: .string(request.text!), snapshotId: request.snapshot

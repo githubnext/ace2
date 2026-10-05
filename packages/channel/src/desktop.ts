@@ -14,7 +14,29 @@ export type DesktopRequest =
 	| { op: "apps" }
 	| { op: "windows"; pid: number }
 	| { op: "inspect"; pid: number; window: number }
-	| { op: "click"; snapshot: string; element: string }
+	| {
+		op: "click";
+		snapshot: string;
+		element?: string;
+		point?: DesktopPoint;
+		kind?: DesktopClick;
+	}
+	| {
+		op: "scroll";
+		snapshot: string;
+		element?: string;
+		point?: DesktopPoint;
+		direction: DesktopDirection;
+		amount: number;
+	}
+	| {
+		op: "drag";
+		snapshot: string;
+		from: DesktopPoint;
+		to: DesktopPoint;
+		button?: DesktopButton;
+		duration_ms?: number;
+	}
 	| { op: "type"; snapshot: string; element: string; text: string }
 	| {
 		op: "select";
@@ -26,6 +48,14 @@ export type DesktopRequest =
 		selection?: DesktopSelection;
 	}
 	| { op: "key"; snapshot: string; key: DesktopKey; modifiers?: DesktopModifier[] };
+
+export type DesktopPoint = { x: number; y: number };
+export const DESKTOP_CLICKS = ["single", "double", "right", "middle", "triple"] as const;
+export const DESKTOP_DIRECTIONS = ["up", "down", "left", "right"] as const;
+export const DESKTOP_BUTTONS = ["left", "right"] as const;
+export type DesktopClick = (typeof DESKTOP_CLICKS)[number];
+export type DesktopDirection = (typeof DESKTOP_DIRECTIONS)[number];
+export type DesktopButton = (typeof DESKTOP_BUTTONS)[number];
 
 export const DESKTOP_KEYS = [
 	"enter",
@@ -98,7 +128,7 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" }
+	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" }
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -111,7 +141,8 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
-		|| request.op === "select";
+		|| request.op === "select" || request.op === "scroll"
+		|| request.op === "drag";
 }
 
 function result(value: DesktopResult): ToolExecutionResult {
@@ -136,6 +167,10 @@ export function desktop(execute: Desktop): Extension {
 	};
 	const snapshot = Type.String({ minLength: 1, maxLength: 256 });
 	const element = Type.String({ minLength: 1, maxLength: 256 });
+	const point = Type.Object({
+		x: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
+		y: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
+	});
 	return defineExtension({
 		name: "ace-desktop",
 		tools: [
@@ -171,12 +206,46 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_click",
 				description:
-					"Click one Accessibility element from a fresh desktop_inspect result on this channel's execution host. Pass its snapshot_id as snapshot and its element ID as element. The snapshot binds the action to that application process and window and is single-use. Stale or unsupported targets are refused. Inspect again after the action; never repeat an interrupted action without checking the current state.",
-				parameters: Type.Object({ snapshot, element }),
+					"Click one element or screenshot point from a fresh desktop_inspect result on this channel's execution host. Pass snapshot_id as snapshot and exactly one of the literal element ID or point. A point uses normalized image coordinates: x is the fraction from the screenshot's left edge, y from its top edge, each >= 0 and < 1. kind defaults to single; double, right, middle, and triple are also supported. Coordinates stay bound to the captured window, even when the screenshot was resized. Stale or unsupported targets are refused without activation or global input. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input.",
+				parameters: Type.Object({
+					snapshot,
+					element: Type.Optional(element),
+					point: Type.Optional(point),
+					kind: Type.Optional(Type.Union(DESKTOP_CLICKS.map((value) => Type.Literal(value)))),
+				}),
 				replay: "unsafe",
 				executionMode: "sequential",
-				execute: async ({ snapshot, element }, api, context) =>
-					act({ op: "click", snapshot, element }, api, context),
+				execute: async (args, api, context) => act({ op: "click", ...args }, api, context),
+			}),
+			defineTool({
+				name: "desktop_scroll",
+				description:
+					"Scroll an observed element or screenshot point in a fresh desktop_inspect result. Pass snapshot_id as snapshot and exactly one literal element ID or normalized point (x from the screenshot's left edge, y from its top edge, each >= 0 and < 1). direction is up, down, left, or right; amount is 1 to 20 native scroll units, whose distance depends on the target's supported route rather than pixels. Uses exact-window background delivery without moving the physical pointer. Unsupported targets are refused. The snapshot is single-use; inspect the resulting position before scrolling again, and never blindly repeat interrupted input.",
+				parameters: Type.Object({
+					snapshot,
+					element: Type.Optional(element),
+					point: Type.Optional(point),
+					direction: Type.Union(DESKTOP_DIRECTIONS.map((value) => Type.Literal(value))),
+					amount: Type.Integer({ minimum: 1, maximum: 20 }),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async (args, api, context) => act({ op: "scroll", ...args }, api, context),
+			}),
+			defineTool({
+				name: "desktop_drag",
+				description:
+					"Press, move in a straight line, and release inside the exact window from a fresh desktop_inspect result. Pass snapshot_id as snapshot; from/to are distinct normalized screenshot points (x from its left edge, y from its top edge, each >= 0 and < 1). button defaults to left, with right also supported. duration_ms defaults to 500 and must be 1 to 10000. The native bridge owns the whole gesture and release cleanup; no button stays held across calls. Background delivery never moves the physical pointer or switches windows. Unsupported or changed windows are refused. The snapshot is single-use; inspect the result, and never blindly repeat an interrupted drag because part may already have run.",
+				parameters: Type.Object({
+					snapshot,
+					from: point,
+					to: point,
+					button: Type.Optional(Type.Union(DESKTOP_BUTTONS.map((value) => Type.Literal(value)))),
+					duration_ms: Type.Optional(Type.Integer({ minimum: 1, maximum: 10000 })),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async (args, api, context) => act({ op: "drag", ...args }, api, context),
 			}),
 			defineTool({
 				name: "desktop_type",
