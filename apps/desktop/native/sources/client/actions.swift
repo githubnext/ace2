@@ -241,8 +241,12 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
 			point = try request.point?.mapped(in: authority)
 			if request.op == .drag {
+				// Drag validates the full capture receipt; coordinate authority intentionally omits focus.
+				let dragWindow = try UIAutomationTarget.ExactWindow(
+					identity: identity, bounds: bounds, focusedElement: context.focusedElement
+				)
 				drag = try ExactWindowDragRequest(
-					snapshotID: request.snapshot, target: window,
+					snapshotID: request.snapshot, target: dragWindow,
 					from: request.from!.mapped(in: authority), to: request.to!.mapped(in: authority),
 					durationMilliseconds: request.duration_ms ?? 500,
 					button: request.button.flatMap(ExactWindowHeldPointerButton.init(rawValue:)) ?? .left

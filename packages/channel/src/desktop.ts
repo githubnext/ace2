@@ -10,8 +10,22 @@ import {
 
 import type { Image } from "./protocol";
 
+export type DesktopAppTarget = {
+	pid: number;
+	process_start_identity_decimal: string;
+};
+export type DesktopWindowTarget = DesktopAppTarget & {
+	window_id: number;
+	bounds: { x: number; y: number; width: number; height: number };
+	is_minimized: boolean;
+};
+export type DesktopManagement =
+	| { op: "activate"; target: DesktopAppTarget }
+	| { op: "focus" | "restore"; target: DesktopWindowTarget };
+
 export type DesktopRequest =
-	| { op: "apps" }
+	| DesktopManagement
+	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
@@ -128,7 +142,7 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" }
+	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" | "activate" | "focus" | "restore" }
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -141,8 +155,12 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
-		|| request.op === "select" || request.op === "scroll"
-		|| request.op === "drag";
+		|| request.op === "select" || request.op === "scroll" || request.op === "drag"
+		|| isDesktopManagement(request);
+}
+
+export function isDesktopManagement(request: DesktopRequest): request is DesktopManagement {
+	return request.op === "activate" || request.op === "focus" || request.op === "restore";
 }
 
 function result(value: DesktopResult): ToolExecutionResult {
@@ -167,6 +185,21 @@ export function desktop(execute: Desktop): Extension {
 	};
 	const snapshot = Type.String({ minLength: 1, maxLength: 256 });
 	const element = Type.String({ minLength: 1, maxLength: 256 });
+	const appTarget = {
+		pid: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }),
+		process_start_identity_decimal: Type.String({ pattern: "^[1-9][0-9]{0,19}$" }),
+	};
+	const windowTarget = Type.Object({
+		...appTarget,
+		window_id: Type.Integer({ minimum: 1, maximum: 4_294_967_295 }),
+		bounds: Type.Object({
+			x: Type.Number(),
+			y: Type.Number(),
+			width: Type.Number({ exclusiveMinimum: 0 }),
+			height: Type.Number({ exclusiveMinimum: 0 }),
+		}, { additionalProperties: false }),
+		is_minimized: Type.Boolean(),
+	}, { additionalProperties: false });
 	const point = Type.Object({
 		x: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
 		y: Type.Number({ minimum: 0, exclusiveMaximum: 1 }),
@@ -177,10 +210,13 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_apps",
 				description:
-					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
-				parameters: Type.Object({}),
+					"List native applications on this channel's execution host. Optional query searches names and bundle IDs case-insensitively before result truncation; use it to find apps omitted from a large inventory. A query must contain non-whitespace text and at most 256 characters. Filter counts cover only the native inventory returned by this call; native completeness and truncation still apply. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
+				parameters: Type.Object({
+					query: Type.Optional(Type.String({ minLength: 1, maxLength: 256, pattern: "\\S" })),
+				}),
 				replay: "safe",
-				execute: async (_args, _api, context) => result(await execute({ op: "apps" }, context)),
+				execute: async ({ query }, _api, context) =>
+					result(await execute({ op: "apps", query }, context)),
 			}),
 			defineTool({
 				name: "desktop_windows",
@@ -190,6 +226,35 @@ export function desktop(execute: Desktop): Extension {
 				replay: "safe",
 				execute: async ({ pid }, _api, context) =>
 					result(await execute({ op: "windows", pid }, context)),
+			}),
+			defineTool({
+				name: "desktop_activate",
+				description:
+					"Bring one running application to the foreground on this channel's execution host. Pass its target object from desktop_apps unchanged. This explicitly changes the user's active app and can change the visible Space. It does not launch an app or choose a window. Native checks bind activation to the observed process generation. The result refreshes application/window inventory; inspect a selected window before input. Never blindly repeat an interrupted activation.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target }, api, context) => act({ op: "activate", target }, api, context),
+			}),
+			defineTool({
+				name: "desktop_focus",
+				description:
+					"Bring one exact native window to the foreground, activating its application and switching Spaces when needed. Pass its target object from desktop_windows unchanged. This explicitly changes the user's desktop; it is never an automatic inspection fallback. Native checks bind it to the observed process generation, window ID and bounds. Restore a minimized window explicitly first, then use its refreshed target. Inspect again before input; never blindly repeat interrupted focus.",
+				parameters: Type.Object({ target: windowTarget }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target }, api, context) => act({ op: "focus", target }, api, context),
+			}),
+			defineTool({
+				name: "desktop_restore",
+				description:
+					"Unminimize one exact native window using background Accessibility delivery. Pass its target object from desktop_windows unchanged. This does not promise foreground focus. Native checks bind restore to the observed process generation, window ID and bounds; no inspection snapshot is required. Use refreshed inventory and inspect again before input. Never blindly repeat an interrupted restore.",
+				parameters: Type.Object({ target: windowTarget }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target }, api, context) => act({ op: "restore", target }, api, context),
 			}),
 			defineTool({
 				name: "desktop_inspect",
