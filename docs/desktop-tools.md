@@ -1,7 +1,7 @@
 # Native desktop tools
 
 Ace's pi harness can inspect applications and windows, activate apps, focus, restore, move or resize windows, click observed controls, replace editable
-field values, select text, send keys or shortcuts, and scroll on the machine running the channel's tools. It uses
+field values, select text, send keys or shortcuts, scroll, and drag on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -55,6 +55,15 @@ find the client alongside Ace Helper automatically.
 - `desktop_scroll` scrolls an observed element or screenshot point `up`, `down`, `left`, or `right`.
   `amount` is 1 to 20 native units: Accessibility pages/actions or window-routed wheel ticks, depending
   on the target. It is not a pixel distance; inspect the resulting position before continuing.
+- `desktop_drag` performs one straight-line press, move, and release between `from` and `to`
+  screenshot points inside the same captured window. `button` defaults to `left`, with `right`
+  also supported. `duration_ms` defaults to 500 and accepts 1 to 10000 milliseconds. The native
+  bridge owns the whole gesture, including release cleanup after cancellation or client death.
+  No pointer button stays held across tool calls; a drag cannot cross windows. Accepted native
+  delivery does not prove that the application moved or dropped anything; verify the effect with
+  a fresh `desktop_inspect`. An inactive view may ignore the gesture, as observed during native
+  validation. If observation shows no effect, explicitly use `desktop_focus`, then inspect again
+  before deciding on another action. Ace does not automatically switch to foreground delivery.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
@@ -91,6 +100,9 @@ window. Inspection stays passive and never activates or restores a target automa
 After moving or resizing, use the new target from the returned window inventory: the old bounds
 are stale. Later inventory or inspection failure preserves the completed geometry action and does
 not authorize repeating it. Interrupted geometry changes can be partial and are never replayed automatically.
+When macOS explicitly reports a locked session, management actions are refused before dispatch.
+Unlock the active user session and refresh the relevant inventory before choosing a new action.
+Missing lock state is not treated as a lock and does not establish that the desktop is available.
 
 Inspect the window before clicking or entering input. Pass its `snapshot_id` as `snapshot`. Type and select take the
 literal `element` ID from that observation. Click and scroll take exactly one `element` or `point`.
@@ -114,7 +126,7 @@ Control and keyboard tools use targeted background delivery. They do not activat
 mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
 physical pointer. The target app can still respond by changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop,
+emulated with held keys or mouse buttons across calls. Literal insertion,
 clipboard operations, foreground interaction, application launch, window close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 

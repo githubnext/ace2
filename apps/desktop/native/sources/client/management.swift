@@ -135,6 +135,15 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		} else {
 			window = try request.target.windowIdentity()
 		}
+		// Match Peekaboo's capture preflight; absent session state does not establish a lock.
+		let session = CGSessionCopyCurrentDictionary() as NSDictionary?
+		if session?["CGSSessionScreenIsLocked"] as? Bool == true {
+			throw DesktopActionFailure.preDispatchRefusal(
+				reason: .targetUnavailable,
+				message: "The macOS GUI session is locked. Desktop management was not dispatched.",
+				hint: "Unlock the active user session, then refresh desktop_apps or desktop_windows before choosing a new action."
+			)
+		}
 		// The inventory receipt proves signed transport; optional source-build metadata is not required.
 		let inventory = try await client.listApplicationMutationInventory()
 		guard let preflight = await client.lastOperationReceipt(), preflight.payload.operation == PeekabooBridgeRequest.listApplicationMutationInventory.operation else {
