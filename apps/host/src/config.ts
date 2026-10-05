@@ -27,11 +27,22 @@ export const config = {
 	] as [string, ...string[]],
 };
 
-/** Development apps must not take over an installed app's channels or listener. */
-export function desktop(channel: string): void {
-	if (channel === "stable") return;
-	if (!process.env.ACE_HOME) config.home = join(homedir(), ".local", "state", `ace-${channel}`);
-	if (!process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${channel}`;
-	if (!process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${channel}`;
-	if (!process.env.ACE_PORT) config.port = channel === "dev" ? 4141 : 4142;
+const ports: Record<string, number> = { dev: 4141, canary: 4142 };
+
+/**
+ * Canary, the installed development app, and each checkout's development build own separate
+ * channels, settings, credentials, and listeners, derived from the app's bundle identifier.
+ * Returns the checkout's build suffix, whose app must not manage Ace Helper.
+ */
+export function desktop(identifier: string): string | undefined {
+	const name = identifier.slice("dev.ace.desktop.".length).replaceAll(".", "-");
+	if (!name) return;
+	const lane = /^dev-([a-f0-9]{8})$/.exec(name)?.[1];
+	if (!process.env.ACE_HOME) config.home = join(homedir(), ".local", "state", `ace-${name}`);
+	if (!process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${name}`;
+	if (!process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${name}`;
+	if (!process.env.ACE_PORT) {
+		config.port = ports[name] || 4200 + Number.parseInt(lane || "0", 16) % 800;
+	}
+	return lane;
 }

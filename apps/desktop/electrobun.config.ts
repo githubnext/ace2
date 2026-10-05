@@ -1,13 +1,20 @@
+import { createHash } from "node:crypto";
+
 import type { ElectrobunConfig } from "electrobun";
 
 import { version } from "./package.json";
 
 const channel = process.env.ACE_BUILD_CHANNEL || "dev";
+// Development builds sharing one identity replace each other's helper, data, and launch constraint.
+// Only an explicit install build of a checkout uses the installed Ace-dev identity.
+const lane = channel === "dev" && !process.env.ACE_DEV_INSTALL
+	? `.${createHash("sha256").update(import.meta.dirname).digest("hex").slice(0, 8)}`
+	: "";
 
 export default {
 	app: {
 		name: "Ace",
-		identifier: channel === "stable" ? "dev.ace.desktop" : `dev.ace.desktop.${channel}`,
+		identifier: channel === "stable" ? "dev.ace.desktop" : `dev.ace.desktop.${channel}${lane}`,
 		version,
 	},
 	build: {

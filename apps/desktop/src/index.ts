@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import Electrobun, { ApplicationMenu, BrowserView, BrowserWindow, Utils } from "electrobun/bun";
 
 import { appUrl, token } from "@ace/host/auth";
-import { desktop } from "@ace/host/config";
+import { config, desktop } from "@ace/host/config";
 
 import { helper as control } from "./helper";
 import { native as inspection } from "./native";
@@ -18,8 +18,8 @@ const { channel, identifier, version } = await Bun.file(join(resources, "version
 	identifier: string;
 	version: string;
 };
-desktop(channel);
-const helper = control(identifier);
+const lane = !!desktop(identifier);
+const helper = control(identifier, lane);
 const updates = updater(helper, version, channel);
 const native = inspection(identifier);
 const url = appUrl();
@@ -232,6 +232,11 @@ async function start(): Promise<void> {
 	await helper.recover();
 	const state = await helper.status();
 	if (!state.running) {
+		if (lane) {
+			throw new Error(
+				`This development build has no Ace host on port ${config.port}. Start it with bun run dev from its checkout.`,
+			);
+		}
 		if (state.service === "unregistered") {
 			// The bundled macOS dialog renders message but does not display detail.
 			const { response } = await Utils.showMessageBox({
