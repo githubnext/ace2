@@ -16,7 +16,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 @@ -93,12 +94,18 @@
      {
          let spatiallyValid = self.spatiallyValidCandidates(candidates, at: point)
- 
+
 +        // Preserve hit-test ordering: a button inside a field still owns its own point.
 +        let prefersFocus: (any AutomationElementRepresenting) -> Bool = {
 +            button == .left && ($0.role == "AXTextField" || $0.role == "AXTextArea") && $0.isFocusedSettable
@@ -35,7 +35,15 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
              let role = actionable.role ?? "<none>"
              let frame = String(describing: actionable.frame)
              self.logger.debug(
-@@ -200,11 +207,52 @@
+@@ -197,15 +204,62 @@
+         }
+     }
+
++    // The worker returns only an immutable retained CF handle; AXorcist remains on MainActor.
++    private struct HitTestElement: @unchecked Sendable {
++        let element: AXUIElement
++    }
++
      @MainActor
      private static func hitTestCandidates(
          at point: CGPoint,
@@ -44,14 +52,15 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 -        guard let hit = Element.elementAtPoint(point, pid: targetProcessIdentifier) else {
 -            return []
 -        }
+-
 +        targetProcessIdentifier: pid_t,
 +        targetProcessStartIdentity: UInt64?) async throws -> [any AutomationElementRepresenting]
 +    {
-+        let hit: Element
++        let retained: HitTestElement
 +        do {
 +            // A self-targeted AX hit test needs the app's main actor free to answer it.
 +            // Only the read runs here; cancellation never permits later input from this lane.
-+            hit = try await ElementDetectionTimeoutRunner.runDetached(
++            retained = try await ElementDetectionTimeoutRunner.runDetached(
 +                targetProcessIdentifier: targetProcessIdentifier,
 +                targetProcessStartIdentity: targetProcessStartIdentity,
 +                seconds: 2,
@@ -78,7 +87,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +                        reason: .targetUnavailable,
 +                        message: "The background Accessibility hit test returned no target before input.")
 +                }
-+                return Element(element)
++                return HitTestElement(element: element)
 +            }
 +        } catch let failure as DesktopActionFailure {
 +            throw failure
@@ -90,10 +99,12 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +                causeDescription: error.localizedDescription)
 +        }
 +        try Task.checkCancellation()
- 
++
++        let hit = Element(retained.element)
          var candidates: [any AutomationElementRepresenting] = [AutomationElement(hit)]
          candidates.append(contentsOf: self.descendantsBreadthFirst(of: hit, maxVisited: 256, maxDepth: 8))
-@@ -243,8 +291,12 @@
+
+@@ -243,8 +297,12 @@
      private static func performDetachedAction(
          _ actionName: String,
          on element: any AutomationElementRepresenting,
@@ -108,7 +119,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
          guard let axElement = element.underlyingAXElement else {
              try element.performAutomationAction(actionName)
              return .dispatchedUnverified(
-@@ -261,7 +313,19 @@
+@@ -261,7 +319,19 @@
          } catch let error as DesktopActionFailure {
              throw error
          } catch {
@@ -128,8 +139,8 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +            throw classified
          }
      }
- 
-@@ -1398,7 +1462,8 @@
+
+@@ -1398,7 +1468,8 @@
      static func performPositionalClickAction(
          _ action: PositionalClickAction,
          on element: any AutomationElementRepresenting,
@@ -139,7 +150,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
      {
          if !allowsAccessibilityValueDelivery, action == .select || action == .focus {
              throw DesktopActionFailure.preDispatchRefusal(
-@@ -1411,23 +1476,25 @@
+@@ -1411,23 +1482,25 @@
              return try await self.performDetachedAction(
                  AXActionNames.kAXPressAction,
                  on: element,
@@ -171,11 +182,11 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +                beforeMutation: beforeMutation).outcome
          }
      }
- 
-@@ -1457,7 +1524,10 @@
+
+@@ -1457,7 +1530,10 @@
              exactWindowID: targetWindowID,
              candidates: self.mouseWindowRouteCandidates(exactWindowID: targetWindowID))
- 
+
 -        let candidates = self.hitTestCandidates(at: point, targetProcessIdentifier: targetProcessIdentifier)
 +        let candidates = try await self.hitTestCandidates(
 +            at: point,
@@ -184,10 +195,10 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
          guard let element = self.positionalFocusTarget(inCandidates: candidates, at: point) else {
              throw DesktopActionFailure.preDispatchRefusal(
                  reason: .operationUnsupported,
-@@ -1488,7 +1558,12 @@
+@@ -1488,7 +1564,12 @@
                  "Exact-window pixel-focus receipt changed before the Accessibility focus write")
          }
- 
+
 -        let outcome = try await self.performPositionalClickAction(.focus, on: element)
 +        let outcome = try await self.performPositionalClickAction(.focus, on: element) {
 +            guard exactWindowIdentityValidator(exactWindow.identity, exactWindow.bounds) else {
@@ -198,10 +209,10 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
          guard element.focusedState == true,
                let focusedElement = element.focusedElementIdentity
          else {
-@@ -1624,13 +1699,18 @@
+@@ -1624,13 +1705,18 @@
              throw PeekabooError.permissionDeniedAccessibility
          }
- 
+
 -        let candidates = self.hitTestCandidates(at: point, targetProcessIdentifier: targetProcessIdentifier)
 +        let candidates = try await self.hitTestCandidates(
 +            at: point,
@@ -220,12 +231,12 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
                    let expectedWindowBounds,
                    SystemIdentityResolver.validateWindowMutationIdentity(
                        expectedWindowIdentity,
-@@ -1641,11 +1721,13 @@
+@@ -1641,11 +1727,13 @@
              }
              try self.assertBelongsToTargetWindow(resolved.element, targetWindowID: targetWindowID, at: point)
          }
 +        try beforeMutation()
- 
+
          return try await self.performPositionalClickAction(
              resolved.action,
              on: resolved.element,
@@ -234,4 +245,4 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +            beforeMutation: beforeMutation)
      }
  }
- 
+
