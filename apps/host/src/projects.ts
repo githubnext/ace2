@@ -14,7 +14,38 @@ import { basename, join, resolve } from "node:path";
 
 import * as catalog from "./catalog";
 import { config } from "./config";
+import { remote, REMOTES } from "./github";
 import type { Project } from "./protocol";
+
+type Checkout = { root: string; repo?: string };
+
+/** Worktrees and remotes rarely move, and listings resolve every channel's checkout. */
+const checkouts = new Map<string, Checkout>();
+
+/**
+ * A Git worktree belongs to its repository's main checkout, so lanes and other agents' worktrees
+ * join that project instead of appearing as their own.
+ */
+export function checkout(path: string): Checkout {
+	const known = checkouts.get(path);
+	if (known) return known;
+	const git = (args: string[]) => spawnSync("git", ["-C", path, ...args], { encoding: "utf8" });
+	const worktrees = git(["worktree", "list", "--porcelain"]);
+	const main = worktrees.status === 0 ? /^worktree (.+)$/m.exec(worktrees.stdout)?.[1] : undefined;
+	const value: Checkout = { root: main || path };
+	const remotes = git(REMOTES);
+	const repo = remotes.status === 0 ? remote(remotes.stdout) : null;
+	if (repo) value.repo = repo;
+	checkouts.set(path, value);
+	return value;
+}
+
+function project(path: string): Project {
+	const { root, repo } = checkout(path);
+	const value: Project = { path: root, name: repo?.split("/")[1] || basename(root) || root };
+	if (repo) value.repo = repo;
+	return value;
+}
 
 function paths(): string[] {
 	try {
@@ -31,8 +62,12 @@ function paths(): string[] {
 
 /** Existing CLI channels remain visible without having to open their projects again. */
 export function list(): Project[] {
-	return [...new Set([...paths(), ...catalog.list().map((channel) => channel.project)])]
-		.map((path) => ({ path, name: basename(path) || path }));
+	const values = new Map<string, Project>();
+	for (const path of new Set([...paths(), ...catalog.list().map((channel) => channel.project)])) {
+		const value = project(path);
+		values.set(value.path, value);
+	}
+	return [...values.values()];
 }
 
 /** Opening a folder must not require model credentials or create a channel. */
@@ -44,8 +79,7 @@ export function open(value: string): Project {
 		: value;
 	let path = realpathSync(resolve(expanded));
 	if (!statSync(path).isDirectory()) throw new Error("Choose a folder to open as a project");
-	const git = spawnSync("git", ["-C", path, "rev-parse", "--show-toplevel"], { encoding: "utf8" });
-	if (git.status === 0) path = realpathSync(git.stdout.trim());
+	path = realpathSync(checkout(path).root);
 	const opened = paths();
 	if (!opened.includes(path)) {
 		mkdirSync(config.home, { recursive: true, mode: 0o700 });
@@ -59,5 +93,5 @@ export function open(value: string): Project {
 			rmSync(temporary, { force: true });
 		}
 	}
-	return { path, name: basename(path) || path };
+	return project(path);
 }

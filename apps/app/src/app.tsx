@@ -34,7 +34,7 @@ import { host } from "./host";
 import { Rename } from "./layout/rename";
 import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
-import { projectId, projects } from "./projects";
+import { projectId, projects, root } from "./projects";
 import { Settings } from "./settings";
 import { UpdateNotice } from "./updates";
 
@@ -171,7 +171,7 @@ export function App() {
 	useGithubRefresh(available);
 	const current = available.find((value) => value.id === project) || available[0];
 	const visible = channels.filter((channel) =>
-		channel.host === current?.host && channel.project === current.path
+		channel.host === current?.host && root(channel) === current.path
 	);
 	const channel = current ? visible.find((value) => value.id === selected[current.id]) : undefined;
 	const connected = status === "open" && !!hello.host;
@@ -179,7 +179,7 @@ export function App() {
 	const repos: SessionSidebarRepo[] = available.map((value) => ({
 		id: value.id,
 		name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
-		org: "",
+		org: value.repo?.split("/")[0] || "",
 	}));
 	const groups: SessionSidebarGroup[] = [
 		{
@@ -208,8 +208,8 @@ export function App() {
 		},
 	];
 
-	function select(value: Pick<Listing, "id" | "host" | "project">) {
-		const id = projectId(value.host, value.project);
+	function select(value: Pick<Listing, "id" | "host" | "project" | "root">) {
+		const id = projectId(value.host, root(value));
 		setProject(id);
 		setSelected((previous) => ({ ...previous, [id]: value.id }));
 		setPage("channels");

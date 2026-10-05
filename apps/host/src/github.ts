@@ -101,27 +101,13 @@ async function gh<T>(args: string[]): Promise<T> {
 	return JSON.parse(out) as T;
 }
 
-/** Reading a remote needs no GitHub credentials, including on a teammate's host. */
-export async function project(path: string): Promise<string | null> {
-	const child = Bun.spawn([
-		"git",
-		"-C",
-		path,
-		"config",
-		"--local",
-		"--get-regexp",
-		"^remote\\..*\\.(url|gh-resolved)$",
-	], {
-		stdin: "ignore",
-		stdout: "pipe",
-		stderr: "ignore",
-		timeout: 5000,
-	});
-	const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
-	if (code !== 0) return null;
+export const REMOTES = ["config", "--local", "--get-regexp", "^remote\\..*\\.(url|gh-resolved)$"];
+
+/** The GitHub repository in `git config` output for REMOTES, preferring gh's chosen base. */
+export function remote(config: string): string | null {
 	const remotes = new Map<string, string>();
 	let preferred: string | undefined;
-	for (const line of out.trim().split("\n")) {
+	for (const line of config.trim().split("\n")) {
 		const match = /^remote\.(.+)\.(url|gh-resolved)\s+(.+)$/.exec(line);
 		if (!match) continue;
 		const name = match[1]!;
@@ -141,6 +127,18 @@ export async function project(path: string): Promise<string | null> {
 		if (REPO.test(repo)) return repository(repo);
 	}
 	return null;
+}
+
+/** Reading a remote needs no GitHub credentials, including on a teammate's host. */
+export async function project(path: string): Promise<string | null> {
+	const child = Bun.spawn(["git", "-C", path, ...REMOTES], {
+		stdin: "ignore",
+		stdout: "pipe",
+		stderr: "ignore",
+		timeout: 5000,
+	});
+	const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
+	return code === 0 ? remote(out) : null;
 }
 
 function item(value: Item, kind: GithubKind): GithubItem {

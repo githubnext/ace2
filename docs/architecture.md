@@ -89,6 +89,12 @@ or model credentials. This is a list of local folders, not channel history. Exis
 channels also contribute their project paths. Only local owner connections can read or change
 the opened-project list; teammates see the project information already present in channel listings.
 
+A channel's project path is the checkout it works in: its agents' working directory and the base
+of its lanes. That checkout may be a Git worktree, such as a lane or another tool's worktree. The
+host groups every worktree under its repository's main checkout and labels it with the GitHub
+remote, so the picker shows one project per repository on a host without rewriting channel
+records. Opening a worktree adds its main checkout.
+
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
 for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment. Participants allowed
 to invoke an agent can use all of its tools, so processes that run tools first move credential-like
@@ -252,5 +258,5 @@ or kills.
 ## Not yet built
 
 Terminals and previews, attachments, lobby cells, and external harnesses (Claude Code, Codex).
-Hosted channels cannot message other channels yet. Projects are still a local path, so a
-teammate's checkout of the same repository shows as a separate project.
+Hosted channels cannot message other channels yet. Projects are still keyed by a host's main
+checkout, so a teammate's checkout of the same repository shows as a separate project.
