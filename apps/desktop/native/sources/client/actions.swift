@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import PeekabooAutomationKit
 import PeekabooBridge
@@ -17,6 +18,8 @@ private struct ActionRequest: Decodable {
 	let prefix: String?
 	let suffix: String?
 	let selection: String?
+	let point: PointerPoint?
+	let kind: String?
 
 	func validate() throws {
 		guard !snapshot.isEmpty, snapshot.utf16.count <= 256 else {
@@ -28,8 +31,22 @@ private struct ActionRequest: Decodable {
 		if op != .select, prefix != nil || suffix != nil || selection != nil {
 			throw ActionError("Only text selection accepts prefix, suffix, or selection.")
 		}
+		if op != .click, kind != nil || point != nil {
+			throw ActionError("Only clicks accept a click kind or target point.")
+		}
 		switch op {
-		case .click, .type, .select:
+		case .click:
+			guard (element == nil) != (point == nil), text == nil, key == nil else {
+				throw ActionError("Choose exactly one observed element ID or normalized screenshot point.")
+			}
+			if let element, element.isEmpty || element.utf16.count > 256 {
+				throw ActionError("Choose a literal element ID from the inspected snapshot.")
+			}
+			try point?.validate()
+			guard kind == nil || pointerClicks.contains(kind!) else {
+				throw ActionError("Choose single, double, right, middle, or triple click.")
+			}
+		case .type, .select:
 			guard let element, !element.isEmpty, element.utf16.count <= 256, key == nil else {
 				throw ActionError("Choose a literal element ID from the inspected snapshot.")
 			}
@@ -46,8 +63,6 @@ private struct ActionRequest: Decodable {
 				if let selection, TextSelectionType(rawValue: selection) == nil {
 					throw ActionError("Choose text, cursor_before, or cursor_after selection.")
 				}
-			} else if text != nil {
-				throw ActionError("A click does not accept text.")
 			}
 		case .key:
 			guard element == nil, text == nil, let key, keyboardKeys.contains(key) else {
@@ -63,6 +78,28 @@ private struct ActionRequest: Decodable {
 	}
 }
 
+private struct PointerPoint: Decodable {
+	let x: Double
+	let y: Double
+
+	func validate() throws {
+		guard x.isFinite, y.isFinite, (0..<1).contains(x), (0..<1).contains(y) else {
+			throw ActionError("Screenshot point coordinates must be at least 0 and less than 1.")
+		}
+	}
+
+	func mapped(in authority: SnapshotTargetReceipt.CoordinateAuthority) throws -> CGPoint {
+		let point = try CaptureCoordinateMapper.globalPoint(
+			for: CGPoint(x: x, y: y), in: .normalized, context: authority.context
+		)
+		guard authority.target.bounds.contains(point) else {
+			throw ActionError("The screenshot point is outside its exact captured window.")
+		}
+		return point
+	}
+}
+
+private let pointerClicks: Set<String> = ["single", "double", "right", "middle", "triple"]
 private let keyboardModifiers: Set<String> = ["command", "control", "option", "shift"]
 private let keyboardKeys: Set<String> = {
 	var keys: Set<String> = [
@@ -156,14 +193,26 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		if request.op == .key, context.focusedElement == nil {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
 		}
+		var point: CGPoint?
+		if request.point != nil {
+			let window = try UIAutomationTarget.ExactWindow(identity: identity, bounds: bounds)
+			// Normalized coordinates survive host image resizing; authority stays in the bridge's capture.
+			let authority = try SnapshotTargetReceiptPlanner.assemble(
+				snapshotID: request.snapshot, detectionResult: detection
+			).receipt.requireCoordinateAuthority()
+			guard authority.target == window, let captured = authority.context.logicalBounds,
+				window.bounds.contains(captured), !detection.screenshotPath.isEmpty
+			else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
+			point = try request.point?.mapped(in: authority)
+		}
 		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
 		invoked = true
 		let evidence: ActionEvidence
 		switch request.op {
 		case .click:
 			evidence = try await ActionEvidence(client.clickWithOutcome(
-				target: .elementId(request.element!),
-				clickType: .single,
+				target: point.map(ClickTarget.coordinates) ?? .elementId(request.element!),
+				clickType: request.kind.flatMap(ClickType.init(rawValue:)) ?? .single,
 				snapshotId: request.snapshot,
 				windowEvidence: .init(identity: identity, bounds: bounds),
 				allowsAccessibilityValueDelivery: true

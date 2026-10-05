@@ -11,7 +11,7 @@ same result appears in the chat's expandable tool output, including after reopen
 Native desktop tools require macOS 15 or later. Ace embeds Peekaboo's native library; there is no
 separate Peekaboo installation or permission grant. In Ace Settings, open This Mac and enable
 Accessibility and Screen Recording. macOS grants those permissions to Ace on that machine.
-Keyboard event delivery also requires Event Synthesizing, which Ace reports and requests separately.
+Keyboard and pointer event delivery also require Event Synthesizing, which Ace reports and requests separately.
 Clicking Accessibility controls, selecting text, and replacing field values use Accessibility permission.
 
 Keep Ace open on the machine running the tools. Closing its window is fine, but quitting Ace
@@ -34,7 +34,8 @@ find the client alongside Ace Helper automatically.
   Set `mode` to `pixels` for an explicit read-only screenshot when Accessibility is unavailable.
   Pixel inspection verifies the same exact target and image content but returns no reusable action
   snapshot or element IDs. The default mode is `accessibility`.
-- `desktop_click` clicks one observed Accessibility element once.
+- `desktop_click` clicks one observed Accessibility element or screenshot point. `kind` defaults
+  to `single`; `double`, `right`, `middle`, and `triple` are also supported.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
@@ -55,8 +56,13 @@ Use `is_active` only when `is_active_known` is true, and `is_hidden` only when
 inventory completeness and warnings.
 
 Choose the application from the inventory and the window from that application's window list.
-Inspect the window before acting. Pass its `snapshot_id` as `snapshot`; click, type, and select also take
-the literal `element` ID from that observation. The bridge binds the snapshot to the application
+Inspect the window before acting. Pass its `snapshot_id` as `snapshot`. Type and select take the
+literal `element` ID from that observation. Click takes exactly one `element` or `point`.
+Points use normalized image coordinates: `x` is the fraction from the screenshot's left edge,
+`y` from its top edge, each at least 0 and less than 1. For example, `{ "x": 0.5, "y": 0.5 }`
+is its center. Normalized points retain their meaning when Ace resizes the screenshot. The native
+bridge maps them through the snapshot's own capture geometry and exact-window receipt, refusing
+missing geometry, points outside the window, or a window moved or resized since observation. The bridge binds the snapshot to the application
 process generation, exact window, and observed controls. Keys additionally require the same
 focused control. Selecting text does not activate its window; inspect the current focus before sending keys.
 A stale, missing, disabled, or unsupported target is refused instead of sending
@@ -69,9 +75,11 @@ completed action and explains the observation failure; it does not imply that th
 be repeated.
 
 These tools use targeted background delivery. They do not activate an app or fall back to global
-mouse or keyboard input when a background route is unavailable. The target app can still respond
-by changing its own state or opening a window. Literal insertion, pixel clicks, scrolling, drag-and-drop, clipboard
-operations, and app or window management remain later slices of
+mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
+physical pointer. The target app can still respond by changing its own state or opening a window.
+Modifier-clicks and long presses need a separate foreground interaction contract; they are not
+emulated with held keys or mouse buttons across calls. Literal insertion, scrolling, drag-and-drop,
+clipboard operations, foreground interaction, and app or window management remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and
