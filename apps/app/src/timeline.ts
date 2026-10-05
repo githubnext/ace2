@@ -39,9 +39,17 @@ function tool(tool: Tool, busy: boolean): Event.Message.Content.Tool {
 	};
 }
 
-/** Channel transcript items in the shape the original timeline renders. */
-export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
-	return items.map((item) => {
+/**
+ * Channel transcript items in the shape the original timeline renders. The streamed draft joins
+ * the timeline as the newest agent message so it is laid out and scrolled like the rest.
+ */
+export function toEvents(
+	items: Item[],
+	topic: string,
+	busy: boolean,
+	draft: { text: string; model?: string },
+): Event[] {
+	const events = items.map((item) => {
 		const base = {
 			id: `${topic}::${item.key}`,
 			uid: item.key,
@@ -73,4 +81,16 @@ export function toEvents(items: Item[], topic: string, busy: boolean): Event[] {
 			content,
 		} as Event;
 	});
+	if (!draft.text) return events;
+	events.push({
+		id: `${topic}::draft`,
+		uid: "draft",
+		type: "message",
+		topic,
+		created_at: Math.floor(Date.now() / 1000),
+		sender: { kind: "agent", value: AGENT, display: draft.model || "Agent" },
+		content: [text(draft.text)],
+		streaming: true,
+	} as Event);
+	return events;
 }

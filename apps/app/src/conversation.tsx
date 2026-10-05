@@ -25,11 +25,15 @@ export function Conversation(
 ) {
 	const transcript = useTranscript(channel.id, id);
 	const chat = transcript.info?.chats.find((value) => value.id === id);
-	const events = useMemo(() => toEvents(transcript.items, channel.id, transcript.busy), [
-		transcript.items,
-		channel.id,
-		transcript.busy,
-	]);
+	const model = chat?.model || channel.model;
+	const events = useMemo(
+		() =>
+			toEvents(transcript.items, channel.id, transcript.busy, {
+				text: transcript.draft,
+				model: model?.modelId,
+			}),
+		[transcript.items, channel.id, transcript.busy, transcript.draft, model],
+	);
 	const results = useMemo(
 		() =>
 			transcript.items.reduce(
@@ -69,18 +73,13 @@ export function Conversation(
 							{transcript.error && <Button onClick={transcript.retry}>Try again</Button>}
 						</div>
 					)}
-				{transcript.draft && (
-					<div className="utils:max-width pointer-events-none absolute inset-x-0 bottom-0 px-6 pb-2 text-sm whitespace-pre-wrap text-muted-foreground">
-						{transcript.draft}
-					</div>
-				)}
 			</div>
 			<div className="utils:max-width relative z-20 shrink-0 px-3 pb-3">
 				<Composer
 					channel={channel}
 					chat={id}
 					user={user}
-					current={chat?.model || channel.model}
+					current={model}
 					busy={transcript.busy}
 					ready={transcript.live && channel.state !== "archived"}
 					draft={draft}
