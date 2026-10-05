@@ -70,11 +70,12 @@ returns a fresh observation when available. If that inspection fails, the result
 completed action and explains the observation failure; it does not imply that the input should
 be repeated.
 
-These tools use targeted background delivery without bringing an app to the front. Insertion
-prepares the exact window with target-only activation and a guarded click in blank native title-bar
-chrome, retaining and revalidating the same editor and selection before Cmd+V. Windows without
-supported native chrome can refuse this preparation. There is no fallback to global mouse or
-keyboard input when a background route is unavailable. The target app can still respond by
+These tools use targeted delivery without bringing an app to the front. Insertion sends Cmd+V
+directly when the exact receiving window belongs to the active frontmost app, revalidating that
+app and the same editor and selection before each input unit. Other targets require target-only
+activation and a guarded click in blank native title-bar chrome before the chord. Windows without
+supported native chrome can refuse this preparation. The selected route never changes after
+input begins. There is no fallback to global mouse or keyboard input. The target app can still respond by
 changing its own state or opening a window. Pixel clicks, scrolling, drag-and-drop, clipboard
 read/write tools, and app or window management remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
@@ -97,8 +98,10 @@ Action results distinguish three outcomes:
   This includes losing the workspace connection while the action is in flight.
 
 Insertion reports input delivery, `consumption`, `clipboard_changed`, and `clipboard_cleanup`
-separately. Its native outcome combines window preparation and key delivery; partial preparation
-remains an uncertain mutation even if the paste chord was not reached. Ace keeps the bounded
+separately. Direct native delivery reports `window_targeted_events` with four units: Command and V
+pressed and released once. Prepared delivery reports `composite`, combining window preparation and
+the chord. Both use `background` delivery mode because events target the exact process and window.
+Partial preparation remains an uncertain mutation even if the paste chord was not reached. Ace keeps the bounded
 prior clipboard contents only in the GUI's memory. It restores
 them after observing a meaningful expected text or selection change in the exact receiving
 control. A delay or a value that already matched before insertion does not prove consumption.

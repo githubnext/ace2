@@ -34,10 +34,13 @@ It reuses the native clipboard transaction gate, preserves bounded prior content
 and owns the snapshot lease and native process mutation lane through delivery, verification, and cleanup.
 Exact process, window, focused receiver, text, and UTF-16 selection establish the intended edit.
 Both the original and intended text must fit the complete 65,536-unit verification limit.
-The operation uses Peekaboo's target-only window preparation before Cmd+V, including its guarded
-blank native title-bar click. It revalidates the retained editor and selection before sending the
-chord. Preparation and delivery form one native outcome; partial preparation remains uncertain
-input and cannot authorize a retry or early restoration of private clipboard contents.
+An exact receiver in the active frontmost app uses a direct targeted Cmd+V chord. That route
+revalidates the retained editor, selection, active app, and process generation before every input
+unit. Other targets use Peekaboo's target-only window preparation, including its guarded blank
+native title-bar click. The route is fixed before input and never switches after partial delivery.
+Preparation and delivery form one native outcome; partial preparation remains uncertain input and
+cannot authorize a retry or early restoration of private clipboard contents. Typed refusal causes
+retain the native guard diagnostic without exposing clipboard contents or the compared text.
 An observed meaningful edit authorizes generation-checked restoration; uncertain consumption
 leaves the replacement or preserves newer contents, never restoring private prior contents
 while a paste may still be pending. It has no typing fallback or delayed restore journal.

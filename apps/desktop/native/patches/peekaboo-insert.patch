@@ -87,10 +87,10 @@ index e0b58b1fa..66a512f49 100644
              strategy.strategy == .actionOnly
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift
 new file mode 100644
-index 000000000..131f5e6c0
+index 000000000..f8eab46b1
 --- /dev/null
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/LiteralInsert.swift
-@@ -0,0 +1,253 @@
+@@ -0,0 +1,266 @@
 +import AppKit
 +import ApplicationServices
 +import Foundation
@@ -180,6 +180,7 @@ index 000000000..131f5e6c0
 +        do {
 +            try checkActive()
 +            try await self.validateLiteralInsertBaseline(baseline, target: target, retained: retained)
++            let prepareBackgroundWindow = !Self.literalInsertTargetIsActive(target)
 +            try checkActive()
 +            let write = ClipboardWriteRequest(representations: ClipboardWriteRequest.textRepresentations(from: Data(text.utf8)))
 +            let written = try transaction.writeWithClaim(write)
@@ -188,10 +189,13 @@ index 000000000..131f5e6c0
 +            possibleInput = true
 +            let input = try await self.hotkeyService.hotkey(
 +                keys: "cmd,v", holdDuration: 50, automationTarget: .exactWindow(target),
-+                clipboardClaim: written.claim, prepareBackgroundWindow: true, laneIsOwned: true,
++                clipboardClaim: written.claim, prepareBackgroundWindow: prepareBackgroundWindow, laneIsOwned: true,
 +                deliveryValidator: {
 +                    try checkActive()
 +                    try await self.validateLiteralInsertBaseline(baseline, target: target, retained: retained)
++                    guard prepareBackgroundWindow || Self.literalInsertTargetIsActive(target) else {
++                        throw Self.literalInsertRefusal("The exact receiving app is no longer active; observe it before another insertion.")
++                    }
 +                })
 +            result.native_outcome = input.outcome
 +            guard let outcome = input.outcome, let actual = input.targetIdentity?.exactWindow,
@@ -300,6 +304,15 @@ index 000000000..131f5e6c0
 +        {
 +            LiteralInsertState.read(expected: expected, retained: retained, target: target)
 +        }
++    }
++
++    private static func literalInsertTargetIsActive(_ target: UIAutomationTarget.ExactWindow) -> Bool {
++        guard let application = NSWorkspace.shared.frontmostApplication,
++              application.processIdentifier == target.identity.ownerProcessIdentifier,
++              application.isActive,
++              SystemIdentityResolver.processStartIdentity(application.processIdentifier)
++                == target.identity.ownerProcessStartIdentity else { return false }
++        return true
 +    }
 +
 +    private static func literalInsertRefusal(_ message: String) -> DesktopActionFailure {
