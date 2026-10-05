@@ -21,6 +21,8 @@ const MODES = [
 ];
 const MENTIONS = [{ name: "ace", avatar: aceAvatar }];
 const ACE = /(^|\s)@ace\b/i;
+// Channel views remount on navigation; a deliberate mode choice outlives them for this session.
+const chosen = new Map<string, string>();
 
 const key = (model: ModelRef) => `${model.provider}/${model.modelId}`;
 
@@ -46,7 +48,7 @@ export function Composer(
 	const sending = useRef(false);
 	const [pending, setPending] = useState(false);
 	const [attached, setAttached] = useState<Attachment[]>([]);
-	const [mode, setMode] = useState(draft || channel.model ? "ace" : "chat");
+	const [mode, setMode] = useState(chosen.get(channel.id) || "ace");
 	const [models, setModels] = useState<ModelRef[]>();
 	const [modelError, setModelError] = useState<string>();
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
@@ -155,7 +157,10 @@ export function Composer(
 				tools={!phone}
 				modes={MODES}
 				mode={mode}
-				onModeChange={setMode}
+				onModeChange={(value) => {
+					chosen.set(channel.id, value);
+					setMode(value);
+				}}
 				mentions={MENTIONS}
 				models={choices}
 				model={model}
