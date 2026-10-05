@@ -34,6 +34,12 @@ type Reply = {
 	target_receipt?: { pid: number; window_id: number; process_start_identity_decimal?: string };
 };
 
+class NativeError extends Error {
+	constructor(readonly code: string, message: string) {
+		super(message);
+	}
+}
+
 async function run(
 	path: string,
 	args: string[],
@@ -105,7 +111,7 @@ async function native(
 		const permission = error?.code.toLowerCase().includes("permission")
 			? " Check Ace's Accessibility and Screen Recording access in Ace Settings."
 			: "";
-		throw new Error(`${reason}.${permission}`);
+		throw new NativeError(error?.code || "DESKTOP_ERROR", `${reason}.${permission}`);
 	}
 	if (!value.data || typeof value.data !== "object") {
 		throw new Error("The Ace native client returned no desktop data.");
@@ -199,10 +205,16 @@ async function inspect(
 ): Promise<DesktopResult> {
 	const pid = positive(request.pid);
 	const window = positive(request.window);
+	const mode = request.mode ?? "accessibility";
+	if (mode !== "accessibility" && mode !== "pixels") {
+		throw new Error("Choose accessibility or pixels inspection mode.");
+	}
 	const directory = await mkdtemp(join(tmpdir(), "ace-desktop-"));
 	try {
 		const path = join(directory, "capture.png");
-		const data = await native(["inspect", pid, window, path], signal, { target: request });
+		const args = ["inspect", pid, window, path];
+		if (mode === "pixels") args.push(mode);
+		const data = await native(args, signal, { target: request });
 		const { image, width, height } = await screenshot(path, join(directory, "image.jpg"), signal);
 		const { screenshot_raw: _raw, screenshot_annotated: _annotated, ...observation } = data;
 		const text = bounded({
@@ -215,6 +227,18 @@ async function inspect(
 			},
 		}, "ui_elements");
 		return { text, image };
+	} catch (error) {
+		if (!(error instanceof NativeError)) throw error;
+		return {
+			isError: true,
+			text: JSON.stringify({
+				inspection_error: { code: error.code, message: error.message.slice(0, 4000) },
+				requested_target: { pid: request.pid, window_id: request.window, mode },
+				target_availability: await availability(request, signal),
+				guidance:
+					"This inspection dispatched no input and returned no observation snapshot. Availability was read after the failure and does not establish its cause. Refresh desktop_apps and desktop_windows if the target changed. Retry an incomplete Accessibility read once; pixels mode can inspect the same exact window without Accessibility or action authority. Native capture already retries a changed capture receipt once. Neither mode activates a window. Do not loop on an unavailable target or repeat an earlier action to recover an observation.",
+			}),
+		};
 	} finally {
 		await rm(directory, { recursive: true, force: true });
 	}
@@ -228,6 +252,64 @@ function validatePoint(point: unknown) {
 		if (typeof value !== "number" || !Number.isFinite(value) || value < 0 || value >= 1) {
 			throw new Error("Screenshot point coordinates must be at least 0 and less than 1.");
 		}
+	}
+}
+
+async function availability(
+	request: Extract<DesktopRequest, { op: "inspect" }>,
+	signal: AbortSignal,
+): Promise<Record<string, unknown>> {
+	if (signal.aborted) return { error: "The desktop call ended before availability could be read." };
+	const deadline = new AbortController();
+	const timer = setTimeout(() => deadline.abort(), 2500);
+	try {
+		const context = AbortSignal.any([signal, deadline.signal]);
+		const results = await Promise.allSettled([
+			native(["apps"], context),
+			native(["windows", String(request.pid)], context),
+		]);
+		const result: Record<string, unknown> = { observed_at: new Date().toISOString() };
+		for (
+			const [index, field, key, id, fields] of [
+				[0, "apps", "pid", request.pid, [
+					"pid",
+					"is_active",
+					"is_active_known",
+					"is_hidden",
+					"is_hidden_known",
+					"process_start_identity_decimal",
+				]],
+				[1, "windows", "window_id", request.window, [
+					"window_id",
+					"bounds",
+					"is_on_screen",
+					"is_minimized",
+					"is_key",
+					"observation_capability",
+					"observation_reason",
+					"process_start_identity_decimal",
+				]],
+			] as const
+		) {
+			const value = results[index];
+			if (value.status === "rejected") {
+				result[field] = { error: String(value.reason).slice(0, 500) };
+				continue;
+			}
+			const items = value.value[field];
+			if (!Array.isArray(items)) {
+				result[field] = { error: "Native inventory returned no items." };
+				continue;
+			}
+			const item = items.find((item) => item[key] === id);
+			result[field] = {
+				inventory_completeness: value.value.inventory_completeness,
+				target: item ? Object.fromEntries(fields.map((field) => [field, item[field]])) : null,
+			};
+		}
+		return result;
+	} finally {
+		clearTimeout(timer);
 	}
 }
 
@@ -359,6 +441,14 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 			window: receipt.window_id,
 		}, signal);
 		const fresh = JSON.parse(observation.text) as Record<string, unknown>;
+		if (observation.isError) {
+			return actionResult({
+				...data,
+				observation_error: fresh,
+				message:
+					"The action completed, but a fresh observation was unavailable. Inspect again to verify the result; do not repeat the action blindly.",
+			}, outcome);
+		}
 		const current = fresh.target_receipt as Reply["target_receipt"];
 		if (current?.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
 			throw new Error("The target application changed after the action.");
