@@ -25,8 +25,9 @@ private enum Client {
 		let operation = args[1]
 		guard (operation == "apps" && args.count == 2)
 			|| (operation == "windows" && args.count == 3)
-			|| (operation == "inspect" && args.count == 5)
+			|| (operation == "inspect" && (args.count == 5 || args.count == 6))
 			|| (operation == "action" && args.count == 2)
+			|| (operation == "management" && args.count == 2)
 		else { throw ClientError.usage }
 		let identity = try SigningIdentity.current()
 		let client = PeekabooBridgeClient(
@@ -47,6 +48,8 @@ private enum Client {
 		switch operation {
 		case "action":
 			return try await nativeAction(client)
+		case "management":
+			return try await nativeManagement(client)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
 			var metadata: [ServiceApplicationInfo] = []
@@ -85,7 +88,7 @@ private enum Client {
 			let inventory = try await client.listWindowMutationInventory(target: .application("PID:\(pid)"))
 			return try encode(Windows(
 				pid: pid,
-				windows: inventory.items.map(Window.init),
+				windows: inventory.items.map { Window($0, pid: pid) },
 				inventory_completeness: inventory.completeness.rawValue,
 				inventory_warnings: inventory.warnings
 			))
@@ -93,22 +96,25 @@ private enum Client {
 			let pid = try processID(args[2])
 			guard let window = UInt32(args[3]), window > 0 else { throw ClientError.usage }
 			guard args[4].hasPrefix("/") else { throw ClientError.usage }
-			return try await inspect(client, pid: pid, window: window, path: args[4])
+			guard let mode = InspectionMode(rawValue: args.count == 6 ? args[5] : "accessibility")
+			else { throw ClientError.usage }
+			return try await inspect(client, pid: pid, window: window, path: args[4], mode: mode)
 		}
 	}
 
 	private static func inspect(
-		_ client: PeekabooBridgeClient, pid: Int32, window: UInt32, path: String
+		_ client: PeekabooBridgeClient, pid: Int32, window: UInt32, path: String, mode: InspectionMode
 	) async throws -> Data {
+		let accessibility = mode == .accessibility
 		let observation = try await client.desktopObservationWithOutcome(.init(
 			target: .pid(pid, window: .id(window)),
 			capture: .init(scale: .logical1x, focus: .background),
 			detection: .init(
-				mode: .accessibility,
+				mode: accessibility ? .accessibility : .none,
 				traversalBudget: .init(maxDepth: 15, maxElementCount: 200, maxChildrenPerNode: 100),
-				requiresFreshAccessibilityTree: true
+				requiresFreshAccessibilityTree: accessibility
 			),
-			output: .init(path: path, saveSnapshot: true, includeImageData: true),
+			output: .init(path: path, saveSnapshot: accessibility, includeImageData: true),
 			timeout: .init(overall: 20, detection: 15)
 		))
 		guard let target = observation.targetIdentity,
@@ -116,11 +122,15 @@ private enum Client {
 			target.exactWindow?.identity.windowID == Int(window)
 		else { throw ClientError.target }
 		let result = observation.payload
+		guard accessibility || (result.files.publishedSnapshotID == nil && result.elements == nil)
+		else { throw ClientError.pixels }
 		let image = try result.verifiedCaptureImageData(requirement: .requireDigest)
 		guard !image.isEmpty, image.count <= 32 * 1024 * 1024 else { throw ClientError.image }
-		// The Bridge retains its own snapshot copy; the host removes this caller-visible artifact after resizing.
+		// Reusable snapshots remain Bridge-owned; the host removes this caller-visible artifact after resizing.
 		try image.write(to: URL(fileURLWithPath: path), options: [.atomic])
 		let data = Inspection(
+			inspection_mode: mode.rawValue,
+			note: accessibility ? nil : "Read-only pixels: no Accessibility elements or reusable action snapshot. Inspect with accessibility mode before acting.",
 			application_name: result.target.app?.name,
 			window_title: result.target.window?.title,
 			snapshot_id: result.files.publishedSnapshotID,
@@ -173,7 +183,7 @@ private struct Message: Encodable {
 
 struct Receipt: Encodable {
 	let pid: Int32
-	let window_id: Int
+	let window_id: Int?
 	let process_start_identity_decimal: String
 }
 
@@ -194,6 +204,7 @@ private struct App: Encodable {
 	let is_hidden_known: Bool
 	let process_start_identity_decimal: String?
 	let warnings: [String]?
+	let target: ManagementTarget?
 
 	init(_ app: ServiceApplicationInfo, metadata: ServiceApplicationInfo?, activityKnown: Bool) {
 		name = app.name
@@ -207,6 +218,7 @@ private struct App: Encodable {
 		process_start_identity_decimal = app.processStartIdentity.map(String.init)
 		let combined = (app.metadataWarnings ?? []) + (metadata?.metadataWarnings ?? [])
 		warnings = combined.isEmpty ? nil : Array(Set(combined)).sorted()
+		target = app.processIdentity.map(ManagementTarget.init)
 	}
 }
 
@@ -227,8 +239,9 @@ private struct Window: Encodable {
 	let observation_capability: String?
 	let observation_reason: String?
 	let process_start_identity_decimal: String?
+	let target: ManagementTarget?
 
-	init(_ window: ServiceWindowInfo) {
+	init(_ window: ServiceWindowInfo, pid: Int32) {
 		window_id = window.windowID
 		window_title = window.title
 		bounds = Bounds(window.bounds)
@@ -238,10 +251,11 @@ private struct Window: Encodable {
 		observation_capability = window.observationCapability?.mode.rawValue
 		observation_reason = window.observationCapability?.reason?.rawValue
 		process_start_identity_decimal = window.mutationIdentity.map { String($0.processIdentity.processStartIdentity) }
+		target = ManagementTarget(window: window, pid: pid)
 	}
 }
 
-private struct Bounds: Encodable {
+struct Bounds: Codable {
 	let x: Double
 	let y: Double
 	let width: Double
@@ -256,6 +270,8 @@ private struct Bounds: Encodable {
 }
 
 private struct Inspection: Encodable {
+	let inspection_mode: String
+	let note: String?
 	let application_name: String?
 	let window_title: String?
 	let snapshot_id: String?
@@ -290,17 +306,23 @@ private struct Element: Encodable {
 	}
 }
 
+private enum InspectionMode: String {
+	case accessibility, pixels
+}
+
 private enum ClientError: LocalizedError {
-	case usage, target, image
+	case usage, target, image, pixels
 
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			"Usage: ace-desktop-client <socket> apps | windows <pid> | inspect <pid> <window> <absolute-output-path> | action < JSON"
+			"Usage: ace-desktop-client <socket> apps | windows <pid> | inspect <pid> <window> <absolute-output-path> [accessibility|pixels] | action < JSON"
 		case .target:
 			"The native observation did not confirm the requested process and window. Refresh the window list and try again."
 		case .image:
 			"The native observation returned an empty or oversized screenshot."
+		case .pixels:
+			"The native pixel observation unexpectedly returned Accessibility elements or an action snapshot."
 		}
 	}
 }

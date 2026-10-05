@@ -177,20 +177,27 @@ Agents inspect and operate native windows through an injected desktop capability
 Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility, Screen
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
-signing team. Tools expose application and window inventories, observation, single element clicks,
-replacement of editable field values, text selection/insertion, and keys or shortcuts. Actions use background delivery bound to a
+signing team. Tools expose application and window inventories, observation, element or screenshot
+clicks, scrolling, replacement of editable field values, text selection/insertion, and keys or shortcuts. Screenshot
+points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+Separate activation, focus, and restore tools accept generation-bound inventory targets, with exact
+window bounds where applicable. The native service revalidates those receipts before dispatch;
+activation and focus explicitly change the foreground desktop. Inspection never activates a target
+implicitly. App-only action receipts refresh inventories without inventing a selected window.
 Literal insertion uses one GUI-owned temporary plain-text paste, with the existing native mutation
 lane and clipboard transaction gate held through delivery and cleanup. The GUI preserves bounded
-prior clipboard contents privately and restores them only after observing the expected edit in
-the same control. Uncertain consumption leaves the replacement or preserves newer contents; no
+prior clipboard contents privately and restores them only when no paste key was sent or the expected
+edit was observed in the same control. Uncertain consumption leaves the replacement or preserves newer contents; no
 restore journal or automatic retry is created. Clipboard read policy is reported in This Mac.
 The same clipboard gate retains a content-free reservation while a dispatched paste is unresolved.
 Later automated writes require observed consumption or termination of the exact receiver process
 generation. The reservation survives GUI restart; clipboard contents and comparison state do not.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
-accessibility text and resizes screenshots before returning them. Quitting Ace stops desktop tools;
+accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
+exact-target capture checks without publishing action authority; failed observations retain their
+error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
 coordinates concurrent native operations. The collaborator-agent

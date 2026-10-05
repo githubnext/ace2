@@ -70,7 +70,8 @@ private final class Desktop {
 						.listApplications, .listWindows, .desktopObservation,
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
-						.selectText, .literalInsert,
+						.selectText, .literalInsert, .targetedScroll,
+						.activateApplication, .focusWindow, .restoreWindow,
 					],
 					hostKind: .gui,
 					requestTimeoutSeconds: 25
