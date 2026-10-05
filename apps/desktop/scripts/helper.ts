@@ -1,5 +1,14 @@
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+	copyFileSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -139,27 +148,54 @@ if (!head.success || head.stdout.toString().trim() !== revision) {
 		`The Peekaboo checkout must be at ${revision} before applying the native patches`,
 	);
 }
-// Keep local dependency fixes bound to the reviewed pin and verify every patch independently.
-for (
-	const name of [
-		"peekaboo-click.patch",
-		"peekaboo-insert.patch",
-		"peekaboo-pointer-window.patch",
-		"peekaboo-quit.patch",
-	]
-) {
-	const patch = join(native, "patches", name);
-	const forward = Bun.spawnSync([...git, "apply", "--check", patch]);
-	if (forward.success) {
-		run([...git, "apply", patch]);
-	} else {
-		const reverse = Bun.spawnSync([...git, "apply", "--reverse", "--check", patch]);
-		if (!reverse.success) {
-			throw new Error(
-				`The Peekaboo patch ${name} neither applies nor is already applied. Resolve checkout drift before building.\n${forward.stderr}\n${reverse.stderr}`,
-			);
+// Build the expected patch stack in a private index: later patches may change earlier patch contexts.
+const patches = [
+	"peekaboo-click.patch",
+	"peekaboo-insert.patch",
+	"peekaboo-pointer-window.patch",
+	"peekaboo-quit.patch",
+	"peekaboo-clipboard-text.patch",
+]
+	.map((name) => join(native, "patches", name));
+const temporary = mkdtempSync(join(tmpdir(), "ace-native-patches-"));
+try {
+	const env = { ...process.env, GIT_INDEX_FILE: join(temporary, "index") };
+	for (
+		const args of [["read-tree", "HEAD"], ...patches.map((patch) => ["apply", "--cached", patch])]
+	) {
+		const result = Bun.spawnSync([...git, ...args], { env });
+		if (!result.success) {
+			throw new Error(`Cannot assemble the pinned native patch stack: ${result.stderr}`);
 		}
 	}
+	const extra = Bun.spawnSync([...git, "ls-files", "--others", "--exclude-standard"], { env });
+	if (!extra.success || extra.stdout.toString().trim()) {
+		throw new Error(
+			`The native checkout contains unexpected untracked files: ${extra.stdout}\n${extra.stderr}`,
+		);
+	}
+	const applied = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
+	if (!applied.success) {
+		for (const patch of patches) {
+			const forward = Bun.spawnSync([...git, "apply", "--check", patch]);
+			if (forward.success) {
+				run([...git, "apply", patch]);
+			} else {
+				const reverse = Bun.spawnSync([...git, "apply", "--reverse", "--check", patch]);
+				if (!reverse.success) {
+					throw new Error(
+						`The native patch ${patch} neither applies nor is already applied. Resolve checkout drift before building.\n${forward.stderr}\n${reverse.stderr}`,
+					);
+				}
+			}
+		}
+		const verified = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
+		if (!verified.success) {
+			throw new Error("The native checkout differs from the pinned patch stack.");
+		}
+	}
+} finally {
+	rmSync(temporary, { recursive: true, force: true });
 }
 const swiftBuild = [
 	"xcrun",

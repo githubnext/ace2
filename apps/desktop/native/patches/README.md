@@ -61,10 +61,21 @@ The quit-specific result validator permits this canonical outcome with `false` t
 the existing bridge returns the boolean and its signed process receipt. Other false/success
 contradictions stay errors. Force-quit behavior, target revalidation, and mutation lanes are unchanged.
 
+`peekaboo-clipboard-text.patch` adds explicit plain-text clipboard reads and persistent writes for
+[clipboard access](https://github.com/githubnext/ace2/issues/72). It applies after the insertion patch
+and reuses its GUI clipboard service and reservation gate. Reads require silent clipboard access,
+one complete item, a stable generation, and a complete JSON result of at most 24,000 bytes; ordinary
+alternate representations do not prevent reading its plain text. Reads do not enter or release the
+gate. Writes accept at most 8,192 UTF-16 units, enter the existing gate, and retain native mutation
+outcomes without returning clipboard contents. They never paste, snapshot prior contents, restore,
+or add a separate journal. Unresolved paste ownership refuses writes across channels and GUI restarts.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
-and applies each patch before compiling Swift. A repeated build accepts each only when its reverse
-patch check succeeds. If neither direction applies, the build fails with Git's diagnostics rather
-than building an unexpected source state. Patch files are excluded from formatting.
+and assembles the ordered patch stack in a private Git index. A repeated build compares the
+checkout with that complete expected source, since later patches can change earlier patch contexts.
+Missing patches are applied in order and verified against the same index before compiling Swift.
+The real dependency index is unchanged. Drift fails the build instead of producing unexpected
+source. Patch files are excluded from formatting.
 
 When updating Peekaboo, review the upstream fixes and these patches together. Update the revision
 guard and patches deliberately, or remove each patch when the dependency includes its fix.
