@@ -58,7 +58,7 @@ struct ManagementTarget: Codable {
 
 private struct ManagementRequest: Decodable {
 	enum Operation: String, Decodable {
-		case activate, quit, focus, restore, move, resize
+		case activate, quit, focus, minimize, restore, move, resize
 	}
 	struct Position: Decodable {
 		let x: Double
@@ -192,6 +192,9 @@ func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeH
 				throw ManagementError("Focus returned no matching exact-window receipt.")
 			}
 			outcome = action.outcome
+		case .minimize:
+			operation = .minimizeWindow
+			outcome = try await client.minimizeWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!).outcome
 		case .restore:
 			operation = .restoreWindow
 			outcome = try await client.restoreWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!).outcome
@@ -211,7 +214,7 @@ func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeH
 			).outcome
 		}
 		result.native_outcome = outcome
-		// Restore and geometry results omit targetIdentity; the client's accepted signed receipt retains it.
+		// State and geometry results omit targetIdentity; the client's accepted signed receipt retains it.
 		guard let signed = await client.lastOperationReceipt(), signed.payload.operation == operation,
 			let outcome, signed.payload.outcome?.outcome == outcome
 		else { throw ManagementError("The management action returned without its matching verified operation receipt and outcome.") }
