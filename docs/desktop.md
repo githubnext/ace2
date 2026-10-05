@@ -181,3 +181,33 @@ validation.
 For Vite, set `ACE_APP_URL=http://127.0.0.1:1111` when running both commands, and run `bun app dev`.
 The explicit app URL authorizes that development origin; the Vite proxy rewrites Host to the
 local gateway. Desktop builds use their bundled web assets by default.
+
+## Rename a tab from an agent or the CLI
+
+An Ace agent can use its shell tool to discover open local windows and rename a tab. From this
+checkout, run:
+
+```sh
+bun ace tabs --json
+bun ace tab rename <window-id> <channel-id> <tab-id> "Build checks"
+```
+
+Choose the intended window and tab from the listing. The channel ID is required because tab IDs
+belong to that channel's layout; a request fails if the window has switched channels. The result
+contains the updated window after its layout accepts the rename. Names are trimmed and limited
+to 80 characters. Pass `""` as the name to restore the tab's default label. The same commands are
+available as `ace tabs` and `ace tab rename` when the CLI is on `PATH`.
+The Chat tab keeps the channel's name; use `ace rename` to change that name instead.
+
+The commands connect to an already running local host and never start one. Use its `ACE_HOME`
+profile and pass `--port <port>` when it differs from `ACE_PORT` or the default 4140. For example,
+the installed canary uses `ACE_HOME="$HOME/.local/state/ace-canary"` and `--port 4142`; the development
+app uses `ACE_HOME="$HOME/.local/state/ace-dev"` and `--port 4141`. Authentication checks the host's
+identity and protocol before connecting. Listing or renaming tabs over the tailnet is unavailable.
+
+Only the explicitly selected window changes live. Names use the existing saved layout for that
+channel in the browser profile; another window sharing that profile can load the saved name on
+reload, and a later layout save from either window can overwrite the other's saved labels.
+Independent window persistence is tracked in [#45](https://github.com/githubnext/ace2/issues/45).
+A tab label does not change the channel's durable name or another participant's view.
+Closed windows and windows without an open channel do not appear in the listing.

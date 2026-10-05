@@ -8,7 +8,7 @@ import type {
 	Request,
 } from "@ace/channel/protocol";
 
-export const HOST_PROTOCOL = 7;
+export const HOST_PROTOCOL = 8;
 
 export type HostInfo = {
 	app: "ace";
@@ -53,6 +53,26 @@ export type Listing = {
 
 export type Hello = { user: string; host: string };
 
+/** Tabs belong to a connected client's layout, not the durable channel. */
+export type Tab = {
+	id: string;
+	name: string;
+	type: "blank" | "chat" | "diff" | "terminal";
+	/** Selected in its pane; split layouts can show several active tabs. */
+	active: boolean;
+};
+
+export type WindowState = { channel: { id: string; name: string }; tabs: Tab[] };
+export type WindowInfo = WindowState & { id: string };
+export type TabRename = {
+	call: string;
+	channel: string;
+	tab: string;
+	name: string;
+	expires: number;
+};
+export type TabResult = { ok: true; value: WindowState } | { ok: false; error: string };
+
 /** A folder opened on this host, independent of its channels and provider setup. */
 export type Project = { path: string; name: string };
 
@@ -77,6 +97,13 @@ export type Settings = {
 
 export type HostRequest =
 	| { op: "hello" }
+	/** Publish this local client's current channel layout, or unregister it. */
+	| { op: "window"; value: WindowState | null }
+	/** Connected channel windows on the owner's local gateway. */
+	| { op: "windows" }
+	| { op: "tab-rename"; window: string; channel: string; tab: string; name: string }
+	/** Only the window that received a rename can acknowledge it. */
+	| { op: "tab-result"; call: string; result: TabResult }
 	| { op: "channels" }
 	| { op: "projects" }
 	| { op: "project-open"; path: string }
@@ -142,6 +169,7 @@ export type HostFrame =
 	| { id: number; ok: true; value: unknown }
 	| { id: number; ok: false; error: string }
 	| { id: number; event: Event }
+	| { rename: TabRename }
 	/** Local settings changed; clients reload model availability without receiving secrets. */
 	| { settings: true }
 	/** Opened projects belong to the local owner and are never sent to tailnet peers. */

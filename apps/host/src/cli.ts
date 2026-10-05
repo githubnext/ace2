@@ -12,11 +12,13 @@ import { config } from "./config";
 import * as directory from "./directory";
 import * as web from "./web";
 import { serve } from "./gateway";
+import { GatewayClient } from "./gateway-client";
 import { forget, store } from "./keys";
 import { dir as logDir, failure, log, open as openLog } from "./log";
 import { type Filter, follow, print } from "./logs";
 import { health } from "./health";
 import { preference } from "./preferences";
+import type { HostRequest, WindowInfo } from "./protocol";
 import { setModel } from "./settings";
 import { archive, host, isRunning, kill, models, parseModel, project, remove } from "./manage";
 
@@ -26,6 +28,8 @@ const HELP = `ace — channels on this host
   ace ls [--all]
   ace info <channel>
   ace rename <channel> <name>                   rename without changing its lanes
+  ace tabs [--port <port>] [--json]              list open windows and their current channel's tabs
+  ace tab rename <window> <channel> <tab> <name>  rename one tab; an empty name restores its default
   ace backup <channel> <directory>              snapshot local channel data into a new directory
   ace say <channel> [--chat <id>] <text…>        post without invoking the agent
   ace ask <channel> [--chat <id>] [--model <provider/id>] [--detach] <text…>
@@ -131,6 +135,55 @@ function since(value: string): number {
 	return Date.now() - Number(match[1]) * unit;
 }
 
+async function local<T>(request: HostRequest): Promise<T> {
+	const port = Number(flags.port || config.port);
+	if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("Invalid host port");
+	const info = await health(port);
+	if (!info || info.home !== config.home) {
+		throw new Error("Start this host with ace serve or open Ace before using tab commands");
+	}
+	const client = new GatewayClient(`ws://127.0.0.1:${port}/ws`, token());
+	const done = Promise.withResolvers<T>();
+	let sent = false;
+	const check = () => {
+		if (client.status === "closed") return done.reject(new Error("Disconnected from the host"));
+		if (client.status !== "open" || sent) return;
+		sent = true;
+		client.request<T>(request).then(done.resolve, done.reject);
+	};
+	const unsubscribe = client.subscribe(check);
+	const timer = setTimeout(
+		() => done.reject(new Error("The host did not answer within 10 seconds")),
+		10_000,
+	);
+	try {
+		check();
+		return await done.promise;
+	} finally {
+		clearTimeout(timer);
+		unsubscribe();
+		client.close();
+	}
+}
+
+function printTabs(windows: WindowInfo[]): void {
+	if (flags.json) return console.log(JSON.stringify(windows, null, 2));
+	if (!windows.length) return console.log("No open channel windows");
+	console.log("Window\tChannel\tTab\tType\tActive\tName");
+	for (const window of windows) {
+		for (const tab of window.tabs) {
+			console.log([
+				window.id,
+				window.channel.id,
+				tab.id,
+				tab.type,
+				tab.active ? "yes" : "no",
+				JSON.stringify(tab.name),
+			].join("\t"));
+		}
+	}
+}
+
 async function main() {
 	if (flags.help || !command) return console.log(HELP);
 	if (command !== "serve" && command !== "logs") {
@@ -138,6 +191,19 @@ async function main() {
 		log("info", "cli.command", { command, ...(ref ? { ref } : {}) });
 	}
 	switch (command) {
+		case "tabs":
+			if (positionals.length !== 1) throw new Error("ace tabs [--port <port>] [--json]");
+			return printTabs(await local<WindowInfo[]>({ op: "windows" }));
+		case "tab": {
+			if (ref !== "rename" || rest.length !== 4) {
+				throw new Error("ace tab rename <window> <channel> <tab> <name> [--port <port>] [--json]");
+			}
+			const [window, channel, tab, value] = rest as [string, string, string, string];
+			const name = value.trim();
+			if (name.length > 80) throw new Error("Tab names must be at most 80 characters");
+			const updated = await local<WindowInfo>({ op: "tab-rename", window, channel, tab, name });
+			return printTabs([updated]);
+		}
 		case "logs": {
 			const filter: Filter = {};
 			// Ids of channels this host doesn't know, such as a peer's, filter as given.
