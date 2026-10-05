@@ -96,6 +96,18 @@ therefore receives the existing signed targetless refusal receipt, instead of an
 mutation receipt. The catch surrounds only preparation; native opening, activation, readiness,
 mutation lane ownership, and all errors after dispatch keep their existing semantics.
 
+`peekaboo-menu.patch` adds literal menu commands for
+[native computer use](https://github.com/githubnext/ace2/issues/8). A distinct typed Bridge
+operation carries the exact process generation and title array, avoiding the existing String
+API's splitting, fuzzy normalization and intermediate presses. Fresh bounded raw AX traversal
+requires a unique path and supported enabled leaf before one AXPress; lazy missing paths refuse.
+The whole native operation runs off MainActor while retaining the existing process write lane
+until actual return, with cancellation checked before dispatch. Per-element AX messaging timeouts
+do not race or abandon native work. `cannotComplete` and other ambiguous delivery failures remain
+one attempted, unsafe unknown action; successful delivery does not establish command completion.
+Signed application receipts and canonical outcome validation remain mandatory. No intermediate
+presses, activation, fallback, automatic screenshot, or command retry is added.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout
 with each complete ordered prefix, since later patches can change earlier patch contexts.

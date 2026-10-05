@@ -96,6 +96,19 @@ find the client alongside Ace Helper automatically.
   Menu paths are descriptive and cannot be used as action snapshots. Native AX reads are
   synchronous; traversal budgets are soft, so a blocked read can delay cancellation and GUI
   responsiveness. A host timeout does not establish that the native read has finished.
+- `desktop_menu` invokes one command using an exact application `target` and a literal `path`
+  array from `desktop_menus`, with the same path and request bounds. The native service resolves
+  the path afresh without the inventory cache, requires unique ancestors and an enabled leaf,
+  and submits one final `AXPress`. It never activates the app, presses intermediate menus,
+  chooses a fuzzy title, or retries. Missing lazy paths and uncertain uniqueness are refused.
+  A completed result confirms accepted Accessibility delivery, not the command's application
+  effect. Modal processing can return `unknown` even while a dialog opens. Read current windows
+  or menus before deciding what to do next; do not blindly repeat the command. The result contains
+  its signed application receipt and native outcome, without an automatic screenshot or inventory.
+  Raw AX work runs off the GUI actor with finite per-element messaging timeouts. Cancellation
+  keeps the native process lane until the actual C call returns; a timeout does not guarantee
+  prompt native return or undo an accepted command. While that lane is held, competing native
+  work may wait. No menu or dialog dismissal is automatic.
 - `desktop_activate` brings a running application to the foreground using its `target` from
   `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
 - `desktop_quit` requests normal quit of one running application using its exact `target` from
