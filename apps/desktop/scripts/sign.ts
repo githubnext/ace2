@@ -1,4 +1,4 @@
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -9,11 +9,16 @@ import { run } from "./sparkle";
  * `ace.codesignIdentity`, which every worktree shares, so background builds sign alike.
  */
 export function devIdentity(): string {
-	if (process.env.ACE_CODESIGN_IDENTITY) return process.env.ACE_CODESIGN_IDENTITY;
 	const configured = Bun.spawnSync(["git", "config", "--get", "ace.codesignIdentity"], {
 		cwd: fileURLToPath(new URL(".", import.meta.url)),
 	});
-	return configured.stdout.toString().trim() || "-";
+	const identity = process.env.ACE_CODESIGN_IDENTITY || configured.stdout.toString().trim();
+	if (!identity || identity === "-") {
+		throw new Error(
+			"Ace-dev requires stable signing so macOS permissions survive rebuilds. Set ace.codesignIdentity with git config to your Apple Development certificate SHA-1.",
+		);
+	}
+	return identity;
 }
 
 export function sign(app: string, identity: string, release = false): void {
@@ -33,6 +38,14 @@ export function sign(app: string, identity: string, release = false): void {
 	]);
 	if (!bundle.success) throw new Error("Cannot read the desktop bundle identifier for signing");
 	const identifier = bundle.stdout.toString().trim();
+	const { profile } = JSON.parse(
+		readFileSync(join(app, "Contents", "Resources", "profile.json"), "utf8"),
+	) as {
+		profile?: string;
+	};
+	const client = profile
+		? `${identifier}.${profile}.desktop-client`
+		: `${identifier}.desktop-client`;
 	// Sign nested code inside out. --deep is only appropriate for verification.
 	for (
 		const path of [
@@ -59,6 +72,8 @@ export function sign(app: string, identity: string, release = false): void {
 	const entitlements = fileURLToPath(new URL("../native/entitlements.plist", import.meta.url));
 	for (const path of [...readdirSync(bin).map((file) => join(bin, file)), app]) {
 		const desktop = path === join(bin, "ace-desktop-client");
+		const gui = identifier === "dev.ace.desktop.dev"
+			&& (path === join(bin, "bun") || path === join(bin, "launcher"));
 		run([
 			"/usr/bin/codesign",
 			"--force",
@@ -66,7 +81,9 @@ export function sign(app: string, identity: string, release = false): void {
 			identity,
 			...options,
 			...(desktop
-				? ["--identifier", `${identifier}.desktop-client`]
+				? ["--identifier", client]
+				: gui
+				? ["--identifier", identifier, "--entitlements", entitlements]
 				: path.endsWith(".dylib")
 				? []
 				: ["--entitlements", entitlements]),

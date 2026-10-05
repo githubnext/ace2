@@ -31,21 +31,30 @@ const ports: Record<string, number> = { dev: 4141, canary: 4142 };
 
 /**
  * Canary, the installed development app, and each checkout's development build own separate
- * channels, settings, credentials, and listeners, derived from the app's bundle identifier.
- * Returns the checkout's build suffix, whose app must not manage Ace Helper.
+ * channels, settings, credentials, and listeners. Checkout profiles come from signed build
+ * metadata rather than the macOS permission identity. Their apps must not manage Ace Helper.
  */
-export function desktop(identifier: string): string | undefined {
-	const name = identifier.slice("dev.ace.desktop.".length).replaceAll(".", "-");
+export function desktop(identifier: string, profile?: string): string | undefined {
+	if (
+		profile !== undefined
+		&& (identifier !== "dev.ace.desktop.dev" || !/^[a-f0-9]{8}$/.test(profile))
+	) {
+		throw new Error(
+			"Only development builds can use a checkout profile of eight lowercase hex digits",
+		);
+	}
+	const name = profile
+		? `dev-${profile}`
+		: identifier.slice("dev.ace.desktop.".length).replaceAll(".", "-");
 	if (!name) return;
-	const lane = /^dev-([a-f0-9]{8})$/.exec(name)?.[1];
 	// A profile exported for another app must never point a checkout's build at that app's data.
-	if (lane || !process.env.ACE_HOME) {
+	if (profile || !process.env.ACE_HOME) {
 		config.home = join(homedir(), ".local", "state", `ace-${name}`);
 	}
-	if (lane || !process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${name}`;
-	if (lane || !process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${name}`;
+	if (profile || !process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${name}`;
+	if (profile || !process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${name}`;
 	if (!process.env.ACE_PORT) {
-		config.port = ports[name] || 4200 + Number.parseInt(lane || "0", 16) % 800;
+		config.port = ports[name] || 4200 + Number.parseInt(profile || "0", 16) % 800;
 	}
-	return lane;
+	return profile;
 }
