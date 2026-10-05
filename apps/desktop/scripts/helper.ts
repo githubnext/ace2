@@ -149,7 +149,12 @@ if (!head.success || head.stdout.toString().trim() !== revision) {
 	);
 }
 // Build the expected patch stack in a private index: later patches may change earlier patch contexts.
-const patches = ["peekaboo-click.patch", "peekaboo-insert.patch", "peekaboo-clipboard-text.patch"]
+const patches = [
+	"peekaboo-click.patch",
+	"peekaboo-insert.patch",
+	"peekaboo-pointer-window.patch",
+	"peekaboo-clipboard-text.patch",
+]
 	.map((name) => join(native, "patches", name));
 const temporary = mkdtempSync(join(tmpdir(), "ace-native-patches-"));
 try {
