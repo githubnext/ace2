@@ -3,6 +3,8 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import type { Subprocess } from "bun";
+
 import { config, desktop } from "@ace/host/config";
 import { health } from "@ace/host/health";
 
@@ -63,6 +65,9 @@ async function dev(): Promise<void> {
 		identifier: string;
 	};
 	if (!desktop(identifier)) throw new Error(`${identifier} is not a checkout development build`);
+	if (config.port >= 4140 && config.port <= 4142) {
+		throw new Error(`Port ${config.port} belongs to an installed Ace. Choose another ACE_PORT.`);
+	}
 	// Attaching to an existing listener would serve another run's or checkout's code.
 	const running = await health(config.port).catch((error: Error) => {
 		throw new Error(`${error.message}. Set ACE_PORT to run this checkout on another port.`);
@@ -90,6 +95,10 @@ async function dev(): Promise<void> {
 		join(root, "..", "host", "src", "cli.ts"),
 		"serve",
 	], { env, stdio: ["ignore", "inherit", "inherit"] });
+	let app: Subprocess | undefined;
+	// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
+	const stop = () => app ? app.kill() : host.kill("SIGTERM");
+	for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
 	try {
 		const deadline = Date.now() + 30_000;
 		while (!(await health(config.port))) {
@@ -99,14 +108,12 @@ async function dev(): Promise<void> {
 			await Bun.sleep(100);
 		}
 		console.log(`Ace-dev ${identifier}: ${config.home}, port ${config.port}`);
-		const app = Bun.spawn([join(bin, "launcher")], {
+		app = Bun.spawn([join(bin, "launcher")], {
 			cwd: bin,
 			env,
 			stdio: ["ignore", "inherit", "inherit"],
 		});
-		// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
-		for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => app.kill());
-		void host.exited.then(() => app.kill());
+		void host.exited.then(stop);
 		await app.exited;
 	} finally {
 		host.kill("SIGTERM");

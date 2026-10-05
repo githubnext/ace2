@@ -208,7 +208,7 @@ switch applies to desktop tools with the rest of the agent's tools. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
 The installed development app uses `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`,
-keeping it separate from the installed app. Its preferences live under `Ace-dev`, and its Keychain
+keeping it separate from stable and Canary. Its preferences live under `Ace-dev`, and its Keychain
 service is `ace-dev`. It is signed locally for `SMAppService`; distribution signing and
 notarization are handled by the release pipeline. A checkout's development build instead derives
 its own identifier, port, data, preferences, and Keychain service from the checkout path, and only
