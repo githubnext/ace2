@@ -6,6 +6,16 @@ field values, select and insert text, send keys or shortcuts, scroll, and drag o
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
 
+When desktop tools are available, the harness also supplies native-first app-control guidance.
+Agents use these tools for app interaction, follow concrete refusal recovery hints, and inspect
+after uncertain input instead of replaying it. Shell commands remain appropriate for builds,
+files, launching apps with `open`, and preparing clipboard fixtures directly. Before using a
+fallback, the agent explains the missing native capability and why the fallback is needed.
+Existing user authorization still applies; this guidance adds no separate approval requirement.
+AppleScript and other Apple Events callers can trigger a separate macOS Automation prompt for
+each app; Accessibility and Screen Recording grants do not cover it. Custom Accessibility or
+CGEvent programs bypass the tools' snapshot and exact-target checks even without such a prompt.
+
 ## Setup
 
 Native desktop tools require macOS 15 or later. Ace embeds Peekaboo's native library; there is no
