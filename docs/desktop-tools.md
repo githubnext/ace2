@@ -52,6 +52,7 @@ find the client alongside Ace Helper automatically.
   `desktop_apps`. It never retries, force-quits, or answers a dialog. A completed result means the
   native service confirmed termination. An accepted quit whose app remains running, for example
   for unsaved work, returns `unknown` with fresh application/window inventory when available.
+  Its native outcome reports one dispatched operation still running and marks retry unsafe.
   Inspect a selected window and resolve any dialog deliberately before choosing another action.
   A later inventory failure or missing app does not change the original quit outcome.
 - `desktop_focus` brings one exact window to the foreground using its `target` from
