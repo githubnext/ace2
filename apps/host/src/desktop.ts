@@ -205,6 +205,25 @@ async function screenshot(input: string, output: string, signal: AbortSignal) {
 	throw new Error("The screenshot could not be resized within the result limit.");
 }
 
+function clipboardFiles(data: Record<string, unknown>): DesktopResult {
+	const files = data.files;
+	if (
+		typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
+		|| (data.present
+			? !Array.isArray(files) || !files.length || files.length > 32
+				|| files.some((file) =>
+					!file || typeof file.url !== "string" || typeof file.path !== "string"
+					|| !file.path.startsWith("/")
+				)
+			: files !== undefined)
+	) throw new Error("The native clipboard file read returned an unsupported response.");
+	const text = JSON.stringify(data);
+	if (Buffer.byteLength(text) > 24_000) {
+		throw new Error("Clipboard file references exceed the complete 24 KB result limit.");
+	}
+	return { text };
+}
+
 function clipboardImage(data: Record<string, unknown>): DesktopResult {
 	if (typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)) {
 		throw new Error("The native clipboard image read returned an unsupported response.");
@@ -838,11 +857,15 @@ export const desktop: Desktop = async (request, context) => {
 			return { text: bounded(data, "menus") };
 		}
 		if (request.op === "clipboard-read") {
-			if (request.format !== undefined && request.format !== "text" && request.format !== "image") {
-				throw new Error("Choose text or image clipboard format.");
+			if (
+				request.format !== undefined && request.format !== "text" && request.format !== "image"
+				&& request.format !== "files"
+			) {
+				throw new Error("Choose text, image, or files clipboard format.");
 			}
 			const data = await native(["clipboard"], signal, { input: JSON.stringify(request) });
 			if (request.format === "image") return clipboardImage(data);
+			if (request.format === "files") return clipboardFiles(data);
 			if (
 				typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
 				|| (data.present ? typeof data.text !== "string" : data.text !== undefined)
