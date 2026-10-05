@@ -14,6 +14,14 @@ input.
 Ambiguous native press failures retain an indeterminate outcome, preventing Peekaboo from
 falling back to another click after input may already have been delivered.
 
+The patch also addresses [editable WebKit controls accepting a press without keyboard focus](https://github.com/githubnext/ace2/issues/106).
+A single element click prefers the existing verified focus write for writable `AXTextField` and
+`AXTextArea` controls when Accessibility value delivery is allowed. Other controls retain their
+normal press behavior. The focus write runs off MainActor while the operation keeps its lane;
+the original exact target checks and focus readback remain in force. An ambiguous write failure
+retains an indeterminate outcome instead of allowing another input route. Point-click occlusion
+and background paste behavior are separate parts of that issue.
+
 `peekaboo-insert.patch` addresses
 [literal newlines submitting web composers](https://github.com/githubnext/ace2/issues/76).
 Unicode keyboard events are still keyboard events: WebKit can treat a newline as Return.
