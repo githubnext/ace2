@@ -37,7 +37,7 @@ private enum Client {
 			requestTimeoutSec: 25,
 			trustedHostTeamIDs: [identity.team]
 		)
-		try await client.handshake(
+		let handshake = try await client.handshake(
 			client: .init(
 				bundleIdentifier: identity.identifier,
 				teamIdentifier: identity.team,
@@ -52,7 +52,7 @@ private enum Client {
 		case "clipboard":
 			return try await nativeClipboard(client)
 		case "management":
-			return try await nativeManagement(client)
+			return try await nativeManagement(client, handshake: handshake)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
 			var metadata: [ServiceApplicationInfo] = []

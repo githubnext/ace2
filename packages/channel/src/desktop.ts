@@ -21,6 +21,7 @@ export type DesktopWindowTarget = DesktopAppTarget & {
 };
 export type DesktopManagement =
 	| { op: "activate"; target: DesktopAppTarget }
+	| { op: "quit"; target: DesktopAppTarget }
 	| { op: "focus" | "restore"; target: DesktopWindowTarget }
 	| { op: "move"; target: DesktopWindowTarget; position: { x: number; y: number } }
 	| { op: "resize"; target: DesktopWindowTarget; size: { width: number; height: number } };
@@ -157,6 +158,7 @@ export type DesktopAction = Extract<
 			| "scroll"
 			| "drag"
 			| "activate"
+			| "quit"
 			| "focus"
 			| "restore"
 			| "move"
@@ -181,7 +183,8 @@ export function isDesktopAction(request: DesktopRequest): request is DesktopActi
 }
 
 export function isDesktopManagement(request: DesktopRequest): request is DesktopManagement {
-	return request.op === "activate" || request.op === "focus" || request.op === "restore"
+	return request.op === "activate" || request.op === "quit" || request.op === "focus"
+		|| request.op === "restore"
 		|| request.op === "move" || request.op === "resize";
 }
 
@@ -295,6 +298,17 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async ({ target }, api, context) => act({ op: "activate", target }, api, context),
+			}),
+			defineTool({
+				name: "desktop_quit",
+				description:
+					"Request normal quit of one running application on this channel's execution host. Pass its exact target object from desktop_apps unchanged; native checks bind quit to that process generation. This can open an unsaved-work dialog. completed means the native service confirmed termination. An accepted request whose app remains running is unknown, with fresh application/window inventory when available; inspect a selected window and resolve any dialog deliberately. Ace does not retry, force quit, or choose a dialog response. Never blindly repeat an interrupted quit.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target }, api, context) => act({ op: "quit", target }, api, context),
 			}),
 			defineTool({
 				name: "desktop_focus",

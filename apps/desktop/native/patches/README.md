@@ -53,6 +53,14 @@ Unresolved delivery blocks later automated clipboard writes until a live read co
 edit or that exact process generation ends. Only reservation metadata survives a GUI restart;
 no clipboard contents, hashes, or deferred restoration are persisted.
 
+`peekaboo-quit.patch` preserves accepted but unfinished normal quit in
+[native computer use](https://github.com/githubnext/ace2/issues/8).
+A normal quit can leave an application waiting for an unsaved-work decision. That is one
+dispatched operation with unverified completion and unsafe retry, not a safely repeatable no-op.
+The quit-specific result validator permits this canonical outcome with `false` termination so
+the existing bridge returns the boolean and its signed process receipt. Other false/success
+contradictions stay errors. Force-quit behavior, target revalidation, and mutation lanes are unchanged.
+
 `peekaboo-clipboard-text.patch` adds explicit plain-text clipboard reads and persistent writes for
 [clipboard access](https://github.com/githubnext/ace2/issues/72). It applies after the insertion patch
 and reuses its GUI clipboard service and reservation gate. Reads require silent clipboard access,

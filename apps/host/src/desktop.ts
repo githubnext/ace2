@@ -418,11 +418,11 @@ function validateManagement(request: DesktopManagement) {
 		|| !/^[1-9][0-9]{0,19}$/.test(target.process_start_identity_decimal)
 		|| BigInt(target.process_start_identity_decimal) > 18_446_744_073_709_551_615n
 	) throw new Error("Pass the application's target object from fresh desktop inventory unchanged.");
-	if (request.op === "activate") {
+	if (request.op === "activate" || request.op === "quit") {
 		if (
 			Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))
 		) {
-			throw new Error("Activation takes an application target from desktop_apps.");
+			throw new Error("Activation and quit take an application target from desktop_apps.");
 		}
 		return;
 	}
@@ -465,6 +465,7 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 			action: {
 				outcome,
 				target_receipt: data.target_receipt,
+				terminated: data.terminated,
 				clipboard_changed: data.clipboard_changed,
 				clipboard_cleanup: data.clipboard_cleanup,
 				clipboard_ownership: data.clipboard_ownership,
@@ -506,6 +507,9 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		}, outcome);
 	}
 	const outcome = data.outcome as DesktopOutcome;
+	if (request.op === "quit" && outcome === "unknown" && data.terminated === false) {
+		return await observeManagement(request, data, signal);
+	}
 	if (outcome !== "completed" || request.op === "clipboard-write") {
 		return actionResult(data, outcome);
 	}
@@ -556,11 +560,12 @@ async function observeManagement(
 	signal: AbortSignal,
 ): Promise<DesktopResult> {
 	const data: Record<string, unknown> = { action };
+	const outcome = request.op === "quit" && action.outcome === "unknown" ? "unknown" : "completed";
 	const receipt = action.target_receipt as Reply["target_receipt"];
 	if (
 		!receipt || receipt.pid !== request.target.pid
 		|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal
-		|| (request.op === "activate"
+		|| (request.op === "activate" || request.op === "quit"
 			? receipt.window_id !== undefined
 			: receipt.window_id !== request.target.window_id)
 	) {
@@ -578,6 +583,8 @@ async function observeManagement(
 		data.application_inventory_warnings = apps.inventory_warnings;
 		const app = apps.apps.find((app) => app.pid === receipt.pid);
 		data.application = app || null;
+		// Quit's native receipt owns termination evidence; later inventory cannot undo or establish it.
+		if (!app && request.op === "quit") return managementResult(data, action, outcome);
 		if (!app) throw new Error("The target application was not returned by the later inventory.");
 		if (app.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
 			throw new Error("The application changed process generation after the action.");
@@ -596,8 +603,8 @@ async function observeManagement(
 				"Later window inventory could not be bound to the original application generation.",
 			);
 		}
-		if (request.op === "activate") {
-			return managementResult(data, action);
+		if (request.op === "activate" || request.op === "quit") {
+			return managementResult(data, action, outcome);
 		}
 		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
 			throw new Error("The exact window was not returned by the later inventory.");
@@ -629,29 +636,31 @@ async function observeManagement(
 			0,
 			2000,
 		);
-		data.message =
-			"The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly.";
-		return managementResult(data, action);
+		data.message = outcome === "completed"
+			? "The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly."
+			: "Termination was not confirmed and later inventory was unavailable. Refresh the target before choosing any further action; do not blindly retry or force quit.";
+		return managementResult(data, action, outcome);
 	}
 }
 
 function managementResult(
 	data: Record<string, unknown>,
 	action: Record<string, unknown>,
+	outcome: "completed" | "unknown" = "completed",
 ): DesktopResult {
 	try {
 		const text = Array.isArray(data.windows) ? bounded(data, "windows") : JSON.stringify(data);
 		if (Buffer.byteLength(text) > MAX_TEXT) {
 			throw new Error("The later inventory exceeds the result limit.");
 		}
-		return { text, outcome: "completed", isError: false };
+		return { text, outcome, isError: outcome !== "completed" };
 	} catch {
 		return actionResult({
 			...action,
 			observation_error: data.observation_error || "The later inventory exceeds the result limit.",
 			message:
-				"The native action completed. Later inventory was omitted to fit the result limit; refresh the target without blindly repeating the action.",
-		}, "completed");
+				"The native action outcome is preserved. Later inventory was omitted to fit the result limit; refresh the target without blindly repeating the action.",
+		}, outcome);
 	}
 }
 
@@ -672,6 +681,7 @@ export const desktop: Desktop = async (request, context) => {
 			"scroll",
 			"drag",
 			"activate",
+			"quit",
 			"focus",
 			"restore",
 			"move",
