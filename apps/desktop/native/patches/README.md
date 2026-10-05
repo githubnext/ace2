@@ -105,6 +105,16 @@ refuse without truncation when visible to Ace. macOS may filter references befor
 absence does not establish what the originating app published. The typed read-only Bridge has
 no mutation gate, backup or journal.
 
+`peekaboo-point-focus.patch` gives single left coordinate clicks the same verified editable-field
+focus behavior as element clicks for [native computer use](https://github.com/githubnext/ace2/issues/106).
+The raw Accessibility hit test runs on the existing bounded read lane so a self-targeted app can
+answer it. Only that read leaves MainActor; generation, exact window bounds, and containing-window
+checks still run before input. Settable text fields choose focus before AXPress, with the existing
+detached focus write and verified native focus receipt. Original identity and bounds are checked
+again immediately before mutation. Positional AXPress waits for its actual return and retains the
+operation lane through cancellation; an uncertain return remains unsafe to retry. No input runs in
+the detached read, no failed action falls back to another route, and no caret position is promised.
+
 `peekaboo-menu.patch` adds literal menu commands for
 [native computer use](https://github.com/githubnext/ace2/issues/8). A distinct typed Bridge
 operation carries the exact process generation and title array, avoiding the existing String
