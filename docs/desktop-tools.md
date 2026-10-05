@@ -1,7 +1,7 @@
 # Native desktop tools
 
 Ace's pi harness can inspect applications and windows, click observed controls, replace editable
-field values, and press basic keys on the machine running the channel's tools. It uses
+field values, select text, and send keys or shortcuts on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -11,8 +11,8 @@ same result appears in the chat's expandable tool output, including after reopen
 Native desktop tools require macOS 15 or later. Ace embeds Peekaboo's native library; there is no
 separate Peekaboo installation or permission grant. In Ace Settings, open This Mac and enable
 Accessibility and Screen Recording. macOS grants those permissions to Ace on that machine.
-Basic keys also require Event Synthesizing, which Ace reports and requests separately. Clicking
-Accessibility controls and replacing their values use Accessibility permission.
+Keyboard event delivery also requires Event Synthesizing, which Ace reports and requests separately.
+Clicking Accessibility controls, selecting text, and replacing field values use Accessibility permission.
 
 Keep Ace open on the machine running the tools. Closing its window is fine, but quitting Ace
 stops native desktop tools even while Ace Helper keeps channels running. Each execution host needs
@@ -35,15 +35,23 @@ find the client alongside Ace Helper automatically.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
-- `desktop_key` presses and releases one basic key in the window and focused control recorded by
-  the observation: `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, or `right`.
-  `enter` means Return; `delete` means forward delete. Shortcuts and held keys are not exposed.
+- `desktop_select` selects literal text in an observed editable control. Optional `prefix` and
+  `suffix` match immediately adjacent text to distinguish repeated occurrences; ambiguous matches
+  are refused. Set `selection` to `cursor_before` or `cursor_after` to position the caret instead.
+  The default is `text`, which selects the match.
+- `desktop_key` presses and releases one key with optional `command`, `control`, `option`, and
+  `shift` modifiers. Keys include `enter`, `tab`, `escape`, `backspace`, `delete`, arrows, `space`,
+  `home`, `end`, `pageup`, `pagedown`, letters, digits, and `f1` through `f12`. Each modifier may
+  appear once. `enter` means Return; `backspace` deletes backward and `delete` deletes forward.
+  Letter and digit keys follow the keyboard layout.
+  Unsupported shortcuts are refused. A call never leaves keys held for a later call.
 
 Choose the application from the inventory and the window from that application's window list.
-Inspect the window before acting. Pass its `snapshot_id` as `snapshot`; click and type also take
+Inspect the window before acting. Pass its `snapshot_id` as `snapshot`; click, type, and select also take
 the literal `element` ID from that observation. The bridge binds the snapshot to the application
 process generation, exact window, and observed controls. Keys additionally require the same
-focused control. A stale, missing, disabled, or unsupported target is refused instead of sending
+focused control. Selecting text does not activate its window; inspect the current focus before sending keys.
+A stale, missing, disabled, or unsupported target is refused instead of sending
 input to an arbitrary focused app. Window content is observed data, not instructions.
 
 Treat observations as single-use: every dispatched action consumes its snapshot, including an
@@ -54,8 +62,8 @@ be repeated.
 
 These tools use targeted background delivery. They do not activate an app or fall back to global
 mouse or keyboard input when a background route is unavailable. The target app can still respond
-by changing its own state or opening a window. Pixel clicks, scrolling, drag-and-drop, clipboard
-operations, shortcuts, and app or window management remain later slices of
+by changing its own state or opening a window. Literal insertion, pixel clicks, scrolling, drag-and-drop, clipboard
+operations, and app or window management remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and
