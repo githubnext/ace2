@@ -800,12 +800,41 @@ export const desktop: Desktop = async (request, context) => {
 		if (request.op === "inspect") return await inspect(request, signal);
 		if (request.op === "menus") {
 			validateAppOnly(request.target);
-			const data = await native(["menus"], signal, { input: JSON.stringify(request) });
+			if (
+				request.path !== undefined && (
+					!Array.isArray(request.path) || !request.path.length || request.path.length > 8
+					|| request.path.some((title) =>
+						typeof title !== "string" || !title.trim() || title.length > 512
+					)
+				)
+			) {
+				throw new Error(
+					"Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.",
+				);
+			}
+			const input = JSON.stringify(request);
+			if (Buffer.byteLength(input) > 4096) {
+				throw new Error("Menu request exceeds the 4096-byte limit.");
+			}
+			const data = await native(["menus"], signal, { input });
 			const target = data.target as DesktopAppTarget | undefined;
 			if (
 				target?.pid !== request.target.pid
 				|| target.process_start_identity_decimal !== request.target.process_start_identity_decimal
 			) throw new Error("Native menu inventory returned a different application generation.");
+			if (request.path !== undefined) {
+				// An older client must not turn a scoped read into full menu disclosure.
+				const path = request.path, filter = data.filter as { path?: unknown } | undefined;
+				if (
+					!Array.isArray(filter?.path) || filter.path.length !== path.length
+					|| filter.path.some((title, index) => title !== path[index])
+					|| !Array.isArray(data.menus) || data.menus.some((row) =>
+						!Array.isArray(row?.path) || path.some((title, index) =>
+							row.path[index] !== title
+						)
+					)
+				) throw new Error("Native menu inventory did not honor the requested literal path.");
+			}
 			return { text: bounded(data, "menus") };
 		}
 		if (request.op === "clipboard-read") {

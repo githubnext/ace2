@@ -5,6 +5,7 @@ import PeekabooFoundation
 
 private struct MenuRequest: Decodable {
 	let target: ManagementTarget
+	let path: [String]?
 }
 
 private struct MenuRow: Encodable {
@@ -13,12 +14,20 @@ private struct MenuRow: Encodable {
 	let shortcut: String?
 }
 
+private struct MenuFilter: Encodable {
+	let path: [String]
+	let scope = "returned_native_inventory"
+	let total: Int
+	let matched: Int
+}
+
 private struct MenuInventory: Encodable {
 	let target: ManagementTarget
 	let application_name: String
 	let bundle_id: String?
 	let menus: [MenuRow]
 	let native_row_count: Int
+	let filter: MenuFilter?
 	let native_completeness = "unknown"
 	let cache_may_be_used = true
 	let cache_ttl_ms = 2000
@@ -46,7 +55,13 @@ func nativeMenus(_ client: PeekabooBridgeClient) async throws -> Data {
 		guard input.count + chunk.count <= 4096 else { throw MenuError("Menu inventory requires one exact application target.") }
 		input.append(chunk)
 	}
-	let target = try JSONDecoder().decode(MenuRequest.self, from: input).target
+	let request = try JSONDecoder().decode(MenuRequest.self, from: input)
+	let target = request.target
+	if let path = request.path {
+		guard !path.isEmpty, path.count <= 8,
+			path.allSatisfy({ !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && $0.utf16.count <= 512 })
+		else { throw MenuError("Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.") }
+	}
 	guard target.window_id == nil, target.bounds == nil, target.is_minimized == nil else {
 		throw MenuError("Menu inventory takes an application target from desktop_apps.")
 	}
@@ -71,10 +86,25 @@ func nativeMenus(_ client: PeekabooBridgeClient) async throws -> Data {
 		rows.append(MenuRow(path: [menu.title], kind: "menu", shortcut: nil))
 		append(menu.items, path: [menu.title])
 	}
+	let total = rows.count
+	var filter: MenuFilter?
+	if let path = request.path {
+		for count in 1 ... path.count {
+			let prefix = Array(path.prefix(count))
+			let matches = rows.filter { $0.path == prefix }
+			guard matches.count == 1 else {
+				throw MenuError(matches.isEmpty
+					? "The requested menu path was not found in the returned native inventory; lazy menus or native limits may omit it."
+					: "The requested menu path is ambiguous in the returned native inventory.")
+			}
+		}
+		rows = rows.filter { $0.path.starts(with: path) }
+		filter = MenuFilter(path: path, total: total, matched: rows.count)
+	}
 	try Task.checkCancellation()
 	return try JSONEncoder().encode(MenuReply(data: MenuInventory(
 		target: ManagementTarget(process), application_name: structure.application.name,
-		bundle_id: structure.application.bundleIdentifier, menus: rows, native_row_count: rows.count
+		bundle_id: structure.application.bundleIdentifier, menus: rows, native_row_count: total, filter: filter
 	)))
 }
 
