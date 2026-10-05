@@ -168,7 +168,7 @@ try {
 		const extra = Bun.spawnSync([...git, "ls-files", "--others", "--exclude-standard"], { env });
 		const diff = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
 		if (!extra.success || (diff.exitCode !== 0 && diff.exitCode !== 1)) {
-			throw new Error("Cannot verify the native checkout: " + extra.stderr + "\\n" + diff.stderr);
+			throw new Error("Cannot verify the native checkout: " + extra.stderr + "\n" + diff.stderr);
 		}
 		return !extra.stdout.toString().trim() && diff.success;
 	};
