@@ -70,6 +70,16 @@ gate. Writes accept at most 8,192 UTF-16 units, enter the existing gate, and ret
 outcomes without returning clipboard contents. They never paste, snapshot prior contents, restore,
 or add a separate journal. Unresolved paste ownership refuses writes across channels and GUI restarts.
 
+`peekaboo-clipboard-image.patch` adds the read-only image format for the same
+[clipboard access](https://github.com/githubnext/ace2/issues/72). The GUI requires silent read access
+and one stable clipboard item, then validates a complete PNG/JPEG/TIFF representation within
+10 MiB, one frame, and 64 million pixels. ImageIO renders an oriented preview off MainActor:
+PNG at bounded sizes first, then explicitly white-composited JPEG if needed. Previews fit
+1,600 pixels per side and 900,000 bytes and carry separate source/conversion metadata. The
+generation is checked after rendering too. The operation has no mutation lane, gate admission,
+temporary file, clipboard backup, or paste behavior; it reuses the existing read-only Bridge
+and channel image result.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A repeated build compares the
 checkout with that complete expected source, since later patches can change earlier patch contexts.
