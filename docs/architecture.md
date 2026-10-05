@@ -180,6 +180,11 @@ accepts only the client's exact identifier signed by Ace's team; the client veri
 signing team. Tools expose application and window inventories, observation, single element clicks,
 replacement of editable field values, text selection/insertion, and keys or shortcuts. Actions use background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+Literal insertion uses one GUI-owned temporary plain-text paste, with the existing native mutation
+lane and clipboard transaction gate held through delivery and cleanup. The GUI preserves bounded
+prior clipboard contents privately and restores them only after observing the expected edit in
+the same control. Uncertain consumption leaves the replacement or preserves newer contents; no
+restore journal or automatic retry is created. Clipboard read policy is reported in This Mac.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Quitting Ace stops desktop tools;

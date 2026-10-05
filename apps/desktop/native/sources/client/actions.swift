@@ -103,6 +103,9 @@ private struct ActionResult: Encodable {
 	var native_outcome: DesktopActionOutcome?
 	var selected_leaf_evidence: [DesktopSelectedLeafEvidence]?
 	var selection: TextSelectionResult?
+	var clipboard_changed: Bool?
+	var clipboard_cleanup: String?
+	var consumption: String?
 	var requires_fresh_observation = false
 	var error: ActionMessage?
 }
@@ -160,6 +163,27 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		if request.op == .key || request.op == .insert, context.focusedElement == nil {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
 		}
+		if request.op == .insert {
+			// The GUI owns the snapshot lease and clipboard transaction through consumption and cleanup.
+			invoked = true
+			let insertion = try await client.literalInsert(snapshot: request.snapshot, text: request.text!)
+			result.outcome = insertion.outcome
+			result.native_outcome = insertion.native_outcome
+			result.clipboard_changed = insertion.clipboard_changed
+			result.clipboard_cleanup = insertion.clipboard_cleanup
+			result.consumption = insertion.consumption
+			result.requires_fresh_observation = insertion.requires_fresh_observation
+			if let error = insertion.error {
+				result.error = ActionMessage(code: error.code, message: error.message, hint: error.hint)
+			}
+			guard let target = insertion.target_receipt,
+				target.pid == identity.ownerProcessIdentifier, target.window_id == identity.windowID,
+				target.process_start_identity_decimal == String(identity.ownerProcessStartIdentity)
+			else {
+				throw ActionError("Literal insertion returned without its expected exact-window receipt. Inspect before retrying.")
+			}
+			return try JSONEncoder().encode(ActionReply(data: result, target_receipt: receipt))
+		}
 		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
 		invoked = true
 		let evidence: ActionEvidence
@@ -188,16 +212,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 				)
 			))
 		case .insert:
-			evidence = try await ActionEvidence(client.typeActionsWithOutcome(
-				[.text(request.text!)],
-				cadence: .fixed(milliseconds: 0),
-				snapshotId: request.snapshot,
-				target: .init(
-					windowIdentity: identity,
-					windowBounds: bounds,
-					focusedElement: context.focusedElement!
-				)
-			))
+			throw ActionError("Literal insertion must use its GUI-owned transaction.")
 		case .select:
 			let selected = try await client.selectText(
 				target: request.element!,

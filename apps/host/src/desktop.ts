@@ -266,7 +266,13 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 	let text = JSON.stringify({ action: data });
 	if (Buffer.byteLength(text) > MAX_TEXT) {
 		text = JSON.stringify({
-			action: { outcome, target_receipt: data.target_receipt },
+			action: {
+				outcome,
+				target_receipt: data.target_receipt,
+				clipboard_changed: data.clipboard_changed,
+				clipboard_cleanup: data.clipboard_cleanup,
+				consumption: data.consumption,
+			},
 			warning: "Native action metadata exceeded the result limit. Inspect the current state.",
 		});
 	}
