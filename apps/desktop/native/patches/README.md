@@ -81,9 +81,10 @@ temporary file, clipboard backup, or paste behavior; it reuses the existing read
 and channel image result.
 
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
-and assembles the ordered patch stack in a private Git index. A repeated build compares the
-checkout with that complete expected source, since later patches can change earlier patch contexts.
-Missing patches are applied in order and verified against the same index before compiling Swift.
+and assembles the ordered patch stack in a private Git index. A build compares the checkout
+with each complete ordered prefix, since later patches can change earlier patch contexts.
+Only the missing suffix is applied, then verified against the complete expected source before
+compiling Swift. Keep new patches at the end so an existing complete stack remains a valid prefix.
 The real dependency index is unchanged. Drift fails the build instead of producing unexpected
 source. Patch files are excluded from formatting.
 

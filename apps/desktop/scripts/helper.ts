@@ -161,40 +161,32 @@ const patches = [
 const temporary = mkdtempSync(join(tmpdir(), "ace-native-patches-"));
 try {
 	const env = { ...process.env, GIT_INDEX_FILE: join(temporary, "index") };
-	for (
-		const args of [["read-tree", "HEAD"], ...patches.map((patch) => ["apply", "--cached", patch])]
-	) {
-		const result = Bun.spawnSync([...git, ...args], { env });
-		if (!result.success) {
-			throw new Error(`Cannot assemble the pinned native patch stack: ${result.stderr}`);
+	const initial = Bun.spawnSync([...git, "read-tree", "HEAD"], { env });
+	if (!initial.success) throw new Error("Cannot read the pinned native tree: " + initial.stderr);
+	const isExpected = () => {
+		const extra = Bun.spawnSync([...git, "ls-files", "--others", "--exclude-standard"], { env });
+		const diff = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
+		if (!extra.success || (diff.exitCode !== 0 && diff.exitCode !== 1)) {
+			throw new Error("Cannot verify the native checkout: " + extra.stderr + "\\n" + diff.stderr);
+		}
+		return !extra.stdout.toString().trim() && diff.success;
+	};
+	let applied = -1;
+	for (let index = 0; index <= patches.length; index++) {
+		if (isExpected()) applied = index;
+		if (index === patches.length) break;
+		const expected = Bun.spawnSync([...git, "apply", "--cached", patches[index]!], { env });
+		if (!expected.success) {
+			throw new Error("Cannot assemble the pinned native patch stack: " + expected.stderr);
 		}
 	}
-	const extra = Bun.spawnSync([...git, "ls-files", "--others", "--exclude-standard"], { env });
-	if (!extra.success || extra.stdout.toString().trim()) {
+	if (applied < 0) {
 		throw new Error(
-			`The native checkout contains unexpected untracked files: ${extra.stdout}\n${extra.stderr}`,
+			"The native checkout differs from every pinned patch prefix. Resolve source drift before building.",
 		);
 	}
-	const applied = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
-	if (!applied.success) {
-		for (const patch of patches) {
-			const forward = Bun.spawnSync([...git, "apply", "--check", patch]);
-			if (forward.success) {
-				run([...git, "apply", patch]);
-			} else {
-				const reverse = Bun.spawnSync([...git, "apply", "--reverse", "--check", patch]);
-				if (!reverse.success) {
-					throw new Error(
-						`The native patch ${patch} neither applies nor is already applied. Resolve checkout drift before building.\n${forward.stderr}\n${reverse.stderr}`,
-					);
-				}
-			}
-		}
-		const verified = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
-		if (!verified.success) {
-			throw new Error("The native checkout differs from the pinned patch stack.");
-		}
-	}
+	for (const patch of patches.slice(applied)) run([...git, "apply", patch]);
+	if (!isExpected()) throw new Error("The native checkout differs from the pinned patch stack.");
 } finally {
 	rmSync(temporary, { recursive: true, force: true });
 }
