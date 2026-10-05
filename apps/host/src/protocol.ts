@@ -51,6 +51,8 @@ export type Listing = {
 	repo?: string;
 	model?: ModelRef;
 	created: number;
+	/** When the transcript last grew; hosts on older builds omit it. */
+	active?: number;
 	state: ChannelState;
 	/** The hosting service's base URL, for a hosted channel; `host` is then its workspace. */
 	hosted?: string;
@@ -135,6 +137,7 @@ export type HostRequest =
 	}
 	| { op: "github-detail"; repo: string; kind: GithubKind; number: number }
 	| { op: "github-files"; repo: string; number: number }
+	| { op: "github-pull"; repo: string; branch: string }
 	/** These settings belong to the local owner and are never forwarded to peers. */
 	| { op: "settings" }
 	| { op: "diagnostics" }
@@ -150,6 +153,8 @@ export type HostRequest =
 	/** Owner actions; tailnet peers create, archive, and delete channels on their own hosts. */
 	| { op: "create"; project: string; name?: string; model?: ModelRef }
 	| { op: "archive"; channel: string; archived: boolean }
+	/** Archive the project's channels on this host that have no work in progress. */
+	| { op: "archive-inactive"; project: string }
 	| { op: "delete"; channel: string }
 	/**
 	 * Forward a request to a channel on this host or a peer, starting its worker if dormant. The

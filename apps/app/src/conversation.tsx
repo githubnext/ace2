@@ -4,6 +4,7 @@ import { Button, Timeline } from "@ace/ui";
 import type { Listing } from "@ace/host/protocol";
 
 import { Composer } from "./composer";
+import { publish } from "./details";
 import { host } from "./host";
 import { toEvents } from "./timeline";
 import { useTranscript } from "./transcript";
@@ -56,6 +57,12 @@ export function Conversation(
 			),
 		[transcript.items],
 	);
+
+	// Replay delivers one event at a time; the sidebar reads the transcript once it is complete.
+	const items = transcript.live ? transcript.items : undefined;
+	useEffect(() => {
+		publish(channel.id, { info: transcript.info, items });
+	}, [channel.id, transcript.info, items]);
 
 	useEffect(() => {
 		if (transcript.live) onWork?.();

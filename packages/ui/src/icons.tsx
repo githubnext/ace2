@@ -34,6 +34,7 @@ import {
 	FolderSearch,
 	FolderTree,
 	FoldVertical,
+	GitBranch,
 	GitCommitHorizontal,
 	GitFork,
 	GitMerge,
@@ -118,6 +119,7 @@ export const IconArchive = outline(Archive);
 export const IconArrowUpRight = outline(ArrowUpRight);
 export const IconBolt = outline(Zap);
 export const IconBot = outline(Bot);
+export const IconBranch = outline(GitBranch);
 export const IconBraces = outline(Braces);
 export const IconBrain = outline(Brain);
 export const IconCheck = outline(Check);

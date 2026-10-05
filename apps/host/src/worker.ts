@@ -64,6 +64,7 @@ const channel = await Channel.open({
 	prefix: record.prefix,
 	named: record.named,
 	onMetadata: (value) => catalog.metadata(id, value),
+	onActivity: (at) => catalog.activity(id, at),
 	owner: record.owner,
 	project: record.project,
 	lanes: paths.lanes,

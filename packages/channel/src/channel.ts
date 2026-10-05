@@ -51,6 +51,9 @@ const SettingsDoc = defineDoc<{ shared: boolean }>({
 	initial: () => ({ shared: true }),
 });
 
+/** Inactivity is measured in hours, so activity is published at most this often. */
+const ACTIVITY_INTERVAL = 5 * 60_000;
+
 export type Options = {
 	id: string;
 	name: string;
@@ -72,6 +75,8 @@ export type Options = {
 	directory: Directory;
 	/** Publish a projection of committed metadata to the runtime's channel catalog. */
 	onMetadata?(value: Metadata): void;
+	/** Publish when the transcript last grew, in epoch milliseconds. */
+	onActivity?(at: number): void;
 	log: Log;
 };
 
@@ -82,6 +87,7 @@ export class Channel {
 	#harness: Harness;
 	#log: Log;
 	#metadata: Metadata;
+	#active = 0;
 	#listeners = new Set<{ chat: ChatId; send: Send }>();
 
 	private constructor(options: Options, harness: Harness, log: Log, value: Metadata) {
@@ -123,6 +129,9 @@ export class Channel {
 		}, context);
 		channel = new Channel(options, harness, log, value);
 		channel.#changed(value);
+		harness.subscribeCommits(({ changes }) => {
+			if (changes.some((change) => change.type === "entry")) channel.#activity();
+		});
 		// Opening resumes work a crash interrupted; a killed channel left only terminal tasks behind.
 		harness.resume();
 		log("info", "channel.open", { name: value.name, project: options.project });
@@ -394,6 +403,17 @@ export class Channel {
 			} catch {
 				this.#listeners.delete(listener);
 			}
+		}
+	}
+
+	#activity(): void {
+		const now = Date.now();
+		if (now - this.#active < ACTIVITY_INTERVAL) return;
+		this.#active = now;
+		try {
+			this.#options.onActivity?.(now);
+		} catch (error) {
+			this.#log("warn", "activity.publish", failure(error));
 		}
 	}
 

@@ -31,6 +31,8 @@ export type Listing = {
 	project: string;
 	model?: ModelRef;
 	created: number;
+	/** When the transcript last grew; channels from older builds have none until they next do. */
+	active?: number;
 	archived?: boolean;
 	/** Base URL of the service hosting the channel; this host serves its workspace. */
 	hosted?: string;
@@ -162,6 +164,10 @@ export function metadata(id: string, value: Metadata): void {
 	const record = read(id);
 	if (record.revision !== undefined && record.revision >= value.revision) return;
 	write({ ...record, ...value });
+}
+
+export function activity(id: string, active: number): void {
+	write({ ...read(id), active });
 }
 
 export function list(): Listing[] {

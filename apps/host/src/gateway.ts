@@ -14,7 +14,7 @@ import { GatewayClient } from "./gateway-client";
 import * as github from "./github";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
-import { archive, isRunning, models, project, remove } from "./manage";
+import { archive, archiveInactive, isRunning, models, project, remove } from "./manage";
 import * as peers from "./peers";
 import * as projects from "./projects";
 import {
@@ -57,7 +57,8 @@ const pending = new Set<Promise<unknown>>();
 function local(): Listing[] {
 	return catalog.list().map((record) => {
 		const state = record.archived ? "archived" : isRunning(record.id) ? "running" : "dormant";
-		const { id, name: channel, summary, revision, owner, project, model, created, hosted } = record;
+		const { id, name: channel, summary, revision, owner, project, model, created, active, hosted } =
+			record;
 		const listing: Listing = {
 			id,
 			host: name,
@@ -70,6 +71,7 @@ function local(): Listing[] {
 			created,
 			state,
 		};
+		if (active) listing.active = active;
 		const { root, repo } = projects.checkout(project);
 		listing.root = root;
 		if (repo) listing.repo = repo;
@@ -160,7 +162,7 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 	return open;
 }
 
-const owned = new Set<HostRequest["op"]>(["archive", "delete"]);
+const owned = new Set<HostRequest["op"]>(["archive", "archive-inactive", "delete"]);
 const windowOps = new Set<HostRequest["op"]>(["window", "windows", "tab-rename", "tab-result"]);
 const localOps = new Set<HostRequest["op"]>([
 	"projects",
@@ -168,6 +170,7 @@ const localOps = new Set<HostRequest["op"]>([
 	"github-list",
 	"github-detail",
 	"github-files",
+	"github-pull",
 	"settings",
 	"diagnostics",
 	"key-set",
@@ -290,6 +293,8 @@ async function handle(
 			return github.detail(request);
 		case "github-files":
 			return github.files(request.repo, request.number);
+		case "github-pull":
+			return github.pull(request.repo, request.branch);
 		case "settings":
 			return settings();
 		case "diagnostics":
@@ -323,6 +328,12 @@ async function handle(
 			if (request.archived) terminals.closeChannel(request.channel);
 			await archive(request.channel, request.archived);
 			return broadcast();
+		case "archive-inactive": {
+			const archived = await archiveInactive(request.project);
+			for (const channel of archived) terminals.closeChannel(channel);
+			broadcast();
+			return archived.length;
+		}
 		case "delete":
 			terminals.closeChannel(request.channel);
 			await remove(request.channel);
