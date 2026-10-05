@@ -467,10 +467,40 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		let query: string | undefined;
+		if (request.op === "apps" && request.query !== undefined) {
+			if (
+				typeof request.query !== "string" || request.query.length > 256
+				|| !request.query.trim()
+			) {
+				throw new Error(
+					"Application query must contain non-whitespace text and at most 256 characters.",
+				);
+			}
+			query = request.query.trim();
+		}
 		const args = request.op === "apps"
 			? ["apps"]
 			: ["windows", positive(request.pid)];
 		const data = await native(args, signal);
+		if (query !== undefined) {
+			if (!Array.isArray(data.apps)) {
+				throw new Error("Native application inventory is unavailable.");
+			}
+			const apps = data.apps;
+			const search = query.toLowerCase();
+			const matches = apps.filter((app) =>
+				app.name.toLowerCase().includes(search) || app.bundle_id?.toLowerCase().includes(search)
+			);
+			data.apps = matches;
+			data.filter = {
+				query,
+				fields: ["name", "bundle_id"],
+				scope: "returned_native_inventory",
+				total: apps.length,
+				matched: matches.length,
+			};
+		}
 		return { text: bounded(data, request.op === "apps" ? "apps" : "windows") };
 	} finally {
 		clearTimeout(timer);

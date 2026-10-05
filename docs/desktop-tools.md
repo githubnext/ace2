@@ -28,6 +28,8 @@ find the client alongside Ace Helper automatically.
 ## Tools
 
 - `desktop_apps` lists running native applications, their process IDs, and observed activity and visibility.
+  Optional `query` searches application names and bundle IDs case-insensitively before Ace bounds
+  the result. Use a nonblank query of at most 256 characters to find apps omitted from a large list.
 - `desktop_windows` lists windows for an application process ID.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
@@ -54,6 +56,12 @@ Application activity and visibility are matched to the inventory's exact process
 Use `is_active` only when `is_active_known` is true, and `is_hidden` only when
 `is_hidden_known` is true. Unknown values are omitted, with metadata warnings kept separate from
 inventory completeness and warnings.
+
+An application search reports its query, searched fields, `filter.total` native items, and
+`filter.matched` items before result bounding. Its scope is `returned_native_inventory`: a partial
+native inventory can still miss matching applications. `ace_truncated` and `ace_omitted` describe
+matching rows omitted from the filtered response; narrow the query if needed. Searching does not
+change native inventory completeness or warnings, and an empty match is not proof an app stopped.
 
 Choose the application from the inventory and the window from that application's window list.
 Inspect the window before acting. Pass its `snapshot_id` as `snapshot`. Type and select take the
