@@ -81,6 +81,9 @@ native service revalidates that identity immediately before acting. These target
 single-use snapshots; refresh inventory after a stale target or a state change. Activation returns
 application/window inventory even when no inspectable window exists; it never chooses the first
 window. Inspection stays passive and never activates or restores a target automatically.
+When macOS explicitly reports a locked session, management actions are refused before dispatch.
+Unlock the active user session and refresh the relevant inventory before choosing a new action.
+Missing lock state is not treated as a lock and does not establish that the desktop is available.
 
 Inspect the window before clicking or entering input. Pass its `snapshot_id` as `snapshot`. Type and select take the
 literal `element` ID from that observation. Click and scroll take exactly one `element` or `point`.
