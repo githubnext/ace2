@@ -138,7 +138,7 @@ find the client alongside Ace Helper automatically.
   snapshot or element IDs. The default mode is `accessibility`.
 - `desktop_click` clicks one observed Accessibility element or screenshot point. `kind` defaults
   to `single`; `double`, `right`, `middle`, and `triple` are also supported.
-  A single element click on a supported editable text field requests keyboard focus and reports
+  A single left click on a supported editable text field, by element or point, requests keyboard focus and reports
   whether that focus was verified. It does not choose a caret position; use `desktop_select` to
   choose a range or caret position, then use the fresh observation for keyboard input.
 - `desktop_scroll` scrolls an observed element or screenshot point `up`, `down`, `left`, or `right`.
