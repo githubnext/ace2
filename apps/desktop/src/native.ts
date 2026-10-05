@@ -1,6 +1,6 @@
 import { dirname, join } from "node:path";
 
-import { CString, dlopen } from "bun:ffi";
+import { CString, dlopen, type Pointer } from "bun:ffi";
 
 import { config } from "@ace/host/config";
 
@@ -13,20 +13,43 @@ export function native(identifier: string) {
 		ace_desktop_stop: { args: [], returns: "void" },
 		ace_desktop_free: { args: ["ptr"], returns: "void" },
 		ace_desktop_permission: { args: ["cstring"], returns: "void" },
+		ace_desktop_project_start: { args: ["cstring"], returns: "void" },
+		ace_desktop_project_status: { args: [], returns: "ptr" },
 	});
+	let picker: Promise<string | null> | undefined;
 
-	function status(): NativeState {
-		const pointer = symbols.ace_desktop_status();
-		if (!pointer) throw new Error("Could not read native inspection status");
+	function read<T>(pointer: Pointer | null): T {
+		if (!pointer) throw new Error("Could not read native desktop response");
 		try {
-			return JSON.parse(new CString(pointer).toString()) as NativeState;
+			return JSON.parse(new CString(pointer).toString()) as T;
 		} finally {
 			symbols.ace_desktop_free(pointer);
 		}
 	}
 
+	function status(): NativeState {
+		return read(symbols.ace_desktop_status());
+	}
+
+	async function project(path: string): Promise<string | null> {
+		symbols.ace_desktop_project_start(Buffer.from(`${path}\0`));
+		while (true) {
+			const result = read<{ pending: boolean; path: string | null; error?: string }>(
+				symbols.ace_desktop_project_status(),
+			);
+			if (result.error) throw new Error(result.error);
+			if (!result.pending) return result.path;
+			await Bun.sleep(50);
+		}
+	}
+
 	return {
 		status,
+		project(path: string): Promise<string | null> {
+			if (picker) return picker;
+			picker = project(path).finally(() => picker = undefined);
+			return picker;
+		},
 		start() {
 			symbols.ace_desktop_start(
 				Buffer.from(`${join(config.home, "desktop.sock")}\0`),

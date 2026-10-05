@@ -46,14 +46,7 @@ const rpc = BrowserView.defineRPC<DesktopRPC>({
 			},
 			project: async ({ token }) => {
 				authorize(token);
-				const paths = await Utils.openFileDialog({
-					startingFolder: homedir(),
-					canChooseFiles: false,
-					canChooseDirectory: true,
-					allowsMultipleSelection: false,
-				});
-				// The SDK splits paths on commas, even for a single selected folder.
-				return paths.join(",") || null;
+				return native.project(homedir());
 			},
 			helper: ({ token, action }) => {
 				authorize(token);

@@ -85,6 +85,7 @@ private final class Desktop {
 public func start(_ socket: UnsafePointer<CChar>, _ client: UnsafePointer<CChar>) {
 	let socket = String(cString: socket)
 	let client = String(cString: client)
+	openProjectPicker()
 	state.set("starting")
 	// Bun's thread must not wait for work that needs the application's main run loop.
 	DispatchQueue.main.async {
@@ -100,6 +101,7 @@ public func status() -> UnsafeMutablePointer<CChar>? {
 
 @_cdecl("ace_desktop_stop")
 public func stop() {
+	closeProjectPicker()
 	state.set("stopping")
 	DispatchQueue.main.async { Desktop.shared.stop() }
 }
