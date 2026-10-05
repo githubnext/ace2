@@ -8,6 +8,7 @@ import type { Subprocess } from "bun";
 import { config, desktop } from "@ace/host/config";
 import { health } from "@ace/host/health";
 
+import { devIdentity } from "./sign";
 import { run } from "./sparkle";
 
 export const root = fileURLToPath(new URL("..", import.meta.url));
@@ -20,10 +21,8 @@ export async function build(channel: string): Promise<void> {
 		throw new Error("Choose dev, stable, or canary");
 	}
 	// macOS binds the installed helper's launch constraint to its signature; ad-hoc replacements fail it.
-	if (process.env.ACE_DEV_INSTALL && (process.env.ACE_CODESIGN_IDENTITY || "-") === "-") {
-		throw new Error(
-			"Set ACE_CODESIGN_IDENTITY to your Apple Development identity to build Ace-dev",
-		);
+	if (process.env.ACE_DEV_INSTALL && devIdentity() === "-") {
+		throw new Error("Set ace.codesignIdentity to your Apple Development identity to build Ace-dev");
 	}
 	process.env.ACE_BUILD_CHANNEL = channel;
 	const sdk = join(root, "node_modules", "electrobun");
