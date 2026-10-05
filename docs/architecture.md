@@ -181,10 +181,12 @@ signing team. Tools expose application and window inventories, observation, elem
 clicks, scrolling, atomic drags, replacement of editable field values, text selection, and keys or shortcuts. Screenshot
 points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
-Separate activation, focus, and restore tools accept generation-bound inventory targets, with exact
+Separate activation, focus, restore, move, and resize tools accept generation-bound inventory targets, with exact
 window bounds where applicable. The native service revalidates those receipts before dispatch;
 activation and focus explicitly change the foreground desktop. Inspection never activates a target
 implicitly. App-only action receipts refresh inventories without inventing a selected window.
+Move and resize use native background Accessibility, verify resulting geometry, and return refreshed
+window targets; the original bounds remain part of the pre-mutation identity check.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves

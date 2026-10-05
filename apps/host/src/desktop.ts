@@ -425,6 +425,23 @@ function validateManagement(request: DesktopManagement) {
 			"Pass the window's target object, including its original bounds, from desktop_windows unchanged.",
 		);
 	}
+	if (request.op === "move") {
+		const position = request.position;
+		if (!position || ![position.x, position.y].every(Number.isFinite)) {
+			throw new Error("Window position must contain finite x and y in desktop logical points.");
+		}
+	}
+	if (request.op === "resize") {
+		const size = request.size;
+		if (
+			!size || ![size.width, size.height].every(Number.isFinite) || size.width <= 0
+			|| size.height <= 0
+		) {
+			throw new Error(
+				"Window size must contain positive finite width and height in desktop logical points.",
+			);
+		}
+	}
 }
 
 function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): DesktopResult {
@@ -626,6 +643,8 @@ export const desktop: Desktop = async (request, context) => {
 			"activate",
 			"focus",
 			"restore",
+			"move",
+			"resize",
 		].includes(
 			request.op,
 		)

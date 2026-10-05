@@ -21,7 +21,9 @@ export type DesktopWindowTarget = DesktopAppTarget & {
 };
 export type DesktopManagement =
 	| { op: "activate"; target: DesktopAppTarget }
-	| { op: "focus" | "restore"; target: DesktopWindowTarget };
+	| { op: "focus" | "restore"; target: DesktopWindowTarget }
+	| { op: "move"; target: DesktopWindowTarget; position: { x: number; y: number } }
+	| { op: "resize"; target: DesktopWindowTarget; size: { width: number; height: number } };
 
 export type DesktopRequest =
 	| DesktopManagement
@@ -142,7 +144,20 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" | "activate" | "focus" | "restore" }
+	{
+		op:
+			| "click"
+			| "type"
+			| "key"
+			| "select"
+			| "scroll"
+			| "drag"
+			| "activate"
+			| "focus"
+			| "restore"
+			| "move"
+			| "resize";
+	}
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -160,7 +175,8 @@ export function isDesktopAction(request: DesktopRequest): request is DesktopActi
 }
 
 export function isDesktopManagement(request: DesktopRequest): request is DesktopManagement {
-	return request.op === "activate" || request.op === "focus" || request.op === "restore";
+	return request.op === "activate" || request.op === "focus" || request.op === "restore"
+		|| request.op === "move" || request.op === "resize";
 }
 
 function result(value: DesktopResult): ToolExecutionResult {
@@ -255,6 +271,37 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async ({ target }, api, context) => act({ op: "restore", target }, api, context),
+			}),
+			defineTool({
+				name: "desktop_move",
+				description:
+					"Move one exact native window using its unchanged target from desktop_windows. position is the window's top-left origin in global desktop logical points, not normalized screenshot coordinates; negative x/y are allowed. Uses background Accessibility without activating the app. Native checks bind the process generation, window ID and original bounds, then verify the resulting geometry. Use the refreshed inventory target after moving and inspect before input. An app may constrain its geometry; read the actual bounds and outcome. Never blindly repeat an interrupted move.",
+				parameters: Type.Object({
+					target: windowTarget,
+					position: Type.Object({ x: Type.Number(), y: Type.Number() }, {
+						additionalProperties: false,
+					}),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target, position }, api, context) =>
+					act({ op: "move", target, position }, api, context),
+			}),
+			defineTool({
+				name: "desktop_resize",
+				description:
+					"Resize one exact native window using its unchanged target from desktop_windows. size contains positive width and height in desktop logical points. Uses background Accessibility without activating the app. Native checks bind the process generation, window ID and original bounds, then verify the resulting geometry. Use the refreshed inventory target after resizing and inspect before input. An app may constrain its geometry; read the actual bounds and outcome. Never blindly repeat an interrupted resize.",
+				parameters: Type.Object({
+					target: windowTarget,
+					size: Type.Object({
+						width: Type.Number({ exclusiveMinimum: 0 }),
+						height: Type.Number({ exclusiveMinimum: 0 }),
+					}, { additionalProperties: false }),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target, size }, api, context) =>
+					act({ op: "resize", target, size }, api, context),
 			}),
 			defineTool({
 				name: "desktop_inspect",
