@@ -20,10 +20,7 @@ export async function build(channel: string): Promise<void> {
 	if (!["dev", "stable", "canary"].includes(channel)) {
 		throw new Error("Choose dev, stable, or canary");
 	}
-	// macOS binds the installed helper's launch constraint to its signature; ad-hoc replacements fail it.
-	if (process.env.ACE_DEV_INSTALL && devIdentity() === "-") {
-		throw new Error("Set ace.codesignIdentity to your Apple Development identity to build Ace-dev");
-	}
+	if (channel === "dev") devIdentity();
 	process.env.ACE_BUILD_CHANNEL = channel;
 	const sdk = join(root, "node_modules", "electrobun");
 	const cli = join(sdk, "bin", "electrobun");
@@ -61,7 +58,7 @@ async function dev(): Promise<void> {
 	let host: Subprocess | undefined;
 	let app: Subprocess | undefined;
 	let stopped = false;
-	// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
+	// The native launcher retains and terminates only the app instance opened by this run.
 	const stop = () => {
 		stopped = true;
 		if (app) return app.kill();
@@ -75,7 +72,12 @@ async function dev(): Promise<void> {
 	const { identifier } = await Bun.file(join(bin, "..", "Resources", "version.json")).json() as {
 		identifier: string;
 	};
-	if (!desktop(identifier)) throw new Error(`${identifier} is not a checkout development build`);
+	const { profile } = await Bun.file(join(bin, "..", "Resources", "profile.json")).json() as {
+		profile?: string;
+	};
+	if (!desktop(identifier, profile)) {
+		throw new Error(`${identifier} is not a checkout development build`);
+	}
 	if (config.port >= 4140 && config.port <= 4142) {
 		throw new Error(`Port ${config.port} belongs to an installed Ace. Choose another ACE_PORT.`);
 	}
@@ -101,6 +103,7 @@ async function dev(): Promise<void> {
 		ACE_CONFIG_HOME: config.settings,
 		ACE_KEYCHAIN_SERVICE: config.keychain,
 		ACE_PORT: String(config.port),
+		ACE_DESKTOP_CLIENT: join(bin, "ace-desktop-client"),
 	});
 	host = Bun.spawn([
 		process.execPath,
@@ -117,9 +120,9 @@ async function dev(): Promise<void> {
 			}
 			await Bun.sleep(100);
 		}
-		console.log(`Ace-dev ${identifier}: ${config.home}, port ${config.port}`);
+		console.log(`Ace-dev ${identifier} (${profile}): ${config.home}, port ${config.port}`);
 		if (stopped) return;
-		app = Bun.spawn([join(bin, "launcher")], {
+		app = Bun.spawn([join(bin, "ace-dev-launcher"), join(bin, "..", "..")], {
 			cwd: bin,
 			env,
 			stdio: ["ignore", "inherit", "inherit"],

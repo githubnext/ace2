@@ -228,6 +228,23 @@ export function desktop(execute: Desktop): Extension {
 	});
 	return defineExtension({
 		name: "ace-desktop",
+		sections: [{
+			key: "ace-desktop",
+			render: async () =>
+				[
+					"Use desktop_* tools to observe and operate apps on this channel's execution host.",
+					"Shell commands remain appropriate for builds, files, launching apps with open, and preparing clipboard fixtures directly.",
+					"",
+					"Do not silently substitute AppleScript, osascript, System Events, or self-built Accessibility or CGEvent programs for desktop tools.",
+					"Apple Events can raise a separate macOS Automation prompt for each target app, attributed to Ace; Accessibility and Screen Recording grants do not cover them.",
+					"Custom input programs bypass the desktop tools' snapshot and exact-target checks, even when they raise no permission prompt.",
+					"Before using a fallback, explain in chat which native tool or capability cannot do the step and why the fallback is needed, including any Automation prompts it can trigger.",
+					"Use the user's existing authorization; this guidance adds no separate approval requirement.",
+					"",
+					"For a refusal before dispatch, follow its concrete recovery hint once when applicable, then refresh the observation; a refusal alone does not prove the capability is missing.",
+					"After completed, interrupted, or uncertain input, inspect the current target before deciding whether another action is needed. Never replay input just because its follow-up observation failed.",
+				].join("\n"),
+		}],
 		tools: [
 			defineTool({
 				name: "desktop_clipboard_read",

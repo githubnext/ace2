@@ -146,27 +146,35 @@ and Ace's grouped permission in macOS background-item settings.
 
 Test a checkout's desktop changes with `bun run dev` from its `apps/desktop`. It builds that
 checkout's `Ace-dev.app`, starts the checkout's own host from source, and opens the app against it.
+The runner opens the exact app bundle through macOS LaunchServices. Launching its executable
+directly can attribute desktop permission checks to the launching terminal or coding app instead
+of Ace-dev, even when Ace-dev is enabled in System Settings. A small development launcher tracks
+the exact opened app so stopping the run quits that instance and then its source host.
 The host serves the checkout's freshly built `apps/app/dist`. Quitting the app stops the host and
 its workers; Ctrl-C or SIGTERM to the command quits the app first. If the host exits, the window
 closes. The command blocks while the app runs, so an agent starts it in the background and stops
 it by quitting the app or signalling the command, not the host.
 
-Each checkout's build has its own bundle identifier, `dev.ace.desktop.dev.<hash>`, derived from the
-checkout path. It uses its own `~/.local/state/ace-dev-<hash>` data, `Ace-dev-<hash>` preferences,
-`ace-dev-<hash>` Keychain service, WebKit storage, and a port from 4200 to 4999. Other `ACE_*`
+All development builds use the same macOS bundle identity, `dev.ace.desktop.dev`, and the same
+local signing identity. macOS permissions belong to one **Ace-dev** entry across checkouts and
+rebuilds. A separate checkout profile, stored in the signed bundle, keeps the existing
+`~/.local/state/ace-dev-<hash>` data, `Ace-dev-<hash>` preferences, `ace-dev-<hash>` Keychain service,
+WebKit storage partition, and port from 4200 to 4999. The hash is derived from the checkout path;
+it is not part of the app's macOS identity. Other `ACE_*`
 settings in the environment are ignored, except `ACE_PORT` to move the run off a port used by
 another checkout and `ACE_*_API_KEY` credentials. A run refuses any listener already on its port.
 The profile starts without provider keys; add one in Settings or pass it in the environment. It
-persists across runs until you delete those directories, its Keychain entries, and
-`~/Library/WebKit/dev.ace.desktop.dev.<hash>`.
+persists across runs. Changing the app's identity does not move or reset channel data. WebKit
+uses a persistent `ace-dev-<hash>` partition under the shared dev identity. Old checkout-specific
+WebKit directories are left intact; their UI preferences are not copied into the new partition.
 
 These builds never register or attach to Ace Helper. Without their host they report that it is
 missing and quit, and helper controls in the menu and Settings are unavailable. Opening a checkout's
-build from Finder works only while its `bun run dev` host is running. Use the installed Ace-dev or
-Canary to test Ace Helper itself.
+build from Finder works only while its `bun run dev` host is running. Use installed Canary to test
+Ace Helper itself. Do not install a source checkout's app in `/Applications`.
 
 Development builds sign every executable with one identity: `ACE_CODESIGN_IDENTITY` when set,
-otherwise the repository's local Git setting `ace.codesignIdentity`, otherwise ad hoc. Set the
+otherwise the repository's local Git setting `ace.codesignIdentity`. Set the
 Git value once per Mac to an Apple Development SHA-1 from `security find-identity -v -p codesigning`;
 use the SHA-1 because several certificates can share a name:
 
@@ -175,12 +183,18 @@ git config ace.codesignIdentity <sha-1>
 ```
 
 It is stored in the repository's `.git/config`, which all its worktrees and lanes share, so agents and
-background builds use it without exporting anything. It is never committed; contributors without it
-build ad hoc, and `ACE_CODESIGN_IDENTITY=-` forces an ad-hoc build. With an Apple Development
-signature, codesign's default designated requirement names the bundle identifier and the
-certificate, so macOS privacy permissions and Keychain access granted to a checkout's build carry
-across its rebuilds, while other checkouts, which have other identifiers, still need their own.
-Native desktop inspection of the app also requires a team signature.
+background builds use it without exporting anything. It is never committed. A missing identity or
+`ACE_CODESIGN_IDENTITY=-` fails before building; ad-hoc signatures cannot preserve permissions
+across changed builds. With a fixed bundle identifier and Apple Development identity, codesign's
+default designated requirement stays the same across checkouts and rebuilds. The GUI and launcher
+use that identity; the native client retains its checkout-specific identifier to reject accidental
+cross-checkout routing. The client does not own desktop permissions.
+
+After upgrading from checkout-specific bundle identities, remove their old **Ace-dev** entries
+from macOS Privacy & Security and approve the shared development app once. Stop and rebuild old
+checkout apps before using them; old binaries still carry their old identities. Do not reset
+permissions on each run or switch signing certificates between checkouts. Canary remains a
+separate app with its own grant.
 
 On first launch, press Cmd+O to open a project folder. Verify that the dashboard opens with no
 provider key and that opening a folder creates no channel. Add a provider key in Settings before
@@ -189,6 +203,12 @@ and replacement, picker cancellation, and starting a channel. Quit and run it ag
 history should remain available.
 
 ### Installed Ace-dev
+
+This helper-testing mode cannot coexist with source dev builds. They share the same app identity,
+and macOS can resolve a registered helper from another copy even though source apps never
+register it. For routine development, use `bun desktop dev` alongside installed Canary. Before
+switching from installed Ace-dev to source development, stop Ace Helper in Settings → This Mac,
+quit Ace-dev, and remove its installed bundle. Keep its data directories.
 
 The installed `/Applications/Ace-dev.app` uses `dev.ace.desktop.dev`, port 4141, the `ace-dev`
 catalog and Keychain service, and `~/Library/Application Support/Ace-dev` for preferences. It runs

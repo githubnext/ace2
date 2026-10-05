@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
 	copyFileSync,
 	mkdirSync,
@@ -8,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { run, sparkle } from "./sparkle";
@@ -28,7 +29,25 @@ const app = readdirSync(build).find((name) => name.endsWith(".app"));
 if (!app) throw new Error("The Ace application bundle is missing");
 const contents = join(build, app, "Contents");
 const bin = join(contents, "MacOS");
+// Runtime isolation must not change the macOS identity that owns development permissions.
+const profile = channel === "dev" && !process.env.ACE_DEV_INSTALL
+	? createHash("sha256").update(dirname(import.meta.dirname)).digest("hex").slice(0, 8)
+	: undefined;
+writeFileSync(join(contents, "Resources", "profile.json"), JSON.stringify({ profile }));
 const native = fileURLToPath(new URL("../native", import.meta.url));
+if (channel === "dev") {
+	run([
+		"xcrun",
+		"clang",
+		"-fobjc-arc",
+		"-mmacosx-version-min=15.0",
+		"-framework",
+		"AppKit",
+		join(native, "dev.m"),
+		"-o",
+		join(bin, "ace-dev-launcher"),
+	]);
+}
 const swift = Bun.spawnSync(["xcrun", "swift", "--version"]);
 const swiftVersion = /Swift version (\d+)\.(\d+)/.exec(swift.stdout.toString());
 if (
@@ -56,6 +75,8 @@ run([
 	"--no-compile-autoload-bunfig",
 	"--define",
 	`ACE_IDENTIFIER=${JSON.stringify(identifier)}`,
+	"--define",
+	`ACE_PROFILE=${JSON.stringify(profile) || "undefined"}`,
 	"--outfile",
 	join(bin, "Ace Helper"),
 ]);
