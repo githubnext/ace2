@@ -387,8 +387,11 @@ function demoteMentions(view: EditorView, name: string) {
 	view.state.doc.descendants((node, pos) => {
 		if (!isMention(node, name)) return;
 		let from = tr.mapping.map(pos);
-		tr.replaceWith(from, from + node.nodeSize, schema.text(node.attrs.name));
 		changed = true;
+		let end = from + node.nodeSize;
+		// The leading mention is the mode's marker, not the person's words; leaving the mode drops it.
+		if (pos === 1) tr.delete(from, tr.doc.textBetween(end, end + 1) === " " ? end + 1 : end);
+		else tr.replaceWith(from, end, schema.text(node.attrs.name));
 	});
 	if (changed) view.dispatch(tr);
 	return changed;
