@@ -60,8 +60,9 @@ export async function open(
 	return {
 		opened: { terminal: terminal.id, cwd: terminal.cwd },
 		attach(listener) {
-			for (const chunk of terminal.chunks) {
-				listener({ terminal: terminal.id, data: Buffer.from(chunk).toString("base64") });
+			if (terminal.size) {
+				const data = Buffer.concat(terminal.chunks).toString("base64");
+				listener({ terminal: terminal.id, data, replay: true });
 			}
 			terminal.listeners.add(listener);
 			return () => release(terminal, listener);
