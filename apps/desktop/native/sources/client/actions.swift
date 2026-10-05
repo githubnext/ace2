@@ -6,7 +6,7 @@ import PeekabooFoundation
 
 private struct ActionRequest: Decodable {
 	enum Operation: String, Decodable {
-		case click, type, key, select, scroll, drag
+		case click, type, key, insert, select, scroll, drag
 	}
 
 	let op: Operation
@@ -94,6 +94,10 @@ private struct ActionRequest: Decodable {
 					throw ActionError("Choose text, cursor_before, or cursor_after selection.")
 				}
 			}
+		case .insert:
+			guard element == nil, key == nil, let text, !text.isEmpty, text.utf16.count <= 8192 else {
+				throw ActionError("Insert nonempty text of at most 8,192 UTF-16 code units into the observed focused control.")
+			}
 		case .key:
 			guard element == nil, text == nil, let key, keyboardKeys.contains(key) else {
 				throw ActionError("Choose a supported navigation key, letter, digit, or f1 through f12.")
@@ -166,6 +170,10 @@ private struct ActionResult: Encodable {
 	var native_outcome: DesktopActionOutcome?
 	var selected_leaf_evidence: [DesktopSelectedLeafEvidence]?
 	var selection: TextSelectionResult?
+	var clipboard_changed: Bool?
+	var clipboard_cleanup: String?
+	var clipboard_ownership: String?
+	var consumption: String?
 	var requires_fresh_observation = false
 	var error: ActionMessage?
 }
@@ -174,6 +182,7 @@ private struct ActionMessage: Encodable {
 	let code: String
 	let message: String
 	var hint: String?
+	var cause: String?
 }
 
 private struct ActionReply: Encodable {
@@ -220,8 +229,30 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			}
 			guard observed.knownIsEnabled != false else { throw ActionError("The observed element is disabled.") }
 		}
-		if request.op == .key, context.focusedElement == nil {
+		if request.op == .key || request.op == .insert, context.focusedElement == nil {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
+		}
+		if request.op == .insert {
+			// The GUI owns the snapshot lease and clipboard transaction through consumption and cleanup.
+			invoked = true
+			let insertion = try await client.literalInsert(snapshot: request.snapshot, text: request.text!)
+			result.outcome = insertion.outcome
+			result.native_outcome = insertion.native_outcome
+			result.clipboard_changed = insertion.clipboard_changed
+			result.clipboard_cleanup = insertion.clipboard_cleanup
+			result.clipboard_ownership = insertion.clipboard_ownership
+			result.consumption = insertion.consumption
+			result.requires_fresh_observation = insertion.requires_fresh_observation
+			if let error = insertion.error {
+				result.error = ActionMessage(code: error.code, message: error.message, hint: error.hint, cause: error.cause)
+			}
+			guard let target = insertion.target_receipt,
+				target.pid == identity.ownerProcessIdentifier, target.window_id == identity.windowID,
+				target.process_start_identity_decimal == String(identity.ownerProcessStartIdentity)
+			else {
+				throw ActionError("Literal insertion returned without its expected exact-window receipt. Inspect before retrying.")
+			}
+			return try JSONEncoder().encode(ActionReply(data: result, target_receipt: receipt))
 		}
 		let window = try UIAutomationTarget.ExactWindow(identity: identity, bounds: bounds)
 		var scrollWindow: UIAutomationTarget.ExactWindow?
@@ -289,6 +320,8 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 					focusedElement: context.focusedElement!
 				)
 			))
+		case .insert:
+			throw ActionError("Literal insertion must use its GUI-owned transaction.")
 		case .select:
 			let selected = try await client.selectText(
 				target: request.element!,

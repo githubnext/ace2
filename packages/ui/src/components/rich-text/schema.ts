@@ -1,7 +1,10 @@
 import { Schema } from "prosemirror-model";
 import { schema as base } from "prosemirror-markdown";
 
-const nodes = base.spec.nodes.addBefore("text", "emoji", {
+const nodes = base.spec.nodes.update("hard_break", {
+	...base.spec.nodes.get("hard_break")!,
+	leafText: () => "\n",
+}).addBefore("text", "emoji", {
 	group: "inline",
 	inline: true,
 	atom: true,

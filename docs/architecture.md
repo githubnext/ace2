@@ -178,7 +178,7 @@ Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
 signing team. Tools expose application and window inventories, observation, element or screenshot
-clicks, scrolling, atomic drags, replacement of editable field values, text selection, and keys or shortcuts. Screenshot
+clicks, scrolling, atomic drags, replacement of editable field values, text selection/insertion, and keys or shortcuts. Screenshot
 points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
 Separate activation, focus, restore, move, and resize tools accept generation-bound inventory targets, with exact
@@ -187,6 +187,14 @@ activation and focus explicitly change the foreground desktop. Inspection never 
 implicitly. App-only action receipts refresh inventories without inventing a selected window.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed
 window targets; the original bounds remain part of the pre-mutation identity check.
+Literal insertion uses one GUI-owned temporary plain-text paste, with the existing native mutation
+lane and clipboard transaction gate held through delivery and cleanup. The GUI preserves bounded
+prior clipboard contents privately and restores them only when no paste key was sent or the expected
+edit was observed in the same control. Uncertain consumption leaves the replacement or preserves newer contents; no
+restore journal or automatic retry is created. Clipboard read policy is reported in This Mac.
+The same clipboard gate retains a content-free reservation while a dispatched paste is unresolved.
+Later automated writes require observed consumption or termination of the exact receiver process
+generation. The reservation survives GUI restart; clipboard contents and comparison state do not.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
