@@ -32,9 +32,12 @@ async function exited(pid: number): Promise<void> {
 	}, "Ace Helper is still shutting down. Check its log before trying again.");
 }
 
-export function helper(identifier: string) {
+export function helper(identifier: string, lane: boolean) {
 	const agent = service(identifier);
 	const receipt = join(config.home, "desktop-update.json");
+	// A checkout's build uses its own source host; a registered service would outlive that code.
+	const isolated =
+		`This development build only uses the Ace host started by bun run dev from its checkout, on port ${config.port}.`;
 	let changing = false;
 
 	async function info() {
@@ -53,6 +56,7 @@ export function helper(identifier: string) {
 	}
 
 	async function start(): Promise<void> {
+		if (lane) throw new Error(isolated);
 		if (agent.status() === "unregistered") agent.register();
 		if (agent.status() === "approval") {
 			agent.settings();
@@ -136,6 +140,7 @@ export function helper(identifier: string) {
 			Utils.showItemInFolder(join(config.home, "helper.log"));
 			return status();
 		}
+		if (lane) throw new Error(isolated);
 		if (changing) throw new Error("Ace Helper is already changing state. Wait for it to finish.");
 		changing = true;
 		try {

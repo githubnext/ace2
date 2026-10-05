@@ -10,6 +10,7 @@ it. pi-durable owns the database format, messages, runs, tool results, chats, an
 | Stable channel catalog, databases, and lanes | `~/.local/state/ace/channels/<id>/`                   |
 | Canary channel catalog, databases, and lanes | `~/.local/state/ace-canary/channels/<id>/`            |
 | Development channels                         | `~/.local/state/ace-dev/channels/<id>/`               |
+| A checkout's development build               | `~/.local/state/ace-dev-<hash>/channels/<id>/`        |
 | Opened projects                              | `<ACE_HOME>/projects.json`                            |
 | Preferences on macOS                         | `~/Library/Application Support/Ace/settings.json`     |
 | Provider credentials                         | OS Keychain; never in channel metadata or preferences |

@@ -23,7 +23,8 @@ its own macOS grants. The development, canary, and stable apps have separate ide
 
 Source builds need Swift 6.2 or later and a valid Apple Development or Developer ID signing
 identity to use native desktop tools. The embedded bridge authenticates its bundled client against
-the app's signing team and exact client identifier. Set `ACE_CODESIGN_IDENTITY` when building.
+the app's signing team and exact client identifier. Set the development signing identity described in
+[UI testing](desktop.md#ui-testing) when building.
 For a host running from source, set `ACE_DESKTOP_CLIENT` to the signed app's
 `Contents/MacOS/ace-desktop-client` and use the same `ACE_HOME` as that app. Normal packaged hosts
 find the client alongside Ace Helper automatically.

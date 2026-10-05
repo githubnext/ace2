@@ -4,6 +4,18 @@ import { fileURLToPath } from "node:url";
 
 import { run } from "./sparkle";
 
+/**
+ * Development builds sign with ACE_CODESIGN_IDENTITY or this repository's local Git setting
+ * `ace.codesignIdentity`, which every worktree shares, so background builds sign alike.
+ */
+export function devIdentity(): string {
+	if (process.env.ACE_CODESIGN_IDENTITY) return process.env.ACE_CODESIGN_IDENTITY;
+	const configured = Bun.spawnSync(["git", "config", "--get", "ace.codesignIdentity"], {
+		cwd: fileURLToPath(new URL(".", import.meta.url)),
+	});
+	return configured.stdout.toString().trim() || "-";
+}
+
 export function sign(app: string, identity: string, release = false): void {
 	const bin = join(app, "Contents", "MacOS");
 	const frameworks = join(app, "Contents", "Frameworks");

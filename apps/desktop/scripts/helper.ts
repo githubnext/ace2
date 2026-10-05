@@ -46,7 +46,7 @@ run([
 	"--no-compile-autoload-dotenv",
 	"--no-compile-autoload-bunfig",
 	"--define",
-	`ACE_CHANNEL=${JSON.stringify(channel)}`,
+	`ACE_IDENTIFIER=${JSON.stringify(identifier)}`,
 	"--outfile",
 	join(bin, "Ace Helper"),
 ]);
