@@ -25,7 +25,7 @@ export type DesktopManagement =
 
 export type DesktopRequest =
 	| DesktopManagement
-	| { op: "apps" }
+	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
@@ -189,10 +189,13 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_apps",
 				description:
-					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
-				parameters: Type.Object({}),
+					"List native applications on this channel's execution host. Optional query searches names and bundle IDs case-insensitively before result truncation; use it to find apps omitted from a large inventory. A query must contain non-whitespace text and at most 256 characters. Filter counts cover only the native inventory returned by this call; native completeness and truncation still apply. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
+				parameters: Type.Object({
+					query: Type.Optional(Type.String({ minLength: 1, maxLength: 256, pattern: "\\S" })),
+				}),
 				replay: "safe",
-				execute: async (_args, _api, context) => result(await execute({ op: "apps" }, context)),
+				execute: async ({ query }, _api, context) =>
+					result(await execute({ op: "apps", query }, context)),
 			}),
 			defineTool({
 				name: "desktop_windows",
