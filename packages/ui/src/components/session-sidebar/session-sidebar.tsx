@@ -14,6 +14,12 @@ import { cn } from "../../lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/avatar";
 import { Button } from "../../ui/button";
 import {
+	ContextMenu,
+	ContextMenuContent,
+	ContextMenuItem,
+	ContextMenuTrigger,
+} from "../../ui/context-menu";
+import {
 	DropdownMenu,
 	DropdownMenuContent,
 	DropdownMenuGroup,
@@ -27,7 +33,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../
 import { isSidebarRowSelected } from "./selection";
 import { IconArchive, IconCheck, IconChevronDown, IconPlus, IconX } from "../../icons";
 
-export type SessionSidebarGroupId = "pinned" | "mine" | "team" | "archived";
+export type SessionSidebarGroupId = "pinned" | "mine" | "team" | "inactive" | "archived";
 
 export type SessionSidebarGroup = {
 	id: SessionSidebarGroupId;
@@ -57,6 +63,8 @@ export type SessionSidebarProps = Omit<ComponentPropsWithRef<"aside">, "children
 	onPin?: (row: SidebarRow) => void;
 	onUnpin?: (row: SidebarRow) => void;
 	onArchive?: (row: SidebarRow) => void;
+	/** When provided, the channels header's context menu offers "Archive inactive". */
+	onArchiveInactive?: () => void;
 	onFork?: (row: SidebarRow) => void;
 	onInfo?: (row: SidebarRow) => void;
 	onLeave?: (row: SidebarRow) => void;
@@ -416,6 +424,7 @@ function Group({
 	onPin,
 	onUnpin,
 	onArchive,
+	onArchiveInactive,
 	onFork,
 	onInfo,
 	onLeave,
@@ -440,6 +449,7 @@ function Group({
 	onLeave?: (row: SidebarRow) => void;
 	onDelete?: (row: SidebarRow) => void;
 	onRename?: (row: SidebarRow) => void;
+	onArchiveInactive?: () => void;
 	onToggleGroup?: (id: SessionSidebarGroupId) => void;
 	onNewSession?: () => void;
 	onContinuePr?: () => void;
@@ -465,6 +475,7 @@ function Group({
 	let header = useRef<HTMLDivElement>(null);
 	let panel = useRef<HTMLDivElement>(null);
 	let action = group.id === "mine" ? onNewSession : undefined;
+	let archiveInactive = group.id === "mine" ? onArchiveInactive : undefined;
 	let create = useCallback(() => {
 		if (collapsed) onToggleGroup?.(group.id);
 		action?.();
@@ -529,54 +540,66 @@ function Group({
 			)}
 		>
 			{showHeader && (
-				<div
-					ref={header}
-					data-group-header
-					className={cn(
-						"sticky top-0 z-20 ml-[5px] mr-[3px] flex h-7 w-[calc(100%-8px)] items-center gap-1 rounded-md border border-transparent bg-transparent pr-1 pl-[9px] text-xs font-medium text-muted-foreground shadow-none transition-[background-color,border-color,box-shadow,backdrop-filter] duration-150 data-[shadow=true]:border-muted-foreground/20 data-[shadow=true]:bg-sidebar/90 data-[shadow=true]:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.12),0_3px_6px_-2px_rgb(0_0_0/0.1),0_8px_14px_-10px_rgb(0_0_0/0.18)] data-[shadow=true]:backdrop-blur-lg data-[shadow=true]:hover:border-muted-foreground/25 data-[shadow=true]:hover:bg-sidebar/95 data-[shadow=true]:hover:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.14),0_3px_6px_-2px_rgb(0_0_0/0.12),0_8px_14px_-10px_rgb(0_0_0/0.22)] dark:data-[shadow=true]:border-white/10 dark:data-[shadow=true]:bg-secondary/85 dark:data-[shadow=true]:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.32),0_4px_8px_-4px_rgb(0_0_0/0.36)] dark:data-[shadow=true]:hover:border-white/15 dark:data-[shadow=true]:hover:bg-secondary/90 dark:data-[shadow=true]:hover:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.38),0_4px_8px_-4px_rgb(0_0_0/0.44)]",
-						archived && "text-muted-foreground/70",
-						groupHeaderClassName,
-					)}
-				>
-					<button
-						type="button"
-						aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.label}`}
-						aria-expanded={!collapsed}
-						aria-controls={content}
-						onClick={() => onToggleGroup?.(group.id)}
-						className="group/header flex h-full min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-2 outline-offset-0 outline-transparent transition-colors duration-150 focus-visible:outline-ring/50"
-					>
-						<GroupHeaderContent
-							group={group}
-							collapsed={collapsed}
-						/>
-					</button>
-					{action && (
-						<div className="flex items-center gap-0.5">
-							<Tooltip>
-								<TooltipTrigger
-									render={
-										<Button
-											size="icon-sm"
-											variant="ghost"
-											className={actionButtonClassName}
-											aria-label="New channel"
-											onClick={create}
-										>
-											<IconPlus className="size-3.5" />
-										</Button>
-									}
-								/>
-								<TooltipContent side="right">New channel</TooltipContent>
-							</Tooltip>
-							<SessionOptions
-								className={actionButtonClassName}
-								onContinuePr={onContinuePr}
-								onStartIssue={onStartIssue}
+				<ContextMenu disabled={!archiveInactive}>
+					<ContextMenuTrigger
+						render={
+							<div
+								ref={header}
+								data-group-header
+								className={cn(
+									"sticky top-0 z-20 ml-[5px] mr-[3px] flex h-7 w-[calc(100%-8px)] items-center gap-1 rounded-md border border-transparent bg-transparent pr-1 pl-[9px] text-xs font-medium text-muted-foreground shadow-none transition-[background-color,border-color,box-shadow,backdrop-filter] duration-150 data-[shadow=true]:border-muted-foreground/20 data-[shadow=true]:bg-sidebar/90 data-[shadow=true]:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.12),0_3px_6px_-2px_rgb(0_0_0/0.1),0_8px_14px_-10px_rgb(0_0_0/0.18)] data-[shadow=true]:backdrop-blur-lg data-[shadow=true]:hover:border-muted-foreground/25 data-[shadow=true]:hover:bg-sidebar/95 data-[shadow=true]:hover:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.14),0_3px_6px_-2px_rgb(0_0_0/0.12),0_8px_14px_-10px_rgb(0_0_0/0.22)] dark:data-[shadow=true]:border-white/10 dark:data-[shadow=true]:bg-secondary/85 dark:data-[shadow=true]:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.32),0_4px_8px_-4px_rgb(0_0_0/0.36)] dark:data-[shadow=true]:hover:border-white/15 dark:data-[shadow=true]:hover:bg-secondary/90 dark:data-[shadow=true]:hover:shadow-[0_1px_2px_-1px_rgb(0_0_0/0.38),0_4px_8px_-4px_rgb(0_0_0/0.44)]",
+									archived && "text-muted-foreground/70",
+									groupHeaderClassName,
+								)}
 							/>
-						</div>
-					)}
-				</div>
+						}
+					>
+						<button
+							type="button"
+							aria-label={`${collapsed ? "Expand" : "Collapse"} ${group.label}`}
+							aria-expanded={!collapsed}
+							aria-controls={content}
+							onClick={() => onToggleGroup?.(group.id)}
+							className="group/header flex h-full min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pr-1 text-left outline-2 outline-offset-0 outline-transparent transition-colors duration-150 focus-visible:outline-ring/50"
+						>
+							<GroupHeaderContent
+								group={group}
+								collapsed={collapsed}
+							/>
+						</button>
+						{action && (
+							<div className="flex items-center gap-0.5">
+								<Tooltip>
+									<TooltipTrigger
+										render={
+											<Button
+												size="icon-sm"
+												variant="ghost"
+												className={actionButtonClassName}
+												aria-label="New channel"
+												onClick={create}
+											>
+												<IconPlus className="size-3.5" />
+											</Button>
+										}
+									/>
+									<TooltipContent side="right">New channel</TooltipContent>
+								</Tooltip>
+								<SessionOptions
+									className={actionButtonClassName}
+									onContinuePr={onContinuePr}
+									onStartIssue={onStartIssue}
+								/>
+							</div>
+						)}
+					</ContextMenuTrigger>
+					<ContextMenuContent className="inline-40">
+						<ContextMenuItem onClick={archiveInactive}>
+							<IconArchive className="size-3.5" />
+							Archive inactive
+						</ContextMenuItem>
+					</ContextMenuContent>
+				</ContextMenu>
 			)}
 			<AnimatePresence initial={false} mode="popLayout">
 				{!collapsed && (
@@ -802,6 +825,7 @@ export function SessionSidebar(
 		onPin,
 		onUnpin,
 		onArchive,
+		onArchiveInactive,
 		onFork,
 		onInfo,
 		onLeave,
@@ -875,6 +899,7 @@ export function SessionSidebar(
 		onPin,
 		onUnpin,
 		onArchive,
+		onArchiveInactive,
 		onFork,
 		onInfo,
 		onLeave,

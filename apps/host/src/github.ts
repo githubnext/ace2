@@ -1,10 +1,12 @@
 import type {
+	GithubCheck,
 	GithubComment,
 	GithubDetail,
 	GithubFile,
 	GithubItem,
 	GithubKind,
 	GithubList,
+	GithubPull,
 } from "@ace/channel/protocol";
 
 import { githubEnv } from "./keys";
@@ -46,6 +48,15 @@ type Detail = Item & {
 	changedFiles?: number;
 	reviewDecision?: string;
 };
+type Check =
+	| {
+		__typename: "CheckRun";
+		name: string;
+		detailsUrl?: string;
+		status: string;
+		conclusion: string;
+	}
+	| { __typename: "StatusContext"; context: string; targetUrl?: string; state: string };
 type File = {
 	filename: string;
 	previous_filename?: string;
@@ -258,6 +269,45 @@ export async function detail(
 			}
 			: {}),
 	};
+}
+
+function check(value: Check): GithubCheck {
+	if (value.__typename === "StatusContext") {
+		const state = value.state === "SUCCESS"
+			? "passed"
+			: ["FAILURE", "ERROR"].includes(value.state)
+			? "failed"
+			: "pending";
+		return { name: value.context, ...(value.targetUrl ? { url: value.targetUrl } : {}), state };
+	}
+	const state = value.status !== "COMPLETED"
+		? "pending"
+		: value.conclusion === "SUCCESS"
+		? "passed"
+		: ["NEUTRAL", "SKIPPED", "STALE"].includes(value.conclusion)
+		? "skipped"
+		: "failed";
+	return { name: value.name, ...(value.detailsUrl ? { url: value.detailsUrl } : {}), state };
+}
+
+/** The newest pull request whose head is `branch`, or null when there is none. */
+export async function pull(repo: string, branch: string): Promise<GithubPull | null> {
+	if (!branch || branch.startsWith("-")) throw new Error("Invalid branch name");
+	const [value] = await gh<(Item & { isDraft: boolean; statusCheckRollup: Check[] })[]>([
+		"pr",
+		"list",
+		"--repo",
+		repository(repo),
+		`--head=${branch}`,
+		"--state",
+		"all",
+		"--limit",
+		"1",
+		"--json",
+		`${FIELDS},isDraft,statusCheckRollup`,
+	]);
+	if (!value) return null;
+	return { ...item(value, "prs"), checks: value.statusCheckRollup.map(check) };
 }
 
 export async function files(repo: string, id: number): Promise<GithubFile[]> {

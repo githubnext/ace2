@@ -89,6 +89,10 @@ export {
 	type ScrollViewRange,
 } from "./components/scroll-view/scroll-view";
 export {
+	type DetailsFact,
+	type DetailsLink,
+	type DetailsPull,
+	type DetailsSubagent,
 	SessionDetailsView,
 	type SessionDetailsViewProps,
 } from "./components/session-details/session-details";
