@@ -18,10 +18,11 @@ const { channel, identifier, version } = await Bun.file(join(resources, "version
 	identifier: string;
 	version: string;
 };
-const lane = !!desktop(identifier);
-const helper = control(identifier, lane);
+const { profile } = await Bun.file(join(resources, "profile.json")).json() as { profile?: string };
+const lane = desktop(identifier, profile);
+const helper = control(identifier, !!lane);
 const updates = updater(helper, version, channel);
-const native = inspection(identifier);
+const native = inspection(profile ? `${identifier}.${profile}` : identifier);
 const url = appUrl();
 const secret = token();
 let window: BrowserWindow | undefined;
@@ -81,10 +82,7 @@ function show(action?: string): void {
 	}
 	const target = new URL(url);
 	if (action) target.hash = action;
-	window = new BrowserWindow({
-		title: "Ace",
-		titleBarStyle: "hiddenInset",
-		transparent: true,
+	const view = {
 		url: target.href,
 		navigationRules: JSON.stringify(["^*", `${url.origin}/*`]),
 		rpc,
@@ -94,8 +92,24 @@ function show(action?: string): void {
 		} });
 			Object.defineProperty(window, "__ACE_DESKTOP__", { configurable: true, value: true });
 		}`,
+	};
+	window = new BrowserWindow({
+		title: "Ace",
+		titleBarStyle: "hiddenInset",
+		transparent: true,
+		...(!lane ? view : {}),
 		frame: { width: 1100, height: 760, x: 160, y: 120 },
 	});
+	if (lane) {
+		// Electrobun 1.18.1 only forwards storage partitions through BrowserView.
+		window.webview.remove();
+		window.webviewId = new BrowserView({
+			...view,
+			windowId: window.id,
+			partition: `persist:ace-dev-${lane}`,
+			frame: { width: 1100, height: 760, x: 0, y: 0 },
+		}).id;
+	}
 	windowStyle.setup(window.ptr);
 	window.setWindowButtonPosition(17, 13);
 	windowStyle.lights(window.ptr, false);
