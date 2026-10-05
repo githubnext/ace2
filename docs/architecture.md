@@ -177,8 +177,9 @@ Agents inspect and operate native windows through an injected desktop capability
 Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility, Screen
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
-signing team. Tools expose application and window inventories, observation, single element clicks,
-replacement of editable field values, text selection, and keys or shortcuts. Actions use background delivery bound to a
+signing team. Tools expose application and window inventories, observation, element or screenshot
+clicks, replacement of editable field values, text selection, and keys or shortcuts. Screenshot
+points are normalized and mapped through the snapshot's native capture geometry. Actions use background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
