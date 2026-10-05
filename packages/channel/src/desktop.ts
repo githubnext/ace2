@@ -143,7 +143,7 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_apps",
 				description:
-					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility values are omitted when their is_active_known or is_hidden_known flag is false; unknown does not mean inactive or visible.",
+					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
 				parameters: Type.Object({}),
 				replay: "safe",
 				execute: async (_args, _api, context) => result(await execute({ op: "apps" }, context)),
@@ -224,7 +224,7 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_key",
 				description:
-					"Press and release one key or shortcut in the exact window and focused control bound by a fresh desktop_inspect result. Optional modifiers are command, control, option, and shift; each may appear once. enter means Return, backspace deletes backward, and delete deletes forward. Letter/digit keys use the keyboard layout; use desktop_insert for literal text. Pass snapshot_id as snapshot. Unsupported shortcuts and stale targets are refused, without global input or activation. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input. No keys remain held across calls.",
+					"Press and release one key or shortcut in the exact window and focused control bound by a fresh desktop_inspect result. Optional modifiers are command, control, option, and shift; each may appear once. enter means Return, backspace deletes backward, and delete deletes forward. Letter/digit keys use the keyboard layout. Pass snapshot_id as snapshot. Unsupported shortcuts and stale targets are refused, without global input or activation. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input. No keys remain held across calls.",
 				parameters: Type.Object({
 					snapshot,
 					key: Type.Union(DESKTOP_KEYS.map((key) => Type.Literal(key))),

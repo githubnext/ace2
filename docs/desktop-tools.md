@@ -30,10 +30,7 @@ find the client alongside Ace Helper automatically.
 
 ## Tools
 
-- `desktop_apps` lists running native applications and their process IDs.
-  Activity and visibility come from separate observations of the same process generation.
-  When unavailable, their `is_active_known` or `is_hidden_known` flag is false and the corresponding
-  value is omitted; missing metadata does not remove the application from the inventory.
+- `desktop_apps` lists running native applications, their process IDs, and observed activity and visibility.
 - `desktop_windows` lists windows for an application process ID.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
@@ -56,8 +53,13 @@ find the client alongside Ace Helper automatically.
   `shift` modifiers. Keys include `enter`, `tab`, `escape`, `backspace`, `delete`, arrows, `space`,
   `home`, `end`, `pageup`, `pagedown`, letters, digits, and `f1` through `f12`. Each modifier may
   appear once. `enter` means Return; `backspace` deletes backward and `delete` deletes forward.
-  Letter and digit keys follow the keyboard layout; use `desktop_insert` for literal text.
+  Letter and digit keys follow the keyboard layout.
   Unsupported shortcuts are refused. A call never leaves keys held for a later call.
+
+Application activity and visibility are matched to the inventory's exact process generation.
+Use `is_active` only when `is_active_known` is true, and `is_hidden` only when
+`is_hidden_known` is true. Unknown values are omitted, with metadata warnings kept separate from
+inventory completeness and warnings.
 
 Choose the application from the inventory and the window from that application's window list.
 Inspect the window before acting. Pass its `snapshot_id` as `snapshot`; click, type, and select also take

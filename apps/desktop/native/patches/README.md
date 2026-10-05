@@ -14,18 +14,6 @@ input.
 Ambiguous native press failures retain an indeterminate outcome, preventing Peekaboo from
 falling back to another click after input may already have been delivered.
 
-`peekaboo-typing.patch` addresses
-[stale keyboard focus being reported as uncertain delivery](https://github.com/githubnext/ace2/issues/69).
-The exact-window typing service checks the observed focused control before each input unit.
-Its initial, read-only validator can fail before any input is sent, but an error without an action
-outcome loses that fact when the bridge conservatively maps mutation failures to an unknown outcome.
-
-The patch converts typed invalid-input failures from that initial focus validator to an attributed
-pre-dispatch refusal. It preserves the original diagnostic and checks cancellation before making
-that conversion. Other errors, including existing action failures and indeterminate delivery,
-pass through unchanged. The continuation validator and delivery paths are unchanged, so failure
-after any emitted input remains uncertain. Target and focused-control validation are not relaxed.
-
 `peekaboo-insert.patch` addresses
 [literal newlines submitting web composers](https://github.com/githubnext/ace2/issues/76).
 Unicode keyboard events are still keyboard events: WebKit can treat a newline as Return.
