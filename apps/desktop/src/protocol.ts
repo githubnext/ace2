@@ -11,6 +11,17 @@ export type NativeState = {
 	accessibility: boolean;
 	screenRecording: boolean;
 	eventSynthesizing: boolean;
+	clipboardRead: {
+		policy:
+			| "default"
+			| "ask"
+			| "always_allow"
+			| "always_deny"
+			| "unavailable_on_this_os"
+			| "unknown";
+		readAdmitted: boolean;
+		policyAvailable: boolean;
+	};
 	error?: string;
 };
 

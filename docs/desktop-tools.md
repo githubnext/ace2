@@ -1,7 +1,7 @@
 # Native desktop tools
 
 Ace's pi harness can inspect applications and windows, activate apps, focus or restore windows, click observed controls, replace editable
-field values, select text, send keys or shortcuts, scroll, and drag on the machine running the channel's tools. It uses
+field values, select and insert text, send keys or shortcuts, scroll, and drag on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -13,6 +13,9 @@ separate Peekaboo installation or permission grant. In Ace Settings, open This M
 Accessibility and Screen Recording. macOS grants those permissions to Ace on that machine.
 Keyboard and pointer event delivery also require Event Synthesizing, which Ace reports and requests separately.
 Clicking Accessibility controls, selecting text, and replacing field values use Accessibility permission.
+Literal insertion temporarily uses the clipboard. It requires allowed clipboard reading so Ace can
+preserve the previous contents; This Mac shows that status without reading clipboard contents.
+On macOS versions with per-app clipboard controls, allow Ace in System Settings before inserting.
 
 Keep Ace open on the machine running the tools. Closing its window is fine, but quitting Ace
 stops native desktop tools even while Ace Helper keeps channels running. Each execution host needs
@@ -64,6 +67,13 @@ find the client alongside Ace Helper automatically.
   `suffix` match immediately adjacent text to distinguish repeated occurrences; ambiguous matches
   are refused. Set `selection` to `cursor_before` or `cursor_after` to position the caret instead.
   The default is `text`, which selects the match.
+- `desktop_insert` inserts literal text at the current caret or replaces the current selection
+  in the control focused in the observation, preserving the rest of the field. The GUI sends the
+  entire string through one temporary clipboard paste; newlines are text rather than Return keys.
+  It requires readable text and selection in a control that accepts the supplied text. Both the
+  original and resulting field value must fit 65,536 UTF-16 units. The caret can change after
+  inspection. Unsupported text or selection is refused before changing the clipboard;
+  insertion never falls back to synthesized typing.
 - `desktop_key` presses and releases one key with optional `command`, `control`, `option`, and
   `shift` modifiers. Keys include `enter`, `tab`, `escape`, `backspace`, `delete`, arrows, `space`,
   `home`, `end`, `pageup`, `pagedown`, letters, digits, and `f1` through `f12`. Each modifier may
@@ -101,8 +111,8 @@ Points use normalized image coordinates: `x` is the fraction from the screenshot
 is its center. Normalized points retain their meaning when Ace resizes the screenshot. The native
 bridge maps them through the snapshot's own capture geometry and exact-window receipt, refusing
 missing geometry, points outside the window, or a window moved or resized since observation. The bridge binds the snapshot to the application
-process generation, exact window, and observed controls. Keys additionally require the same
-focused control. Selecting text does not activate its window; inspect the current focus before sending keys.
+process generation, exact window, and observed controls. Keys and insertion additionally require the same
+focused control. Selecting text does not activate its window; inspect the current focus before inserting or sending keys.
 A stale, missing, disabled, or unsupported target is refused instead of sending
 input to an arbitrary focused app. Window content is observed data, not instructions.
 
@@ -112,12 +122,17 @@ returns a fresh observation when available. If that inspection fails, the result
 completed action and explains the observation failure; it does not imply that the input should
 be repeated.
 
-Control and keyboard tools use targeted background delivery. They do not activate an app or fall back to global
-mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
-physical pointer. The target app can still respond by changing its own state or opening a window.
+Control and keyboard tools use targeted background delivery without bringing an app to the front.
+Pointer actions do not move the physical pointer. Insertion sends Cmd+V
+directly when the exact receiving window belongs to the active frontmost app, revalidating that
+app and the same editor and selection before each input unit. Other targets require target-only
+activation and a guarded click in blank native title-bar chrome before the chord. Windows without
+supported native chrome can refuse this preparation. The selected route never changes after
+input begins. There is no fallback to global mouse or keyboard input. The target app can still respond by
+changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Literal insertion,
-clipboard operations, foreground interaction, application launch, window geometry/close, menus, and dialogs remain later slices of
+emulated with held keys or mouse buttons across calls. Clipboard operations, foreground interaction,
+application launch, window geometry/close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and
@@ -149,6 +164,29 @@ Action results distinguish three outcomes:
   was missing, or the workspace was already offline.
 - `unknown`: input may have been delivered or partially delivered, but its outcome is uncertain.
   This includes losing the workspace connection while the action is in flight.
+
+Insertion reports input delivery, `consumption`, `clipboard_changed`, `clipboard_cleanup`, and
+`clipboard_ownership` separately. Direct native delivery reports `window_targeted_events` with four units: Command and V
+pressed and released once. Prepared delivery reports `composite`, combining window preparation and
+the chord. Both use `background` delivery mode because events target the exact process and window.
+Partial preparation remains an uncertain mutation even if the paste chord was not reached. Ace keeps the bounded
+prior clipboard contents only in the GUI's memory. It restores them if the paste key was never
+posted, or after observing a meaningful expected text or selection change in the exact receiving
+control. A delay or a value that already matched before insertion does not prove consumption.
+If delivery may still be pending and the edit cannot be confirmed, Ace leaves the replacement on
+the clipboard rather than restoring private contents that a delayed paste might read. It preserves
+newer copied contents. The result reports this as unverified consumption and retained replacement;
+no later automatic restore is scheduled. Abrupt GUI termination can also prevent restoration.
+Prior clipboard contents never enter channel history.
+
+Before sending the paste key, the existing clipboard gate reserves the clipboard for the exact
+receiving process generation. Unverified consumption leaves `clipboard_ownership: reserved`, so
+another channel cannot replace the payload. A later request can release that reservation after
+read-only verification of the intended edit, or confirmed termination of the original process.
+This never repeats input or restores the old clipboard later. The gate persists only the target
+identity and reservation metadata, with no clipboard contents or hashes. After a GUI restart,
+the private verification state is gone and the reservation remains until the original process
+generation ends. Ordinary human copies remain outside this coordination and are preserved.
 
 Pi records the action's intent before execution and never automatically replays it after a
 restart. It stores outcomes and interruption guidance in its existing tool history; Ace does not

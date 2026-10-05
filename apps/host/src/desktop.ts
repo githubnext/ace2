@@ -374,6 +374,12 @@ function validateAction(request: DesktopAction) {
 		}
 		return;
 	}
+	if (request.op === "insert") {
+		if (typeof request.text !== "string" || !request.text || request.text.length > 8192) {
+			throw new Error("Inserted text must contain 1 to 8192 UTF-16 code units.");
+		}
+		return;
+	}
 	if (typeof request.element !== "string" || !request.element || request.element.length > 256) {
 		throw new Error("Choose an element ID from the inspected snapshot.");
 	}
@@ -431,7 +437,14 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 	let text = JSON.stringify({ action: data });
 	if (Buffer.byteLength(text) > MAX_TEXT) {
 		text = JSON.stringify({
-			action: { outcome, target_receipt: data.target_receipt },
+			action: {
+				outcome,
+				target_receipt: data.target_receipt,
+				clipboard_changed: data.clipboard_changed,
+				clipboard_cleanup: data.clipboard_cleanup,
+				clipboard_ownership: data.clipboard_ownership,
+				consumption: data.consumption,
+			},
 			warning: "Native action metadata exceeded the result limit. Inspect the current state.",
 		});
 	}
@@ -620,6 +633,7 @@ export const desktop: Desktop = async (request, context) => {
 			"click",
 			"type",
 			"key",
+			"insert",
 			"select",
 			"scroll",
 			"drag",

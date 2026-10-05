@@ -1,4 +1,5 @@
 import AceSigning
+import AppKit
 import ApplicationServices
 import CoreGraphics
 import Darwin
@@ -12,6 +13,7 @@ private struct Status: Encodable {
 	var accessibility = false
 	var screenRecording = false
 	var eventSynthesizing = false
+	var clipboardRead = ClipboardPolicy()
 }
 
 private final class State: @unchecked Sendable {
@@ -32,6 +34,7 @@ private final class State: @unchecked Sendable {
 		result.accessibility = AXIsProcessTrusted()
 		result.screenRecording = CGPreflightScreenCaptureAccess()
 		result.eventSynthesizing = result.eventSynthesizing || CGPreflightPostEventAccess()
+		result.clipboardRead = ClipboardPolicy.current()
 		return result
 	}
 
@@ -67,7 +70,7 @@ private final class Desktop {
 						.listApplications, .listWindows, .desktopObservation,
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
-						.selectText, .targetedScroll, .exactWindowDrag,
+						.selectText, .literalInsert, .targetedScroll, .exactWindowDrag,
 						.activateApplication, .focusWindow, .restoreWindow,
 					],
 					hostKind: .gui,
@@ -143,5 +146,26 @@ public func permission(_ kind: UnsafePointer<CChar>) {
 		default:
 			break
 		}
+	}
+}
+
+private struct ClipboardPolicy: Encodable {
+	var policy = "unknown"
+	var readAdmitted = false
+	var policyAvailable = false
+
+	static func current() -> ClipboardPolicy {
+		guard #available(macOS 15.4, *) else {
+			return .init(policy: "unavailable_on_this_os", readAdmitted: true, policyAvailable: false)
+		}
+		let policy: String
+		switch NSPasteboard.general.accessBehavior {
+		case .default: policy = "default"
+		case .ask: policy = "ask"
+		case .alwaysAllow: policy = "always_allow"
+		case .alwaysDeny: policy = "always_deny"
+		@unknown default: policy = "unknown"
+		}
+		return .init(policy: policy, readAdmitted: policy == "always_allow", policyAvailable: true)
 	}
 }

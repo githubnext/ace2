@@ -52,6 +52,7 @@ export type DesktopRequest =
 		duration_ms?: number;
 	}
 	| { op: "type"; snapshot: string; element: string; text: string }
+	| { op: "insert"; snapshot: string; text: string }
 	| {
 		op: "select";
 		snapshot: string;
@@ -142,7 +143,19 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" | "scroll" | "drag" | "activate" | "focus" | "restore" }
+	{
+		op:
+			| "click"
+			| "type"
+			| "key"
+			| "insert"
+			| "select"
+			| "scroll"
+			| "drag"
+			| "activate"
+			| "focus"
+			| "restore";
+	}
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -155,7 +168,8 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
-		|| request.op === "select" || request.op === "scroll" || request.op === "drag"
+		|| request.op === "insert" || request.op === "select" || request.op === "scroll"
+		|| request.op === "drag"
 		|| isDesktopManagement(request);
 }
 
@@ -344,6 +358,16 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async (args, api, context) => act({ op: "select", ...args }, api, context),
+			}),
+			defineTool({
+				name: "desktop_insert",
+				description:
+					"Insert literal text at the current caret or replace the current selection in the control focused in a fresh desktop_inspect result, preserving surrounding text. The GUI sends the entire Unicode/multiline string through one temporary clipboard paste bound to the exact process, window, and focused control; it never turns newlines into Enter keys or falls back to typing. Requires readable text/selection and allowed macOS clipboard reading to preserve prior contents. The caret/selection can change after inspection. Clipboard restoration requires a meaningful observed edit; after uncertain delivery, the replacement may remain on the clipboard and newer copied contents are preserved. Read consumption, clipboard_cleanup, and clipboard_ownership separately from delivery. Reserved ownership refuses later automated clipboard writes until the edit is verified or the exact receiving process exits; restarting Ace does not silently clear it. An exact receiver in the active frontmost app uses the targeted paste chord directly. Other targets require a guarded blank native title-bar click that preserves the editor and selection; unsupported window chrome is refused. The chosen route never changes after input begins and does not bring the app to the front. Original and resulting field values must fit 65,536 UTF-16 units. Pass snapshot_id as snapshot. The snapshot is single-use and input is never automatically replayed. Inspect after uncertain delivery before another action.",
+				parameters: Type.Object({ snapshot, text: Type.String({ minLength: 1, maxLength: 8192 }) }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ snapshot, text }, api, context) =>
+					act({ op: "insert", snapshot, text }, api, context),
 			}),
 			defineTool({
 				name: "desktop_key",
