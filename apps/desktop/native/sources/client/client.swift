@@ -28,6 +28,7 @@ private enum Client {
 			|| (operation == "inspect" && (args.count == 5 || args.count == 6))
 			|| (operation == "action" && args.count == 2)
 			|| (operation == "management" && args.count == 2)
+			|| (operation == "clipboard" && args.count == 2)
 		else { throw ClientError.usage }
 		let identity = try SigningIdentity.current()
 		let client = PeekabooBridgeClient(
@@ -48,6 +49,8 @@ private enum Client {
 		switch operation {
 		case "action":
 			return try await nativeAction(client)
+		case "clipboard":
+			return try await nativeClipboard(client)
 		case "management":
 			return try await nativeManagement(client)
 		case "apps":

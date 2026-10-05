@@ -27,6 +27,8 @@ export type DesktopManagement =
 
 export type DesktopRequest =
 	| DesktopManagement
+	| { op: "clipboard-read" }
+	| { op: "clipboard-write"; text: string }
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
@@ -158,7 +160,8 @@ export type DesktopAction = Extract<
 			| "focus"
 			| "restore"
 			| "move"
-			| "resize";
+			| "resize"
+			| "clipboard-write";
 	}
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
@@ -173,7 +176,7 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
 		|| request.op === "insert" || request.op === "select" || request.op === "scroll"
-		|| request.op === "drag"
+		|| request.op === "drag" || request.op === "clipboard-write"
 		|| isDesktopManagement(request);
 }
 
@@ -226,6 +229,25 @@ export function desktop(execute: Desktop): Extension {
 	return defineExtension({
 		name: "ace-desktop",
 		tools: [
+			defineTool({
+				name: "desktop_clipboard_read",
+				description:
+					"Read plain text from this execution host's clipboard. Requires allowed macOS clipboard reading. Returns complete text up to a 24 KB JSON result; multiple items, unreadable text, and larger results are refused. No text is present when present is false; an empty string is still present. Does not change the clipboard or release a pending paste reservation.",
+				parameters: Type.Object({}),
+				replay: "safe",
+				execute: async (_args, _api, context) =>
+					result(await execute({ op: "clipboard-read" }, context)),
+			}),
+			defineTool({
+				name: "desktop_clipboard_write",
+				description:
+					"Replace this execution host's clipboard with plain text, up to 8192 UTF-16 units. This persists until another copy or write; it does not paste or preserve the previous contents. A pending unverified paste refuses the write. Never blindly repeat an interrupted write: read the current clipboard before deciding what to do next.",
+				parameters: Type.Object({ text: Type.String({ maxLength: 8192 }) }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ text }, api, context) =>
+					act({ op: "clipboard-write", text }, api, context),
+			}),
 			defineTool({
 				name: "desktop_apps",
 				description:

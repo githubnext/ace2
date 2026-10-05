@@ -111,7 +111,9 @@ async function native(
 		const error = value.error;
 		const reason = error ? `${error.code}: ${error.message}` : "Native desktop operation failed";
 		const permission = error?.code.toLowerCase().includes("permission")
-			? " Check Ace's Accessibility and Screen Recording access in Ace Settings."
+			? args[0] === "clipboard"
+				? " Check Ace's clipboard read status in This Mac and its clipboard access in macOS Settings."
+				: " Check Ace's Accessibility and Screen Recording access in Ace Settings."
 			: "";
 		throw new NativeError(error?.code || "DESKTOP_ERROR", `${reason}.${permission}`);
 	}
@@ -317,6 +319,12 @@ async function availability(
 
 function validateAction(request: DesktopAction) {
 	if (isDesktopManagement(request)) return validateManagement(request);
+	if (request.op === "clipboard-write") {
+		if (typeof request.text !== "string" || request.text.length > 8192) {
+			throw new Error("Clipboard text must contain at most 8192 UTF-16 code units.");
+		}
+		return;
+	}
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
@@ -473,7 +481,12 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	let data: Record<string, unknown>;
 	try {
 		validateAction(request);
-		data = await native([isDesktopManagement(request) ? "management" : "action"], signal, {
+		const operation = request.op === "clipboard-write"
+			? "clipboard"
+			: isDesktopManagement(request)
+			? "management"
+			: "action";
+		data = await native([operation], signal, {
 			input: JSON.stringify(request),
 			onDispatch() {
 				dispatched = true;
@@ -493,7 +506,9 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		}, outcome);
 	}
 	const outcome = data.outcome as DesktopOutcome;
-	if (outcome !== "completed") return actionResult(data, outcome);
+	if (outcome !== "completed" || request.op === "clipboard-write") {
+		return actionResult(data, outcome);
+	}
 	if (isDesktopManagement(request)) return await observeManagement(request, data, signal);
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
 	try {
@@ -644,6 +659,8 @@ export const desktop: Desktop = async (request, context) => {
 	if (
 		!request
 		|| ![
+			"clipboard-read",
+			"clipboard-write",
 			"apps",
 			"windows",
 			"inspect",
@@ -681,6 +698,18 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		if (request.op === "clipboard-read") {
+			const data = await native(["clipboard"], signal, { input: JSON.stringify(request) });
+			if (
+				typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
+				|| (data.present ? typeof data.text !== "string" : data.text !== undefined)
+			) throw new Error("The native clipboard read returned an unsupported response.");
+			const text = JSON.stringify(data);
+			if (Buffer.byteLength(text) > 24_000) {
+				throw new Error("Clipboard text exceeds the complete 24 KB result limit.");
+			}
+			return { text };
+		}
 		let query: string | undefined;
 		if (request.op === "apps" && request.query !== undefined) {
 			if (
