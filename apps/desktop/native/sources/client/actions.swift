@@ -1,0 +1,209 @@
+import Foundation
+import PeekabooAutomationKit
+import PeekabooBridge
+import PeekabooFoundation
+
+private struct ActionRequest: Decodable {
+	enum Operation: String, Decodable {
+		case click, type, key
+	}
+
+	let op: Operation
+	let snapshot: String
+	let element: String?
+	let text: String?
+	let key: String?
+
+	func validate() throws {
+		guard !snapshot.isEmpty, snapshot.utf16.count <= 256 else {
+			throw ActionError("Use a snapshot ID returned by desktop_inspect.")
+		}
+		switch op {
+		case .click, .type:
+			guard let element, !element.isEmpty, element.utf16.count <= 256, key == nil else {
+				throw ActionError("Choose a literal element ID from the inspected snapshot.")
+			}
+			if op == .type {
+				guard let text, text.utf16.count <= 8192 else {
+					throw ActionError("Replacement text must contain at most 8,192 UTF-16 code units.")
+				}
+			} else if text != nil {
+				throw ActionError("A click does not accept text.")
+			}
+		case .key:
+			guard element == nil, text == nil, let key, specialKeys[key] != nil else {
+				throw ActionError("Choose enter, tab, escape, backspace, delete, up, down, left, or right.")
+			}
+		}
+	}
+}
+
+private let specialKeys: [String: SpecialKey] = [
+	"enter": .return, "tab": .tab, "escape": .escape,
+	"backspace": .delete, "delete": .forwardDelete,
+	"up": .upArrow, "down": .downArrow, "left": .leftArrow, "right": .rightArrow,
+]
+
+private struct ActionError: LocalizedError {
+	let message: String
+	init(_ message: String) { self.message = message }
+	var errorDescription: String? { message }
+}
+
+private struct ActionEvidence {
+	let outcome: DesktopActionOutcome?
+	let target: DesktopTargetIdentity?
+	let selected: [DesktopSelectedLeafEvidence]?
+
+	init<T: Sendable>(_ result: UIAutomationActionResult<T>) {
+		outcome = result.outcome
+		target = result.targetIdentity
+		selected = result.selectedLeafEvidence
+	}
+}
+
+private struct ActionResult: Encodable {
+	var outcome: String
+	let action: String
+	let snapshot_id: String
+	var native_outcome: DesktopActionOutcome?
+	var selected_leaf_evidence: [DesktopSelectedLeafEvidence]?
+	var requires_fresh_observation = false
+	var error: ActionMessage?
+}
+
+private struct ActionMessage: Encodable {
+	let code: String
+	let message: String
+	var hint: String?
+}
+
+private struct ActionReply: Encodable {
+	let success = true
+	let data: ActionResult
+	let target_receipt: Receipt?
+}
+
+func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
+	let request = try readAction()
+	var result = ActionResult(outcome: "refused", action: request.op.rawValue, snapshot_id: request.snapshot)
+	var receipt: Receipt?
+	var lease: SnapshotMutationLease?
+	var invoked = false
+	do {
+		try request.validate()
+		result.requires_fresh_observation = true
+		guard try await client.ownsSnapshot(snapshotId: request.snapshot) else {
+			throw ActionError("This observation no longer belongs to the running desktop. Inspect the window again.")
+		}
+		let detection = try await client.getDetectionResult(snapshotId: request.snapshot)
+		guard let context = detection.metadata.windowContext,
+			let identity = context.windowMutationIdentity,
+			let bounds = context.windowBounds,
+			context.windowID == identity.windowID,
+			context.applicationProcessId == identity.ownerProcessIdentifier
+		else {
+			throw ActionError("This observation has no exact-window action target. Inspect the window again.")
+		}
+		receipt = Receipt(
+			pid: identity.ownerProcessIdentifier,
+			window_id: identity.windowID,
+			process_start_identity_decimal: String(identity.ownerProcessStartIdentity)
+		)
+		if let element = request.element {
+			// Native set-value accepts text queries too; Ace accepts only a literal observed ID.
+			guard let observed = detection.elements.findById(element) else {
+				throw ActionError("The element ID is not in this snapshot. Inspect the window again.")
+			}
+			guard observed.isEnabled else { throw ActionError("The observed element is disabled.") }
+		}
+		if request.op == .key, context.focusedElement == nil {
+			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
+		}
+		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
+		invoked = true
+		let evidence: ActionEvidence
+		switch request.op {
+		case .click:
+			evidence = try await ActionEvidence(client.clickWithOutcome(
+				target: .elementId(request.element!),
+				clickType: .single,
+				snapshotId: request.snapshot,
+				windowEvidence: .init(identity: identity, bounds: bounds),
+				allowsAccessibilityValueDelivery: true
+			))
+		case .type:
+			evidence = try await ActionEvidence(client.setValueWithOutcome(
+				target: request.element!, value: .string(request.text!), snapshotId: request.snapshot
+			))
+		case .key:
+			// Text-action emulation rejects WKWebView's focused receiver; deliver the exact-window key instead.
+			evidence = try await ActionEvidence(client.hotkeyWithOutcome(
+				keys: specialKeys[request.key!]!.rawValue,
+				holdDuration: 0,
+				target: .init(
+					windowIdentity: identity,
+					windowBounds: bounds,
+					focusedElement: context.focusedElement!
+				)
+			))
+		}
+		result.native_outcome = evidence.outcome
+		result.selected_leaf_evidence = evidence.selected
+		guard let outcome = evidence.outcome,
+			let target = evidence.target?.exactWindow,
+			target.identity.hasSameStableReceipt(as: identity), target.bounds == bounds
+		else {
+			throw ActionError("The action returned without its expected outcome and exact-window receipt. Inspect before retrying.")
+		}
+		// Every dispatched action consumes this snapshot, including confirmed changes and partial cleanup.
+		result.requires_fresh_observation = outcome.dispatchState.mutationDispatched
+		try await client.finishSnapshotMutation(lease!, requiresFreshObservation: result.requires_fresh_observation)
+		lease = nil
+		switch outcome.state {
+		case .refused:
+			result.outcome = "refused"
+		case .indeterminate, .partial:
+			result.outcome = "unknown"
+		default:
+			result.outcome = outcome.evidence == .operationStillRunning ? "unknown" : "completed"
+		}
+	} catch let failure as DesktopActionFailure {
+		result.outcome = failure.outcome.dispatchState.mutationDispatched ? "unknown" : "refused"
+		result.native_outcome = failure.outcome
+		result.selected_leaf_evidence = failure.selectedLeafEvidence
+		let dispatched = failure.outcome.dispatchState.mutationDispatched
+		result.requires_fresh_observation = dispatched || failure.outcome.escalation == .refreshTarget
+		result.error = ActionMessage(
+			code: failure.standardErrorCode?.rawValue ?? "DESKTOP_ACTION_FAILED",
+			message: failure.message, hint: failure.hint
+		)
+		if let lease {
+			do {
+				try await client.finishSnapshotMutation(lease, requiresFreshObservation: dispatched)
+			} catch {
+				result.requires_fresh_observation = true
+			}
+		}
+	} catch {
+		result.outcome = invoked ? "unknown" : "refused"
+		if invoked { result.requires_fresh_observation = true }
+		let envelope = error as? PeekabooBridgeErrorEnvelope
+		result.error = ActionMessage(
+			code: envelope?.code.rawValue ?? "DESKTOP_ACTION_FAILED",
+			message: error.localizedDescription,
+			hint: invoked ? "Inspect the target before retrying; the action may already have happened." : nil
+		)
+		// Unknown completion leaves the host's pending lease in place, including client death or response loss.
+	}
+	return try JSONEncoder().encode(ActionReply(data: result, target_receipt: receipt))
+}
+
+private func readAction() throws -> ActionRequest {
+	var data = Data()
+	while let chunk = try FileHandle.standardInput.read(upToCount: 4096), !chunk.isEmpty {
+		data.append(chunk)
+		guard data.count <= 65_536 else { throw ActionError("The desktop action request exceeds 64 KiB.") }
+	}
+	return try JSONDecoder().decode(ActionRequest.self, from: data)
+}

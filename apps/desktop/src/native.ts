@@ -58,8 +58,10 @@ export function native(identifier: string) {
 		},
 		act(action: NativeAction): NativeState {
 			if (action.op === "permission") {
-				if (!["accessibility", "screenRecording"].includes(action.permission)) {
-					throw new Error("Unknown native inspection permission");
+				if (
+					!["accessibility", "screenRecording", "eventSynthesizing"].includes(action.permission)
+				) {
+					throw new Error("Unknown native desktop permission");
 				}
 				symbols.ace_desktop_permission(Buffer.from(`${action.permission}\0`));
 			}
@@ -68,10 +70,10 @@ export function native(identifier: string) {
 		async stop(): Promise<void> {
 			if (status().state === "stopped") return;
 			symbols.ace_desktop_stop();
-			// Keep the library loaded while its bridge drains outstanding observations.
+			// Keep the library loaded while its bridge drains outstanding native operations.
 			const deadline = Date.now() + 30_000;
 			while (status().state !== "stopped") {
-				if (Date.now() > deadline) throw new Error("Native inspection did not stop in time");
+				if (Date.now() > deadline) throw new Error("Native desktop tools did not stop in time");
 				await Bun.sleep(50);
 			}
 		},

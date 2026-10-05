@@ -3,6 +3,7 @@ import ApplicationServices
 import CoreGraphics
 import Darwin
 import Foundation
+import PeekabooAutomationKit
 import PeekabooBridge
 
 private struct Status: Encodable {
@@ -10,6 +11,7 @@ private struct Status: Encodable {
 	var error: String?
 	var accessibility = false
 	var screenRecording = false
+	var eventSynthesizing = false
 }
 
 private final class State: @unchecked Sendable {
@@ -29,7 +31,14 @@ private final class State: @unchecked Sendable {
 		lock.unlock()
 		result.accessibility = AXIsProcessTrusted()
 		result.screenRecording = CGPreflightScreenCaptureAccess()
+		result.eventSynthesizing = result.eventSynthesizing || CGPreflightPostEventAccess()
 		return result
+	}
+
+	func recordEventSynthesizing(_ granted: Bool) {
+		lock.lock()
+		value.eventSynthesizing = value.eventSynthesizing || granted
+		lock.unlock()
 	}
 }
 
@@ -54,7 +63,11 @@ private final class Desktop {
 					socketPath: socket,
 					allowlistedTeams: [identity.team],
 					allowlistedBundles: [client],
-					allowedOperations: [.listApplications, .listWindows, .desktopObservation],
+					allowedOperations: [
+						.listApplications, .listWindows, .desktopObservation,
+						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
+						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
+					],
 					hostKind: .gui,
 					requestTimeoutSeconds: 25
 				))
@@ -122,6 +135,9 @@ public func permission(_ kind: UnsafePointer<CChar>) {
 			_ = AXIsProcessTrustedWithOptions(options as CFDictionary)
 		case "screenRecording":
 			_ = CGRequestScreenCaptureAccess()
+		case "eventSynthesizing":
+			// macOS caches preflight results; retain an interactive grant in Peekaboo's shared permission state too.
+			state.recordEventSynthesizing(PermissionsService().requestPostEventPermission())
 		default:
 			break
 		}

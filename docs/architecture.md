@@ -173,17 +173,21 @@ Git, shell, Tailscale, and directory diagnostics come from the host through the 
 boundary as provider settings. The project picker selects a local Git checkout; project creation
 errors remain in the form so the person can fix the path or provider setup.
 
-Agents inspect native windows through an injected desktop capability. The desktop embeds
-Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility and Screen
-Recording permissions. The host invokes a bundled client over a local Unix socket. The bridge
+Agents inspect and operate native windows through an injected desktop capability. The desktop embeds
+Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility, Screen
+Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
-signing team. Only
-application inventory, window inventory, and observation are exposed. The host bounds
-accessibility text and resizes screenshots before returning them. Quitting Ace stops inspection;
+signing team. Tools expose application and window inventories, observation, single element clicks,
+replacement of editable field values, and basic keys. Actions use background delivery bound to a
+snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+Pi records their intent and never automatically replays an interrupted action. Results distinguish
+completed operations, refusals before dispatch, and uncertain delivery. The host bounds
+accessibility text and resizes screenshots before returning them. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
-Pi stores the result; channel clients project its images into the existing tool output. The collaborator-agent
+Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
+coordinates concurrent native operations. The collaborator-agent
 switch applies to desktop tools with the rest of the agent's tools. See
-[native desktop inspection](desktop-tools.md) for setup and the current observation-only scope.
+[native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
 Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
 separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service

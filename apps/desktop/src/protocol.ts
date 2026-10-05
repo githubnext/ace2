@@ -10,12 +10,13 @@ export type NativeState = {
 	state: "stopped" | "starting" | "ready" | "stopping" | "error";
 	accessibility: boolean;
 	screenRecording: boolean;
+	eventSynthesizing: boolean;
 	error?: string;
 };
 
 export type NativeAction =
 	| { op: "status" }
-	| { op: "permission"; permission: "accessibility" | "screenRecording" };
+	| { op: "permission"; permission: "accessibility" | "screenRecording" | "eventSynthesizing" };
 
 export type UpdateState = {
 	phase:
