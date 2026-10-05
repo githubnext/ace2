@@ -96,6 +96,15 @@ therefore receives the existing signed targetless refusal receipt, instead of an
 mutation receipt. The catch surrounds only preparation; native opening, activation, readiness,
 mutation lane ownership, and all errors after dispatch keep their existing semantics.
 
+`peekaboo-clipboard-image-write.patch` adds persistent image writes for #72. The host reads one
+bounded regular file into memory; neither the native client nor GUI opens the source path.
+ImageIO validates a complete PNG/JPEG/TIFF frame (10 MiB, 64 million pixels) off MainActor before
+the existing clipboard reservation gate admits the write. The GUI writes the original bytes and
+UTI through `setActionResult`, preserving native accepted/uncertain outcomes. The response contains
+source metadata, never image bytes or prior clipboard contents. Cancellation before admission
+does not write; cancellation or response loss after admission cannot imply undo or safe replay.
+No temporary paste, file reference, backup, new lock, or journal is added.
+
 `peekaboo-clipboard-files.patch` adds the read-only file-reference format for #72. The GUI
 uses the same silent permission and stable-generation checks, with at most 32 advertised local
 file URL items and a complete 24 KB JSON result. It preserves URLs, order, and decoded paths;

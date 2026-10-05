@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -30,6 +30,7 @@ const exec = promisify(execFile);
 const MAX_TEXT = 32_000;
 const MAX_IMAGE = 900_000;
 const MAX_OUTPUT = 2_000_000;
+const MAX_CLIPBOARD_IMAGE = 10 * 1024 * 1024;
 
 type Reply = {
 	success: boolean;
@@ -398,7 +399,15 @@ function validateAction(request: DesktopAction) {
 	}
 	if (isDesktopManagement(request)) return validateManagement(request);
 	if (request.op === "clipboard-write") {
-		if (typeof request.text !== "string" || request.text.length > 8192) {
+		if ("format" in request) {
+			if (
+				request.format !== "image" || "text" in request || typeof request.path !== "string"
+				|| !request.path.startsWith("/") || request.path.length > 4096
+				|| request.path.includes("\0")
+			) throw new Error("Use format image with one absolute image path and no text.");
+			return;
+		}
+		if ("path" in request || typeof request.text !== "string" || request.text.length > 8192) {
 			throw new Error("Clipboard text must contain at most 8192 UTF-16 code units.");
 		}
 		return;
@@ -562,11 +571,52 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 	return { text, outcome, isError: outcome !== "completed" };
 }
 
+async function clipboardImageInput(path: string, signal: AbortSignal): Promise<string> {
+	signal.throwIfAborted();
+	// Nonblocking open prevents a named pipe from waiting before its regular-file check.
+	const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+	try {
+		signal.throwIfAborted();
+		const before = await file.stat({ bigint: true });
+		if (!before.isFile() || before.size <= 0n || before.size > BigInt(MAX_CLIPBOARD_IMAGE)) {
+			throw new Error("Clipboard images require a nonempty regular file of at most 10 MiB.");
+		}
+		const bytes = Buffer.alloc(Number(before.size) + 1);
+		let size = 0;
+		while (size < bytes.length) {
+			signal.throwIfAborted();
+			const read = await file.read(bytes, size, bytes.length - size, size);
+			if (!read.bytesRead) break;
+			size += read.bytesRead;
+		}
+		const after = await file.stat({ bigint: true });
+		signal.throwIfAborted();
+		if (
+			size !== Number(before.size) || after.size !== before.size
+			|| after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs
+		) {
+			throw new Error(
+				"The image file changed while being read; choose a stable file before writing.",
+			);
+		}
+		return bytes.subarray(0, size).toString("base64");
+	} finally {
+		await file.close();
+	}
+}
+
 async function act(request: DesktopAction, signal: AbortSignal): Promise<DesktopResult> {
 	let dispatched = false;
 	let data: Record<string, unknown>;
 	try {
 		validateAction(request);
+		const input = request.op === "clipboard-write" && "format" in request
+			? {
+				op: request.op,
+				format: request.format,
+				image: await clipboardImageInput(request.path, signal),
+			}
+			: request;
 		const operation = request.op === "clipboard-write"
 			? "clipboard"
 			: request.op === "launch"
@@ -575,7 +625,7 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 			? "management"
 			: "action";
 		data = await native([operation], signal, {
-			input: JSON.stringify(request),
+			input: JSON.stringify(input),
 			onDispatch() {
 				dispatched = true;
 			},

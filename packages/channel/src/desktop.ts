@@ -35,6 +35,7 @@ export type DesktopRequest =
 	| DesktopLaunch
 	| { op: "clipboard-read"; format?: "text" | "image" | "files" }
 	| { op: "clipboard-write"; text: string }
+	| { op: "clipboard-write"; format: "image"; path: string }
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "menus"; target: DesktopAppTarget; path?: string[] }
@@ -274,12 +275,32 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_clipboard_write",
 				description:
-					"Replace this execution host's clipboard with plain text, up to 8192 UTF-16 units. This persists until another copy or write; it does not paste or preserve the previous contents. A pending unverified paste refuses the write. Never blindly repeat an interrupted write: read the current clipboard before deciding what to do next.",
-				parameters: Type.Object({ text: Type.String({ maxLength: 8192 }) }),
+					"Replace this execution host's clipboard with text (up to 8192 UTF-16 units), or use format image and an absolute path on this execution host to one PNG/JPEG/TIFF file (at most 10 MiB and 64 million pixels). Image writes preserve the original bytes, orientation and transparency; they do not copy a file reference. Supply either text or format image with path. This persists until another copy or write; it does not paste or preserve the previous contents. A pending unverified paste refuses the write. Never blindly repeat an interrupted write: read the current clipboard before deciding what to do next.",
+				parameters: Type.Object({
+					text: Type.Optional(Type.String({ maxLength: 8192 })),
+					format: Type.Optional(Type.Literal("image")),
+					path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+				}, {
+					additionalProperties: false,
+					oneOf: [
+						{
+							required: ["text"],
+							not: { anyOf: [{ required: ["format"] }, { required: ["path"] }] },
+						},
+						{ required: ["format", "path"], not: { required: ["text"] } },
+					],
+				}),
 				replay: "unsafe",
 				executionMode: "sequential",
-				execute: async ({ text }, api, context) =>
-					act({ op: "clipboard-write", text }, api, context),
+				execute: async ({ text, format, path }, api, context) => {
+					if (format === "image" && path !== undefined && text === undefined) {
+						return act({ op: "clipboard-write", format, path }, api, context);
+					}
+					if (text !== undefined && format === undefined && path === undefined) {
+						return act({ op: "clipboard-write", text }, api, context);
+					}
+					throw new Error("Supply text, or format image with an absolute image path.");
+				},
 			}),
 			defineTool({
 				name: "desktop_apps",
