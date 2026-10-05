@@ -61,6 +61,16 @@ The quit-specific result validator permits this canonical outcome with `false` t
 the existing bridge returns the boolean and its signed process receipt. Other false/success
 contradictions stay errors. Force-quit behavior, target revalidation, and mutation lanes are unchanged.
 
+`peekaboo-close.patch` makes background window close a single request for
+[window management](https://github.com/githubnext/ace2/issues/73). It selects a supported `AXClose`
+or exact close-button `AXPress` from read-only evidence before input, then rechecks the original
+window ID, process generation and bounds immediately before that one action. No accepted or
+ambiguous native result falls through to another close route. An accepted close whose window
+remains open is unverified with unsafe retry, including when unsaved work opens a dialog.
+Cancellation stops admission before input; once admitted, the existing mutation lane remains
+held until the detached AX call actually settles. Confirmed disappearance retains the existing
+bridge postcondition checks. Foreground fallback behavior is unchanged and is not exposed by Ace.
+
 `peekaboo-clipboard-text.patch` adds explicit plain-text clipboard reads and persistent writes for
 [clipboard access](https://github.com/githubnext/ace2/issues/72). It applies after the insertion patch
 and reuses its GUI clipboard service and reservation gate. Reads require silent clipboard access,
