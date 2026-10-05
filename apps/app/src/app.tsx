@@ -94,6 +94,9 @@ function Disconnected() {
 	);
 }
 
+/** Channels idle this long fold into the Inactive group until their transcript grows again. */
+const INACTIVE_AFTER = 6 * 60 * 60_000;
+
 function row(channel: Listing, user: string): SidebarRow {
 	return {
 		uid: channel.id,
@@ -117,7 +120,7 @@ function row(channel: Listing, user: string): SidebarRow {
 		agent: "idle",
 		unreadCount: 0,
 		mentionCount: 0,
-		lastActivityAt: Math.floor(channel.created / 1000),
+		lastActivityAt: Math.floor((channel.active || channel.created) / 1000),
 		online: [],
 	};
 }
@@ -144,8 +147,10 @@ export function App() {
 		pinned: false,
 		mine: false,
 		team: false,
+		inactive: true,
 		archived: true,
 	});
+	const [now, setNow] = useState(Date.now);
 	const picking = useRef(false);
 	const creating = useRef(false);
 	useEffect(() => {
@@ -156,6 +161,11 @@ export function App() {
 			open();
 		}
 		return () => window.removeEventListener("ace:updates", open);
+	}, []);
+
+	useEffect(() => {
+		const timer = setInterval(() => setNow(Date.now()), 60_000);
+		return () => clearInterval(timer);
 	}, []);
 
 	useEffect(() => {
@@ -181,31 +191,27 @@ export function App() {
 		name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
 		org: value.repo?.split("/")[0] || "",
 	}));
+	const sorted: Record<Exclude<SessionSidebarGroupId, "pinned">, SidebarRow[]> = {
+		mine: [],
+		team: [],
+		inactive: [],
+		archived: [],
+	};
+	for (const value of visible) {
+		const group = value.state === "archived"
+			? "archived"
+			: now - (value.active || value.created) > INACTIVE_AFTER
+			? "inactive"
+			: value.owner === hello.user
+			? "mine"
+			: "team";
+		sorted[group].push(row(value, hello.user));
+	}
 	const groups: SessionSidebarGroup[] = [
-		{
-			id: "mine",
-			label: "Channels",
-			rows: visible.filter((value) => value.state !== "archived" && value.owner === hello.user).map(
-				(value) => row(value, hello.user),
-			),
-			collapsed: collapsed.mine,
-		},
-		{
-			id: "team",
-			label: "Team",
-			rows: visible.filter((value) => value.state !== "archived" && value.owner !== hello.user).map(
-				(value) => row(value, hello.user),
-			),
-			collapsed: collapsed.team,
-		},
-		{
-			id: "archived",
-			label: "Archived",
-			rows: visible.filter((value) => value.state === "archived").map((value) =>
-				row(value, hello.user)
-			),
-			collapsed: collapsed.archived,
-		},
+		{ id: "mine", label: "Channels", rows: sorted.mine, collapsed: collapsed.mine },
+		{ id: "team", label: "Team", rows: sorted.team, collapsed: collapsed.team },
+		{ id: "inactive", label: "Inactive", rows: sorted.inactive, collapsed: collapsed.inactive },
+		{ id: "archived", label: "Archived", rows: sorted.archived, collapsed: collapsed.archived },
 	];
 
 	function select(value: Pick<Listing, "id" | "host" | "project" | "root">) {

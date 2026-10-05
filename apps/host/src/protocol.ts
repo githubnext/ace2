@@ -51,6 +51,8 @@ export type Listing = {
 	repo?: string;
 	model?: ModelRef;
 	created: number;
+	/** When the transcript last grew; hosts on older builds omit it. */
+	active?: number;
 	state: ChannelState;
 	/** The hosting service's base URL, for a hosted channel; `host` is then its workspace. */
 	hosted?: string;

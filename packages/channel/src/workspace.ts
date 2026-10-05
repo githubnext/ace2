@@ -28,8 +28,8 @@ export type Call =
 	| { call: CallId; method: Method | "desktop"; cwd: string; args: unknown[] }
 	| { cancel: CallId };
 
-/** Metadata is projected by the workspace host even when no client watches the channel. */
-export type WorkspaceMessage = Call | { metadata: Metadata };
+/** Metadata and activity are projected by the workspace host even when no client watches the channel. */
+export type WorkspaceMessage = Call | { metadata: Metadata } | { active: number };
 
 /** Workspace to channel. */
 export type Reply =

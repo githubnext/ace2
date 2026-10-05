@@ -39,6 +39,7 @@ function link(record: catalog.Listing): () => Promise<void> {
 			socket.addEventListener("message", ({ data }) => {
 				const call = JSON.parse(String(data)) as WorkspaceMessage;
 				if ("metadata" in call) return catalog.metadata(record.id, call.metadata);
+				if ("active" in call) return catalog.activity(record.id, call.active);
 				log("debug", "workspace.call", {
 					channel: record.id,
 					...("cancel" in call

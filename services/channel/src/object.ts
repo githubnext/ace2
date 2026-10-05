@@ -2,14 +2,7 @@ import { DurableObject } from "cloudflare:workers";
 import { SqliteStorage } from "@earendil-works/pi-durable/storage/sqlite";
 import { builtinModels } from "@earendil-works/pi-ai/providers/all";
 
-import {
-	Channel,
-	type Envelope,
-	type Frame,
-	type Log,
-	type Metadata,
-	type ModelRef,
-} from "@ace/channel";
+import { Channel, type Envelope, type Frame, type Log, type ModelRef } from "@ace/channel";
 import { type Call, Link, type Reply, type WorkspaceMessage } from "@ace/channel/workspace";
 
 import { DurableSqlite } from "./storage";
@@ -69,8 +62,8 @@ export class HostedChannel extends DurableObject<Env> {
 		return { ...config, version: 2, prefix: config.name, named: true };
 	}
 
-	#metadata(metadata: Metadata) {
-		const frame = JSON.stringify({ metadata } satisfies WorkspaceMessage);
+	#project(message: WorkspaceMessage) {
+		const frame = JSON.stringify(message);
 		for (const socket of this.ctx.getWebSockets("workspace")) {
 			if (socket.readyState === WebSocket.OPEN) socket.send(frame);
 		}
@@ -88,7 +81,8 @@ export class HostedChannel extends DurableObject<Env> {
 			const envs = new Map<string, ReturnType<Link["env"]>>();
 			return Channel.open({
 				...config,
-				onMetadata: (metadata) => this.#metadata(metadata),
+				onMetadata: (metadata) => this.#project({ metadata }),
+				onActivity: (active) => this.#project({ active }),
 				storage: await SqliteStorage.open(new DurableSqlite(this.ctx.storage)),
 				models: builtinModels({
 					authContext: {
@@ -157,7 +151,7 @@ export class HostedChannel extends DurableObject<Env> {
 			this.ctx.acceptWebSocket(server, ["workspace"]);
 			this.#attach(server);
 			const { name, summary, revision } = await (await this.#open(config)).info();
-			this.#metadata({ name, summary, revision });
+			this.#project({ metadata: { name, summary, revision } });
 		} else {
 			server.accept();
 			this.#serve(server, await this.#open(config));
