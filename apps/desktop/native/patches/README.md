@@ -90,6 +90,12 @@ generation is checked after rendering too. The operation has no mutation lane, g
 temporary file, clipboard backup, or paste behavior; it reuses the existing read-only Bridge
 and channel image result.
 
+`peekaboo-launch.patch` classifies synchronous selector preparation failures before application
+launch as refused without dispatch. A missing LaunchServices registration or invalid launch request
+therefore receives the existing signed targetless refusal receipt, instead of an indeterminate
+mutation receipt. The catch surrounds only preparation; native opening, activation, readiness,
+mutation lane ownership, and all errors after dispatch keep their existing semantics.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout
 with each complete ordered prefix, since later patches can change earlier patch contexts.

@@ -69,7 +69,8 @@ find the client alongside Ace Helper automatically.
 - `desktop_launch` takes `application: { path: "/Applications/Example.app" }` or
   `application: { bundle_id: "com.example.app" }`. It deliberately launches or activates the app
   in the foreground and may switch Spaces. A path selects a particular app copy; a bundle ID lets
-  macOS choose the installation. It opens no documents or URLs, requests no extra instance, and
+  macOS choose the registered installation. An unregistered or missing bundle ID is refused before
+  launch. It opens no documents or URLs, requests no extra instance, and
   does not relaunch. The result preserves the signed native process target in `action.application`
   and returns fresh inventory when available. Completion confirms native launch/readiness and
   activation, not a visible or usable window. One native launch may include several counted
