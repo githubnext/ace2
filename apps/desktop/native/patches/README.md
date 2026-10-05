@@ -90,12 +90,20 @@ generation is checked after rendering too. The operation has no mutation lane, g
 temporary file, clipboard backup, or paste behavior; it reuses the existing read-only Bridge
 and channel image result.
 
+`peekaboo-launch.patch` classifies synchronous selector preparation failures before application
+launch as refused without dispatch. A missing LaunchServices registration or invalid launch request
+therefore receives the existing signed targetless refusal receipt, instead of an indeterminate
+mutation receipt. The catch surrounds only preparation; native opening, activation, readiness,
+mutation lane ownership, and all errors after dispatch keep their existing semantics.
+
 `peekaboo-clipboard-files.patch` adds the read-only file-reference format for #72. The GUI
 uses the same silent permission and stable-generation checks, with at most 32 advertised local
 file URL items and a complete 24 KB JSON result. It preserves URLs, order, and decoded paths;
 no file existence/content checks, path canonicalization, or remote access occurs. Unsupported
 legacy filename lists, promises, mixed item kinds, invalid/nonlocal URLs and unreadable data
-refuse without truncation. The typed read-only Bridge has no mutation gate, backup or journal.
+refuse without truncation when visible to Ace. macOS may filter references before delivery, so
+absence does not establish what the originating app published. The typed read-only Bridge has
+no mutation gate, backup or journal.
 
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout

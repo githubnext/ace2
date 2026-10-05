@@ -25,13 +25,19 @@ export type DesktopManagement =
 	| { op: "focus" | "minimize" | "restore" | "close"; target: DesktopWindowTarget }
 	| { op: "move"; target: DesktopWindowTarget; position: { x: number; y: number } }
 	| { op: "resize"; target: DesktopWindowTarget; size: { width: number; height: number } };
+export type DesktopLaunch = {
+	op: "launch";
+	application: { path: string } | { bundle_id: string };
+};
 
 export type DesktopRequest =
 	| DesktopManagement
+	| DesktopLaunch
 	| { op: "clipboard-read"; format?: "text" | "image" | "files" }
 	| { op: "clipboard-write"; text: string }
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
+	| { op: "menus"; target: DesktopAppTarget; path?: string[] }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
 		op: "click";
@@ -158,6 +164,7 @@ export type DesktopAction = Extract<
 			| "scroll"
 			| "drag"
 			| "activate"
+			| "launch"
 			| "quit"
 			| "close"
 			| "focus"
@@ -180,7 +187,7 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
 		|| request.op === "insert" || request.op === "select" || request.op === "scroll"
-		|| request.op === "drag" || request.op === "clipboard-write"
+		|| request.op === "drag" || request.op === "clipboard-write" || request.op === "launch"
 		|| isDesktopManagement(request);
 }
 
@@ -238,7 +245,7 @@ export function desktop(execute: Desktop): Extension {
 			render: async () =>
 				[
 					"Use desktop_* tools to observe and operate apps on this channel's execution host.",
-					"Shell commands remain appropriate for builds, files, launching apps with open, and preparing clipboard fixtures directly.",
+					"Shell commands remain appropriate for builds, files, and preparing clipboard fixtures directly.",
 					"",
 					"Do not silently substitute AppleScript, osascript, System Events, or self-built Accessibility or CGEvent programs for desktop tools.",
 					"Apple Events can raise a separate macOS Automation prompt for each target app, attributed to Ace; Accessibility and Screen Recording grants do not cover them.",
@@ -293,6 +300,42 @@ export function desktop(execute: Desktop): Extension {
 				replay: "safe",
 				execute: async ({ pid }, _api, context) =>
 					result(await execute({ op: "windows", pid }, context)),
+			}),
+			defineTool({
+				name: "desktop_launch",
+				description:
+					"Launch or activate one application on this channel's execution host using an absolute .app path or exact bundle ID. This deliberately brings the app to the foreground and may switch Spaces. A bundle ID lets macOS choose the installation; use a path to select a particular copy. Returns the signed native process target and fresh inventory when available; a completed launch does not promise a visible or usable window. It does not open documents or URLs, create an extra instance, or relaunch. One native launch can include several counted activation attempts. Timeout or interruption is unknown: the app may still open later. Observe desktop_apps before any further action; never blindly repeat an interrupted launch.",
+				parameters: Type.Object({
+					application: Type.Union([
+						Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) }, {
+							additionalProperties: false,
+						}),
+						Type.Object({
+							bundle_id: Type.String({
+								maxLength: 256,
+								pattern: "^[A-Za-z0-9.-]+$",
+							}),
+						}, { additionalProperties: false }),
+					]),
+				}, { additionalProperties: false }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ application }, api, context) =>
+					act({ op: "launch", application }, api, context),
+			}),
+			defineTool({
+				name: "desktop_menus",
+				description:
+					"Read one application's available menu structure using its exact target from desktop_apps. This sends no input or menu commands and does not activate the app; AX reads may populate lazy menus and trigger application callbacks. Optional path is 1 to 8 exact literal titles, selecting one observed menu or item and its descendants before returning content; missing or ambiguous paths are refused. Preserve punctuation and whitespace, with no splitting or normalization. The result is bound to the same process generation before and after the native read. Native results may come from a 2-second cache; their observation time and completeness are unknown, including lazy or budget-limited submenus. Ace truncation counts are separate. Paths are literal title arrays for discovery, not reusable action targets. Enabled/checked state is omitted because the native service substitutes defaults for unavailable attributes. Native AX reads are synchronous and can delay cancellation or GUI responsiveness. No screenshot or input snapshot is returned.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+					path: Type.Optional(
+						Type.Array(Type.String({ minLength: 1, maxLength: 512 }), { minItems: 1, maxItems: 8 }),
+					),
+				}),
+				replay: "safe",
+				execute: async ({ target, path }, _api, context) =>
+					result(await execute({ op: "menus", target, path }, context)),
 			}),
 			defineTool({
 				name: "desktop_activate",

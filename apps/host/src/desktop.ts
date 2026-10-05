@@ -14,6 +14,8 @@ import {
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
 	type DesktopAction,
+	type DesktopAppTarget,
+	type DesktopLaunch,
 	type DesktopManagement,
 	type DesktopOutcome,
 	type DesktopRequest,
@@ -375,6 +377,25 @@ async function availability(
 }
 
 function validateAction(request: DesktopAction) {
+	if (request.op === "launch") {
+		const application = request.application;
+		if (
+			Object.keys(request).some((key) => !["op", "application"].includes(key))
+			|| !application || typeof application !== "object" || Object.keys(application).length !== 1
+		) throw new Error("Launch accepts exactly one application path or bundle_id.");
+		if ("path" in application) {
+			const path = application.path;
+			if (
+				typeof path !== "string" || path.length > 4096 || !path.startsWith("/")
+				|| !path.toLowerCase().endsWith(".app") || path.includes("\0")
+			) throw new Error("Use an absolute .app path for launch.");
+		} else if (
+			!("bundle_id" in application) || typeof application.bundle_id !== "string"
+			|| application.bundle_id.length > 256
+			|| !/^[A-Za-z0-9.-]+$/.test(application.bundle_id)
+		) throw new Error("Use an exact application bundle ID for launch.");
+		return;
+	}
 	if (isDesktopManagement(request)) return validateManagement(request);
 	if (request.op === "clipboard-write") {
 		if (typeof request.text !== "string" || request.text.length > 8192) {
@@ -466,8 +487,7 @@ function validateAction(request: DesktopAction) {
 	}
 }
 
-function validateManagement(request: DesktopManagement) {
-	const target = request.target;
+function validateAppTarget(target: DesktopAppTarget) {
 	if (
 		!target || typeof target !== "object" || !Number.isInteger(target.pid)
 		|| target.pid < 1 || target.pid > 2_147_483_647
@@ -475,14 +495,22 @@ function validateManagement(request: DesktopManagement) {
 		|| !/^[1-9][0-9]{0,19}$/.test(target.process_start_identity_decimal)
 		|| BigInt(target.process_start_identity_decimal) > 18_446_744_073_709_551_615n
 	) throw new Error("Pass the application's target object from fresh desktop inventory unchanged.");
+}
+
+function validateAppOnly(target: DesktopAppTarget) {
+	validateAppTarget(target);
+	if (Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))) {
+		throw new Error("Pass only the application's target object from desktop_apps.");
+	}
+}
+
+function validateManagement(request: DesktopManagement) {
+	const target = request.target;
 	if (request.op === "activate" || request.op === "quit") {
-		if (
-			Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))
-		) {
-			throw new Error("Activation and quit take an application target from desktop_apps.");
-		}
+		validateAppOnly(target);
 		return;
 	}
+	validateAppTarget(target);
 	const window = request.target;
 	if (
 		!Number.isInteger(window.window_id) || window.window_id < 1 || window.window_id > 4_294_967_295
@@ -541,6 +569,8 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		validateAction(request);
 		const operation = request.op === "clipboard-write"
 			? "clipboard"
+			: request.op === "launch"
+			? "launch"
 			: isDesktopManagement(request)
 			? "management"
 			: "action";
@@ -558,7 +588,9 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		return actionResult({
 			outcome,
 			reason: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
-			message: dispatched
+			message: dispatched && request.op === "launch"
+				? "The launch may still finish and open the app later. Observe desktop_apps before any further action; do not blindly repeat the launch."
+				: dispatched
 				? "The desktop action may have partially run. Inspect the current state before retrying. Stopping does not undo input already delivered."
 				: "The desktop action was not sent to the native desktop.",
 		}, outcome);
@@ -574,7 +606,9 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	if (outcome !== "completed" || request.op === "clipboard-write") {
 		return actionResult(data, outcome);
 	}
-	if (isDesktopManagement(request)) return await observeManagement(request, data, signal);
+	if (isDesktopManagement(request) || request.op === "launch") {
+		return await observeManagement(request, data, signal);
+	}
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
 	try {
 		const receipt = data.target_receipt as Reply["target_receipt"];
@@ -616,17 +650,20 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 }
 
 async function observeManagement(
-	request: DesktopManagement,
+	request: DesktopManagement | DesktopLaunch,
 	action: Record<string, unknown>,
 	signal: AbortSignal,
 ): Promise<DesktopResult> {
 	const data: Record<string, unknown> = { action };
 	const outcome = action.outcome === "unknown" ? "unknown" : "completed";
 	const receipt = action.target_receipt as Reply["target_receipt"];
+	const target = request.op === "launch"
+		? (action.application as { target?: DesktopAppTarget } | undefined)?.target
+		: request.target;
 	if (
-		!receipt || receipt.pid !== request.target.pid
-		|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal
-		|| (request.op === "activate" || request.op === "quit"
+		!receipt || !target || receipt.pid !== target.pid
+		|| receipt.process_start_identity_decimal !== target.process_start_identity_decimal
+		|| (request.op === "activate" || request.op === "quit" || request.op === "launch"
 			? receipt.window_id !== undefined
 			: receipt.window_id !== request.target.window_id)
 	) {
@@ -666,7 +703,10 @@ async function observeManagement(
 				"Later window inventory could not be bound to the original application generation.",
 			);
 		}
-		if (request.op === "activate" || request.op === "quit" || request.op === "close") {
+		if (
+			request.op === "activate" || request.op === "quit" || request.op === "launch"
+			|| request.op === "close"
+		) {
 			return managementResult(data, action, outcome);
 		}
 		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
@@ -737,6 +777,7 @@ export const desktop: Desktop = async (request, context) => {
 			"clipboard-write",
 			"apps",
 			"windows",
+			"menus",
 			"inspect",
 			"click",
 			"type",
@@ -746,6 +787,7 @@ export const desktop: Desktop = async (request, context) => {
 			"scroll",
 			"drag",
 			"activate",
+			"launch",
 			"quit",
 			"close",
 			"focus",
@@ -775,6 +817,45 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		if (request.op === "menus") {
+			validateAppOnly(request.target);
+			if (
+				request.path !== undefined && (
+					!Array.isArray(request.path) || !request.path.length || request.path.length > 8
+					|| request.path.some((title) =>
+						typeof title !== "string" || !title.trim() || title.length > 512
+					)
+				)
+			) {
+				throw new Error(
+					"Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.",
+				);
+			}
+			const input = JSON.stringify(request);
+			if (Buffer.byteLength(input) > 4096) {
+				throw new Error("Menu request exceeds the 4096-byte limit.");
+			}
+			const data = await native(["menus"], signal, { input });
+			const target = data.target as DesktopAppTarget | undefined;
+			if (
+				target?.pid !== request.target.pid
+				|| target.process_start_identity_decimal !== request.target.process_start_identity_decimal
+			) throw new Error("Native menu inventory returned a different application generation.");
+			if (request.path !== undefined) {
+				// An older client must not turn a scoped read into full menu disclosure.
+				const path = request.path, filter = data.filter as { path?: unknown } | undefined;
+				if (
+					!Array.isArray(filter?.path) || filter.path.length !== path.length
+					|| filter.path.some((title, index) => title !== path[index])
+					|| !Array.isArray(data.menus) || data.menus.some((row) =>
+						!Array.isArray(row?.path) || path.some((title, index) =>
+							row.path[index] !== title
+						)
+					)
+				) throw new Error("Native menu inventory did not honor the requested literal path.");
+			}
+			return { text: bounded(data, "menus") };
+		}
 		if (request.op === "clipboard-read") {
 			if (
 				request.format !== undefined && request.format !== "text" && request.format !== "image"
