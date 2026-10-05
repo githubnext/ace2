@@ -35,6 +35,14 @@ export type DesktopRequest =
 		point?: DesktopPoint;
 		kind?: DesktopClick;
 	}
+	| {
+		op: "scroll";
+		snapshot: string;
+		element?: string;
+		point?: DesktopPoint;
+		direction: DesktopDirection;
+		amount: number;
+	}
 	| { op: "type"; snapshot: string; element: string; text: string }
 	| {
 		op: "select";
@@ -49,7 +57,9 @@ export type DesktopRequest =
 
 export type DesktopPoint = { x: number; y: number };
 export const DESKTOP_CLICKS = ["single", "double", "right", "middle", "triple"] as const;
+export const DESKTOP_DIRECTIONS = ["up", "down", "left", "right"] as const;
 export type DesktopClick = (typeof DESKTOP_CLICKS)[number];
+export type DesktopDirection = (typeof DESKTOP_DIRECTIONS)[number];
 
 export const DESKTOP_KEYS = [
 	"enter",
@@ -122,7 +132,7 @@ export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
 export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
 export type DesktopAction = Extract<
 	DesktopRequest,
-	{ op: "click" | "type" | "key" | "select" | "activate" | "focus" | "restore" }
+	{ op: "click" | "type" | "key" | "select" | "scroll" | "activate" | "focus" | "restore" }
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
@@ -135,7 +145,7 @@ export type Desktop = (request: DesktopRequest, context: Context) => Promise<Des
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
 	return request.op === "click" || request.op === "type" || request.op === "key"
-		|| request.op === "select" || isDesktopManagement(request);
+		|| request.op === "select" || request.op === "scroll" || isDesktopManagement(request);
 }
 
 export function isDesktopManagement(request: DesktopRequest): request is DesktopManagement {
@@ -261,6 +271,21 @@ export function desktop(execute: Desktop): Extension {
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async (args, api, context) => act({ op: "click", ...args }, api, context),
+			}),
+			defineTool({
+				name: "desktop_scroll",
+				description:
+					"Scroll an observed element or screenshot point in a fresh desktop_inspect result. Pass snapshot_id as snapshot and exactly one literal element ID or normalized point (x from the screenshot's left edge, y from its top edge, each >= 0 and < 1). direction is up, down, left, or right; amount is 1 to 20 native scroll units, whose distance depends on the target's supported route rather than pixels. Uses exact-window background delivery without moving the physical pointer. Unsupported targets are refused. The snapshot is single-use; inspect the resulting position before scrolling again, and never blindly repeat interrupted input.",
+				parameters: Type.Object({
+					snapshot,
+					element: Type.Optional(element),
+					point: Type.Optional(point),
+					direction: Type.Union(DESKTOP_DIRECTIONS.map((value) => Type.Literal(value))),
+					amount: Type.Integer({ minimum: 1, maximum: 20 }),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async (args, api, context) => act({ op: "scroll", ...args }, api, context),
 			}),
 			defineTool({
 				name: "desktop_type",

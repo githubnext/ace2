@@ -1,7 +1,7 @@
 # Native desktop tools
 
 Ace's pi harness can inspect applications and windows, activate apps, focus or restore windows, click observed controls, replace editable
-field values, select text, and send keys or shortcuts on the machine running the channel's tools. It uses
+field values, select text, send keys or shortcuts, and scroll on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -45,6 +45,9 @@ find the client alongside Ace Helper automatically.
   snapshot or element IDs. The default mode is `accessibility`.
 - `desktop_click` clicks one observed Accessibility element or screenshot point. `kind` defaults
   to `single`; `double`, `right`, `middle`, and `triple` are also supported.
+- `desktop_scroll` scrolls an observed element or screenshot point `up`, `down`, `left`, or `right`.
+  `amount` is 1 to 20 native units: Accessibility pages/actions or window-routed wheel ticks, depending
+  on the target. It is not a pixel distance; inspect the resulting position before continuing.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
@@ -80,7 +83,7 @@ application/window inventory even when no inspectable window exists; it never ch
 window. Inspection stays passive and never activates or restores a target automatically.
 
 Inspect the window before clicking or entering input. Pass its `snapshot_id` as `snapshot`. Type and select take the
-literal `element` ID from that observation. Click takes exactly one `element` or `point`.
+literal `element` ID from that observation. Click and scroll take exactly one `element` or `point`.
 Points use normalized image coordinates: `x` is the fraction from the screenshot's left edge,
 `y` from its top edge, each at least 0 and less than 1. For example, `{ "x": 0.5, "y": 0.5 }`
 is its center. Normalized points retain their meaning when Ace resizes the screenshot. The native
@@ -101,7 +104,7 @@ Control and keyboard tools use targeted background delivery. They do not activat
 mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
 physical pointer. The target app can still respond by changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Literal insertion, scrolling, drag-and-drop,
+emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop,
 clipboard operations, foreground interaction, application launch, window geometry/close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 

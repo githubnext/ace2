@@ -8,6 +8,7 @@ import { promisify } from "node:util";
 import {
 	type Desktop,
 	DESKTOP_CLICKS,
+	DESKTOP_DIRECTIONS,
 	DESKTOP_KEYS,
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
@@ -318,7 +319,7 @@ function validateAction(request: DesktopAction) {
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
-	if (request.op === "click") {
+	if (request.op === "click" || request.op === "scroll") {
 		if ((request.element === undefined) === (request.point === undefined)) {
 			throw new Error("Choose exactly one observed element ID or normalized screenshot point.");
 		}
@@ -328,8 +329,15 @@ function validateAction(request: DesktopAction) {
 		) {
 			throw new Error("Choose an element ID from the inspected snapshot.");
 		}
-		if (request.kind !== undefined && !DESKTOP_CLICKS.includes(request.kind)) {
-			throw new Error("Choose single, double, right, middle, or triple click.");
+		if (request.op === "click") {
+			if (request.kind !== undefined && !DESKTOP_CLICKS.includes(request.kind)) {
+				throw new Error("Choose single, double, right, middle, or triple click.");
+			}
+		} else if (
+			!DESKTOP_DIRECTIONS.includes(request.direction) || !Number.isInteger(request.amount)
+			|| request.amount < 1 || request.amount > 20
+		) {
+			throw new Error("Choose up, down, left, or right and 1 to 20 native scroll units.");
 		}
 		return;
 	}
@@ -594,6 +602,7 @@ export const desktop: Desktop = async (request, context) => {
 			"type",
 			"key",
 			"select",
+			"scroll",
 			"activate",
 			"focus",
 			"restore",

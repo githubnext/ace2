@@ -67,7 +67,7 @@ private final class Desktop {
 						.listApplications, .listWindows, .desktopObservation,
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
-						.selectText,
+						.selectText, .targetedScroll,
 						.activateApplication, .focusWindow, .restoreWindow,
 					],
 					hostKind: .gui,
