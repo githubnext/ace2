@@ -5,12 +5,13 @@ import { dirname, join } from "node:path";
 import { adoptLoginShell } from "./environment";
 
 declare const ACE_IDENTIFIER: string;
+declare const ACE_PROFILE: string | undefined;
 
 const worker = process.argv[2] === "--worker";
 if (!worker) adoptLoginShell();
 
 const { config, desktop } = await import("./config");
-desktop(ACE_IDENTIFIER);
+desktop(ACE_IDENTIFIER, ACE_PROFILE);
 config.helper = true;
 config.app = join(dirname(process.execPath), "..", "Resources", "app", "web");
 config.worker = [process.execPath, "--worker"];

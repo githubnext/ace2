@@ -104,9 +104,10 @@ async function exit(kill: boolean, reason: string) {
 	exiting = true;
 	log("info", "worker.exit", { reason, kill, clients: clients.size });
 	if (kill) await channel.kill();
-	server.close();
 	await channel.close();
 	for (const env of envs.values()) await env.cleanup(BACKGROUND_CONTEXT);
+	// Keep the exiting guard reachable until cleanup finishes; a missing listener looks dormant.
+	server.close();
 	rmSync(paths.socket, { force: true });
 	rmSync(paths.pid, { force: true });
 	// A closed connection tells the host that durable storage and tool cleanup have finished.

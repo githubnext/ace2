@@ -52,7 +52,11 @@ export function helper(identifier: string, lane: boolean) {
 
 	async function status(): Promise<HelperState> {
 		const found = await info();
-		return { service: agent.status(), running: !!found, managed: !!found?.helper };
+		return {
+			service: lane ? "unregistered" as const : agent.status(),
+			running: !!found,
+			managed: !!found?.helper,
+		};
 	}
 
 	async function start(): Promise<void> {

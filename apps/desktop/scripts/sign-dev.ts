@@ -11,9 +11,4 @@ if (process.env.ELECTROBUN_BUILD_ENV === "dev") {
 	const app = join(build, name);
 	const identity = devIdentity();
 	sign(app, identity);
-	if (identity === "-") {
-		console.warn(
-			"Native desktop inspection requires an Apple Development signature. Set ace.codesignIdentity with git config and rebuild to enable it.",
-		);
-	}
 }
