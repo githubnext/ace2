@@ -113,6 +113,13 @@ function getPaste(e: ClipboardEvent) {
 	return text || "";
 }
 
+function getFiles(e: ClipboardEvent) {
+	let data = e.clipboardData;
+	// Spreadsheet and document copies carry a rendered image beside their text; paste the text.
+	if (!data || data.types.includes("text/plain")) return [];
+	return Array.from(data.files);
+}
+
 function inline(
 	text: string,
 	marks: readonly Mark[],
@@ -250,6 +257,8 @@ type Props =
 		onSuggest?: (state: SuggestState) => void;
 		/** Called when a mention is inserted (via autocomplete or popup). */
 		onMention?: (name: string) => void;
+		/** Receives pasted images. If omitted, pasted files are ignored. */
+		onFiles?: (files: File[]) => void;
 		/** Users for @mention autocomplete. */
 		mentions?: Mention[];
 		/** Documents for &name.md autocomplete and pasted-reference enrichment. */
@@ -279,6 +288,7 @@ function useEditor(
 		onLink,
 		onSuggest,
 		onMention,
+		onFiles,
 		mentions,
 		documents,
 		plan = false,
@@ -425,6 +435,15 @@ function useEditor(
 	let change = useEffectEvent((view: EditorView) => onChange?.(view));
 	let update = useEffectEvent((view: EditorView) => onUpdate?.(view));
 	let paste = useEffectEvent((slice: Slice) => pasted(slice, mentions, documents, plan));
+	let attach = useEffectEvent((e: ClipboardEvent) => {
+		let files = getFiles(e);
+		if (!files.length) return false;
+		// Unhandled, WebKit inserts a pasted image into the editor DOM outside the schema.
+		e.preventDefault();
+		let images = files.filter(file => file.type.startsWith("image/"));
+		if (onFiles && images.length) onFiles(images);
+		return true;
+	});
 	let keydown = useEffectEvent((v: EditorView, e: KeyboardEvent) => {
 		let p = popupRef.current;
 		if (p && e.key === "ArrowDown") {
@@ -548,6 +567,7 @@ function useEditor(
 			handleKeyDown: (view, event) => keydown(view, event),
 			handleDOMEvents: {
 				paste(v, e) {
+					if (attach(e)) return true;
 					let text = getPaste(e);
 					if (!text || !isUrl(text)) return false;
 					if (v.state.selection.$from.parent.type === schema.nodes.code_block) return false;
@@ -614,6 +634,7 @@ function RichText({ className, ...props }: Props) {
 		onLink,
 		onSuggest,
 		onMention,
+		onFiles,
 		mentions,
 		documents,
 		plan,
