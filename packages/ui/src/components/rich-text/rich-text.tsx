@@ -555,6 +555,16 @@ function useEditor(
 					return setLink(text)(v.state, v.dispatch);
 				},
 			},
+			clipboardTextParser(text, $context) {
+				let content: Node[] = [];
+				let marks = $context.marks();
+				// Plain-text line breaks must not become paragraph separators.
+				for (let [index, line] of text.split(/\r\n?|\n/).entries()) {
+					if (index) content.push(schema.nodes.hard_break.create(null, null, marks));
+					if (line) content.push(schema.text(line, marks));
+				}
+				return new Slice(Fragment.fromArray(content), 0, 0);
+			},
 			transformPasted(slice) {
 				return paste(slice);
 			},
