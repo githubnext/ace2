@@ -155,6 +155,14 @@ ApplicationMenu.setApplicationMenu([
 ]);
 
 Electrobun.events.on("reopen", () => show());
+// The webview only navigates within the app; links that open a new window go to the browser.
+Electrobun.events.on("new-window-open", ({ data }: { data: { detail: { url: string } } }) => {
+	const target = URL.parse(data.detail.url);
+	if (!target || !["https:", "http:"].includes(target.protocol) || target.origin === url.origin) {
+		return;
+	}
+	Utils.openExternal(target.href);
+});
 let quitting = false;
 let stopped = false;
 Electrobun.events.on("before-quit", (event) => {

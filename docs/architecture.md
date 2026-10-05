@@ -165,10 +165,10 @@ macOS groups the background permission under the parent app's name, Ace.
 
 The desktop owns the native project picker and helper controls. Its webview uses a typed native
 bridge, authenticates each request with the owner token, and restricts navigation to the local app
-origin. Settings exposes Start, Stop, and Restart through this bridge, and its controls remain
-available while the host is disconnected. Stopping unregisters login hosting until the user
-enables it again. An authenticated command-line host can serve the UI, but the desktop does not
-manage that process as Ace Helper.
+origin. Web links that open a new window go to the default browser. Settings exposes Start, Stop,
+and Restart through this bridge, and its controls remain available while the host is disconnected.
+Stopping unregisters login hosting until the user enables it again. An authenticated command-line
+host can serve the UI, but the desktop does not manage that process as Ace Helper.
 
 Git, shell, Tailscale, and directory diagnostics come from the host through the same local-only
 boundary as provider settings. The project picker selects a local Git checkout; project creation

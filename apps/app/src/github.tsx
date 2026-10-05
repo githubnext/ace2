@@ -234,6 +234,8 @@ function Items({ items, busy, onChannel }: {
 								className: "text-muted-foreground",
 							})}
 							aria-label="Open on GitHub"
+							// WebKit skips links on Tab unless macOS keyboard navigation is on.
+							tabIndex={0}
 							aria-describedby={`${id}-${item.number}`}
 						>
 							<IconExternal aria-hidden />
