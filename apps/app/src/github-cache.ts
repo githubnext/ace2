@@ -5,10 +5,7 @@ import type { HostRequest } from "@ace/host/protocol";
 import { host, onOpen } from "./host";
 import type { AppProject } from "./projects";
 
-type Request = Extract<
-	HostRequest,
-	{ op: "project-repo" | "github-list" | "github-detail" | "github-files" }
->;
+type Request = Extract<HostRequest, { op: "project-repo" | "github-list" }>;
 type Snapshot = { value?: unknown; error?: string; loading: boolean };
 type Saved = { key: string; request: Request; value: unknown };
 type Entry = {
@@ -28,11 +25,22 @@ const INTERVAL = 3 * 60 * 60 * 1000;
 const EMPTY: Snapshot = { loading: true };
 const cache = new Map<string, Entry>();
 const database = new Promise<IDBDatabase>((resolve, reject) => {
-	const request = indexedDB.open(`ace:github:${host.url}`, 1);
-	request.addEventListener(
-		"upgradeneeded",
-		() => request.result.createObjectStore("queries", { keyPath: "key" }),
-	);
+	const request = indexedDB.open(`ace:github:${host.url}`, 2);
+	request.addEventListener("upgradeneeded", (event) => {
+		if (event.oldVersion < 1) {
+			return request.result.createObjectStore("queries", { keyPath: "key" });
+		}
+		// Version 1 also saved inline item details, which background refresh would keep requesting.
+		const cursor = request.transaction!.objectStore("queries").openCursor();
+		cursor.addEventListener("success", () => {
+			const saved = cursor.result;
+			if (!saved) return;
+			if (!["project-repo", "github-list"].includes((saved.value as Saved).request.op)) {
+				saved.delete();
+			}
+			saved.continue();
+		});
+	});
 	request.addEventListener("success", () => {
 		request.result.addEventListener("versionchange", () => request.result.close());
 		resolve(request.result);

@@ -28,7 +28,6 @@ import { Channel, ChannelDetails, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
 import { Github, GithubSidebar } from "./github";
 import { useGithubRefresh } from "./github-cache";
-import { GithubLinks, type GithubTarget } from "./github-link";
 import { desktop, titlebar } from "./desktop";
 import { host } from "./host";
 import { Rename } from "./layout/rename";
@@ -37,6 +36,9 @@ import { EmptyProjects, OpenProject } from "./open-project";
 import { projectId, projects } from "./projects";
 import { Settings } from "./settings";
 import { UpdateNotice } from "./updates";
+
+// Older versions saved an inline GitHub item per project; Ace now opens items on GitHub.
+localStorage.removeItem(`ace:github-targets:${host.url}`);
 
 /**
  * On a phone the channel list is a drawer over the channel: open while no channel is chosen, and
@@ -135,9 +137,6 @@ export function App() {
 	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [draft, setDraft] = useState<ChannelDraft>();
 	const [renaming, setRenaming] = useState<{ id: string; name: string }>();
-	const [github, setGithub] = useLocalStorage<
-		Record<string, Partial<Record<"issues" | "prs", GithubTarget>>>
-	>(`ace:github-targets:${host.url}`, {});
 	const [left, setLeft] = useLocalStorage("panel:left", true);
 	const [width, setWidth] = useLocalStorage("panel:left:width", 200);
 	const [collapsed, setCollapsed] = useState<Record<SessionSidebarGroupId, boolean>>({
@@ -279,23 +278,9 @@ export function App() {
 		setRenaming(undefined);
 	}
 
-	function setTarget(kind: "issues" | "prs", target?: GithubTarget) {
-		if (!current) return;
-		setGithub((value) => ({
-			...value,
-			[current.id]: { ...value[current.id], [kind]: target },
-		}));
-	}
-
-	function openGithub(target: GithubTarget) {
-		setTarget(target.kind, target);
-		setPage(target.kind);
-	}
-
 	return (
 		<ThemeProvider storageKey="ace-theme">
 			<TooltipProvider>
-				{current && <GithubLinks onOpen={openGithub} />}
 				<Layout
 					appearance={desktop ? "native" : "web"}
 					defaultNavOpen={false}
@@ -375,7 +360,6 @@ export function App() {
 										connected={connected}
 										onProject={setProject}
 										onOpen={() => void choose()}
-										onTarget={(target) => setTarget(page, target)}
 									/>
 								)}
 						</Sidebar>
@@ -421,8 +405,8 @@ export function App() {
 									key={`${current.id}:${page}`}
 									kind={page}
 									project={current}
-									target={github[current.id]?.[page]}
-									onTarget={(target) => setTarget(page, target)}
+									connected={connected}
+									onCreate={local ? create : undefined}
 								/>
 							)
 							: channel

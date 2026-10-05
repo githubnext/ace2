@@ -128,6 +128,7 @@ export { Waveform } from "./ui/waveform";
 export { toast } from "sonner";
 export { Dither } from "./components/dither";
 export { Divider } from "./components/divider";
+export { buttonVariants } from "./lib/button-variants";
 export { Alert, AlertAction, AlertDescription, AlertTitle } from "./ui/alert";
 export { Badge } from "./ui/badge";
 export { Button } from "./ui/button";
