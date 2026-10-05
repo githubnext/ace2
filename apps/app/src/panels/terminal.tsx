@@ -126,6 +126,8 @@ export function Terminal({ channel, chat, active, terminal, onTerminal }: Props)
 	const fit = useRef<FitAddon | null>(null);
 	const id = useRef(terminal);
 	const restart = useRef<() => void>(undefined);
+	/** Replays written to xterm and not yet parsed. */
+	const replaying = useRef(0);
 	const [node, setNode] = useState<HTMLDivElement | null>(null);
 	const [state, setState] = useState<State>({ status: "idle" });
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
@@ -155,6 +157,7 @@ export function Terminal({ channel, chat, active, terminal, onTerminal }: Props)
 		addon.fit();
 		shell.current = term;
 		fit.current = addon;
+		replaying.current = 0;
 
 		term.attachCustomKeyEventHandler((event) => {
 			if (event.type !== "keydown" || event.key !== "k") return true;
@@ -163,6 +166,9 @@ export function Terminal({ channel, chat, active, terminal, onTerminal }: Props)
 			return false;
 		});
 		const input = term.onData((data) => {
+			// xterm answers queries in replayed output (cursor position, colors) as if they were live,
+			// and the shell would read those answers as typed input.
+			if (replaying.current) return;
 			if (!id.current) return restart.current?.();
 			host.request({ op: "terminal-input", terminal: id.current, data }).catch(() => {});
 		});
@@ -226,7 +232,12 @@ export function Terminal({ channel, chat, active, terminal, onTerminal }: Props)
 			// The host replays recent output on reattach; clear first so it doesn't repeat.
 			term.reset();
 			off = host.terminal(value.terminal, (frame) => {
-				if ("data" in frame) return term.write(bytes(frame.data));
+				if ("data" in frame) {
+					if (!frame.replay) return term.write(bytes(frame.data));
+					replaying.current++;
+					// Runs right after xterm parses the replay, before live output queued behind it.
+					return term.write(bytes(frame.data), () => replaying.current--);
+				}
 				off?.();
 				id.current = undefined;
 				persist(undefined);

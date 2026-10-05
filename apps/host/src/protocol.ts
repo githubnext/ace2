@@ -153,8 +153,13 @@ export type HostFrame =
 	| { channels: Listing[] }
 	| TerminalFrame;
 
-/** Terminal output as base64, since a chunk can split a UTF-8 sequence; then its exit code. */
-export type TerminalFrame = { terminal: string; data: string } | { terminal: string; exit: number };
+/**
+ * Terminal output as base64, since a chunk can split a UTF-8 sequence; then its exit code. A
+ * reattach starts with one `replay` frame of earlier output, whose queries must not be answered.
+ */
+export type TerminalFrame =
+	| { terminal: string; data: string; replay?: true }
+	| { terminal: string; exit: number };
 
 export type TerminalOpened = { terminal: string; cwd: string };
 
