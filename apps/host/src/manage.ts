@@ -7,7 +7,7 @@ import type { ModelRef } from "@ace/channel/protocol";
 import { available, choose } from "@ace/channel/models";
 
 import * as catalog from "./catalog";
-import { hostedAuth, request } from "./client";
+import { Connection, hostedAuth, request } from "./client";
 import { config } from "./config";
 import { models as providers } from "./keys";
 import { preference } from "./preferences";
@@ -76,7 +76,28 @@ export async function host(
 }
 
 export async function kill(id: string): Promise<void> {
-	if (isRunning(id)) await request(id, { op: "kill" });
+	if (catalog.read(id).hosted) return request<void>(id, { op: "kill" });
+	const connection = await Connection.running(id);
+	if (!connection) return;
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	try {
+		await Promise.race([
+			(async () => {
+				await connection.request({ op: "kill" });
+				// The reply only confirms the abort; the worker closes sockets after storage and tools.
+				await connection.closed;
+			})(),
+			new Promise<never>((_, reject) => {
+				timer = setTimeout(
+					() => reject(new Error(`Channel ${id} did not close within 10 seconds`)),
+					10_000,
+				);
+			}),
+		]);
+	} finally {
+		clearTimeout(timer);
+		connection.close();
+	}
 }
 
 export async function archive(id: string, archived: boolean): Promise<catalog.Listing> {
