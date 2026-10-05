@@ -195,7 +195,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
          guard let element = self.positionalFocusTarget(inCandidates: candidates, at: point) else {
              throw DesktopActionFailure.preDispatchRefusal(
                  reason: .operationUnsupported,
-@@ -1488,7 +1564,12 @@
+@@ -1488,7 +1564,19 @@
                  "Exact-window pixel-focus receipt changed before the Accessibility focus write")
          }
 
@@ -205,11 +205,18 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
 +                throw PeekabooError.snapshotStale(
 +                    "Exact-window pixel-focus receipt changed before the Accessibility focus write")
 +            }
++            if let axElement = element.underlyingAXElement {
++                guard let windowID = CGWindowID(exactly: exactWindow.identity.windowID),
++                      AXWindowIDResolver.owningWindowID(of: axElement) == windowID else {
++                    throw PeekabooError.snapshotStale(
++                        "Exact-window pixel-focus element changed windows before the Accessibility focus write")
++                }
++            }
 +        }
          guard element.focusedState == true,
                let focusedElement = element.focusedElementIdentity
          else {
-@@ -1624,13 +1705,18 @@
+@@ -1624,13 +1712,18 @@
              throw PeekabooError.permissionDeniedAccessibility
          }
 
@@ -231,7 +238,7 @@ diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/U
                    let expectedWindowBounds,
                    SystemIdentityResolver.validateWindowMutationIdentity(
                        expectedWindowIdentity,
-@@ -1641,11 +1727,13 @@
+@@ -1641,11 +1734,13 @@
              }
              try self.assertBelongsToTargetWindow(resolved.element, targetWindowID: targetWindowID, at: point)
          }
