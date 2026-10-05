@@ -27,7 +27,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../
 import { isSidebarRowSelected } from "./selection";
 import { IconArchive, IconCheck, IconChevronDown, IconPlus, IconX } from "../../icons";
 
-export type SessionSidebarGroupId = "pinned" | "mine" | "team" | "archived";
+export type SessionSidebarGroupId = "pinned" | "mine" | "team" | "inactive" | "archived";
 
 export type SessionSidebarGroup = {
 	id: SessionSidebarGroupId;

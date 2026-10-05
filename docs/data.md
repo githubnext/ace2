@@ -33,7 +33,8 @@ The command uses SQLite's [VACUUM INTO](https://www.sqlite.org/lang_vacuum.html#
 to capture a consistent snapshot, including committed WAL entries, while a worker continues
 running. It opens the source read-only, checks the output's integrity, and writes:
 
-- `channel.json`: the channel's identity, owner, project, and optional initial model.
+- `channel.json`: the channel's identity, owner, project, optional initial model, and when its
+  transcript last grew.
 - `channel.sqlite`: all pi state at the snapshot point, if the channel has been opened before.
 - `backup.json`: format version, source paths, creation time, and SHA-256 checksums. This file is
   written last to mark a complete backup. Failed backups remove only their newly created output.
