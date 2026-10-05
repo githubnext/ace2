@@ -104,7 +104,8 @@ async function dev(): Promise<void> {
 			env,
 			stdio: ["ignore", "inherit", "inherit"],
 		});
-		for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => app.kill(signal));
+		// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
+		for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => app.kill());
 		void host.exited.then(() => app.kill());
 		await app.exited;
 	} finally {
