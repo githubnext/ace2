@@ -207,11 +207,14 @@ coordinates concurrent native operations. The collaborator-agent
 switch applies to desktop tools with the rest of the agent's tools. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
-Development builds use `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`, keeping them
-separate from the installed app. Their preferences live under `Ace-dev`, and their Keychain service
-is `ace-dev`. `ACE_CONFIG_HOME` and `ACE_KEYCHAIN_SERVICE` can target an isolated profile for
-development or smoke checks. They are signed locally for `SMAppService`; distribution signing
-and notarization are handled by the release pipeline. Sparkle checks for updates while Ace is open;
+The installed development app uses `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`,
+keeping it separate from the installed app. Its preferences live under `Ace-dev`, and its Keychain
+service is `ace-dev`. It is signed locally for `SMAppService`; distribution signing and
+notarization are handled by the release pipeline. A checkout's development build instead derives
+its own identifier, port, data, preferences, and Keychain service from the checkout path, and only
+uses the host that `bun run dev` starts from the same checkout. It never registers Ace Helper, so
+testing a branch cannot replace or reuse an installed helper. `ACE_CONFIG_HOME` and
+`ACE_KEYCHAIN_SERVICE` can target an isolated profile for other smoke checks. Sparkle checks for updates while Ace is open;
 installation explicitly pauses and unregisters the helper before replacing the application. The
 relaunched app restores hosting and resumes interrupted workers. See [updates](updates.md) for
 the handoff, signed feeds, hosting, and release credentials.

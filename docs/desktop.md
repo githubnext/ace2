@@ -144,36 +144,61 @@ and Ace's grouped permission in macOS background-item settings.
 
 ## UI testing
 
-Use the development `Ace-dev.app` from `apps/desktop/dist/dev-macos-arm64`, copied to
-`/Applications/Ace-dev.app`. It uses port 4141 and its own `ace-dev` catalog and Keychain service,
-plus `~/Library/Application Support/Ace-dev` for preferences. Build it with `bun run stage` then
-`ACE_BUILD_CHANNEL=dev bunx electrobun build --env=dev` from `apps/desktop`.
+Test a checkout's desktop changes with `bun run dev` from its `apps/desktop`. It builds that
+checkout's `Ace-dev.app`, starts the checkout's own host from source, and opens the app against it.
+The host serves the checkout's freshly built `apps/app/dist`. Quitting the app stops the host and
+its workers; Ctrl-C or SIGTERM to the command quits the app first. If the host exits, the window
+closes. The command blocks while the app runs, so an agent starts it in the background and stops
+it by quitting the app or signalling the command, not the host.
 
-For an installed development build, set `ACE_CODESIGN_IDENTITY` to the SHA-1 identity reported by
-`security find-identity -v -p codesigning` when building. Use the same valid Apple Development
-identity for subsequent builds. The hook signs every native executable and the app with that
-identity. Without it, the build uses ad-hoc signing for isolated checks. Apple recommends an
-[Apple-issued identity for both the app and helper](https://developer.apple.com/forums/thread/799910)
-when testing service management; ad-hoc updates can fail macOS launch constraints.
-Increment the desktop package version before distributing another installed build.
+Each checkout's build has its own bundle identifier, `dev.ace.desktop.dev.<hash>`, derived from the
+checkout path. It uses its own `~/.local/state/ace-dev-<hash>` data, `Ace-dev-<hash>` preferences,
+`ace-dev-<hash>` Keychain service, WebKit storage, and a port from 4200 to 4999. Other `ACE_*`
+settings in the environment are ignored, except `ACE_PORT` to move the run off a port used by
+another checkout and `ACE_*_API_KEY` credentials. A run refuses any listener already on its port.
+The profile starts without provider keys; add one in Settings or pass it in the environment. It
+persists across runs until you delete those directories, its Keychain entries, and
+`~/Library/WebKit/dev.ace.desktop.dev.<hash>`.
 
-On first launch, enable Ace Helper, then press Cmd+O to open a project folder. Verify that the
-dashboard opens with no provider key and that opening a folder creates no channel. Add a provider
-key in Settings before starting an agent. Check the Dashboard and Channels navigation, project
-switching, key validation and replacement, picker cancellation, and starting a channel.
-In Settings → This Mac, try restarting the helper, then stopping and starting it. Finally quit
-and reopen the app; its channel history should remain available. No `.env` or source checkout is
-required to run the installed bundle. This build is signed locally, not notarized for distribution.
+These builds never register or attach to Ace Helper. Without their host they report that it is
+missing and quit, and helper controls in the menu and Settings are unavailable. Opening a checkout's
+build from Finder works only while its `bun run dev` host is running. Use the installed Ace-dev or
+Canary to test Ace Helper itself.
 
-When replacing a development install, stop Ace Helper in Settings → This Mac and quit Ace first.
-Move the old bundle aside and copy the new bundle into `/Applications` as a complete directory;
-do not overwrite executables inside the installed bundle. Start Ace and enable Ace Helper again.
-For a scripted copy, refresh the app's LaunchServices registration with
-`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Ace-dev.app`
-before registering its helper.
-Keep the `ace-dev` data, preferences, and Keychain service. Changing the signing identity may
-require approving Keychain access again. Signed distribution updates still need their own
-validation.
+The build is signed ad hoc unless `ACE_CODESIGN_IDENTITY` names an Apple Development identity, which
+native desktop inspection of the app requires.
+
+On first launch, press Cmd+O to open a project folder. Verify that the dashboard opens with no
+provider key and that opening a folder creates no channel. Add a provider key in Settings before
+starting an agent. Check the Dashboard and Channels navigation, project switching, key validation
+and replacement, picker cancellation, and starting a channel. Quit and run it again; its channel
+history should remain available.
+
+### Installed Ace-dev
+
+The installed `/Applications/Ace-dev.app` uses `dev.ace.desktop.dev`, port 4141, the `ace-dev`
+catalog and Keychain service, and `~/Library/Application Support/Ace-dev` for preferences. It runs
+Ace Helper through `SMAppService`. Build it only from a checkout based on the current `origin/main`:
+
+```sh
+ACE_DEV_INSTALL=1 ACE_CODESIGN_IDENTITY=<sha-1> bun scripts/build.ts dev
+```
+
+`ACE_CODESIGN_IDENTITY` is the SHA-1 reported by `security find-identity -v -p codesigning`; use the
+same valid Apple Development identity for every install. macOS records a launch constraint from the
+registered helper's signature, so an ad-hoc or differently signed replacement fails with a launch
+constraint violation. The build refuses ad-hoc signing. Apple recommends an
+[Apple-issued identity for both the app and helper](https://developer.apple.com/forums/thread/799910).
+
+To replace it, stop Ace Helper in Settings → This Mac, which unregisters it, and quit Ace. Remove
+the old bundle and move the new one from `dist/dev-macos-arm64` into `/Applications` as a complete
+directory; do not overwrite executables inside the installed bundle or leave copies with the
+`dev.ace.desktop.dev` identifier elsewhere, because launchd can resolve the helper from any
+registered copy. Refresh its registration with
+`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/Ace-dev.app`,
+then open Ace and enable Ace Helper. In Settings → This Mac, try restarting the helper, then stopping
+and starting it. Keep the `ace-dev` data, preferences, and Keychain service. Changing the signing
+identity may require approving Keychain access again. This build is signed locally, not notarized.
 
 ## Browser development
 

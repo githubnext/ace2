@@ -38,9 +38,12 @@ export function desktop(identifier: string): string | undefined {
 	const name = identifier.slice("dev.ace.desktop.".length).replaceAll(".", "-");
 	if (!name) return;
 	const lane = /^dev-([a-f0-9]{8})$/.exec(name)?.[1];
-	if (!process.env.ACE_HOME) config.home = join(homedir(), ".local", "state", `ace-${name}`);
-	if (!process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${name}`;
-	if (!process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${name}`;
+	// A profile exported for another app must never point a checkout's build at that app's data.
+	if (lane || !process.env.ACE_HOME) {
+		config.home = join(homedir(), ".local", "state", `ace-${name}`);
+	}
+	if (lane || !process.env.ACE_CONFIG_HOME) config.settings = `${settings}-${name}`;
+	if (lane || !process.env.ACE_KEYCHAIN_SERVICE) config.keychain = `ace-${name}`;
 	if (!process.env.ACE_PORT) {
 		config.port = ports[name] || 4200 + Number.parseInt(lane || "0", 16) % 800;
 	}

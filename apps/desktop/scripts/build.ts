@@ -64,27 +64,32 @@ async function dev(): Promise<void> {
 	};
 	if (!desktop(identifier)) throw new Error(`${identifier} is not a checkout development build`);
 	// Attaching to an existing listener would serve another run's or checkout's code.
-	const running = await health(config.port);
+	const running = await health(config.port).catch((error: Error) => {
+		throw new Error(`${error.message}. Set ACE_PORT to run this checkout on another port.`);
+	});
 	if (running) {
 		throw new Error(
 			`Port ${config.port} already has an Ace host (PID ${running.pid}) for ${running.home}. Stop it, or set ACE_PORT.`,
 		);
 	}
+	// Other Ace settings in the environment belong to other hosts, such as directory publishing.
+	const env: Record<string, string | undefined> = Object.fromEntries(
+		Object.entries(process.env).filter(([name]) =>
+			!name.startsWith("ACE_") || /^ACE_\w+_API_KEY$/.test(name)
+		),
+	);
+	Object.assign(env, {
+		ACE_HOME: config.home,
+		ACE_CONFIG_HOME: config.settings,
+		ACE_KEYCHAIN_SERVICE: config.keychain,
+		ACE_PORT: String(config.port),
+	});
 	const host = Bun.spawn([
 		process.execPath,
 		"--no-env-file",
 		join(root, "..", "host", "src", "cli.ts"),
 		"serve",
-	], {
-		env: {
-			...process.env,
-			ACE_HOME: config.home,
-			ACE_CONFIG_HOME: config.settings,
-			ACE_KEYCHAIN_SERVICE: config.keychain,
-			ACE_PORT: String(config.port),
-		},
-		stdio: ["ignore", "inherit", "inherit"],
-	});
+	], { env, stdio: ["ignore", "inherit", "inherit"] });
 	try {
 		const deadline = Date.now() + 30_000;
 		while (!(await health(config.port))) {
@@ -96,6 +101,7 @@ async function dev(): Promise<void> {
 		console.log(`Ace-dev ${identifier}: ${config.home}, port ${config.port}`);
 		const app = Bun.spawn([join(bin, "launcher")], {
 			cwd: bin,
+			env,
 			stdio: ["ignore", "inherit", "inherit"],
 		});
 		for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, () => app.kill(signal));
