@@ -72,7 +72,7 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_apps",
 				description:
-					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect.",
+					"List native applications on this channel's execution host. Use an application's PID with desktop_windows to select a window to inspect. Activity and visibility are unknown unless is_active_known and is_hidden_known respectively are true; read metadata_warnings for missing evidence.",
 				parameters: Type.Object({}),
 				replay: "safe",
 				execute: async (_args, _api, context) => result(await execute({ op: "apps" }, context)),

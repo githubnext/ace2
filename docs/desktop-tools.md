@@ -27,7 +27,7 @@ find the client alongside Ace Helper automatically.
 
 ## Tools
 
-- `desktop_apps` lists running native applications and their process IDs.
+- `desktop_apps` lists running native applications, their process IDs, and observed activity and visibility.
 - `desktop_windows` lists windows for an application process ID.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
@@ -38,6 +38,11 @@ find the client alongside Ace Helper automatically.
 - `desktop_key` presses and releases one basic key in the window and focused control recorded by
   the observation: `enter`, `tab`, `escape`, `backspace`, `delete`, `up`, `down`, `left`, or `right`.
   `enter` means Return; `delete` means forward delete. Shortcuts and held keys are not exposed.
+
+Application activity and visibility are matched to the inventory's exact process generation.
+Use `is_active` only when `is_active_known` is true, and `is_hidden` only when
+`is_hidden_known` is true. Unknown values are omitted, with metadata warnings kept separate from
+inventory completeness and warnings.
 
 Choose the application from the inventory and the window from that application's window list.
 Inspect the window before acting. Pass its `snapshot_id` as `snapshot`; click and type also take
