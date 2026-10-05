@@ -107,11 +107,12 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		} else {
 			window = try request.target.windowIdentity()
 		}
-		guard await client.authenticatedHostIdentity() != nil else {
+		// The inventory receipt proves signed transport; optional source-build metadata is not required.
+		let inventory = try await client.listApplicationMutationInventory()
+		guard let preflight = await client.lastOperationReceipt(), preflight.payload.operation == PeekabooBridgeRequest.listApplicationMutationInventory.operation else {
 			throw ManagementError("The native runtime cannot attest exact management targets. Update the desktop runtime before acting.")
 		}
 		// A failed read-only preflight cannot have dispatched this management action. Native revalidation still owns races.
-		let inventory = try await client.listApplicationMutationInventory()
 		guard let application = inventory.items.first(where: { $0.processIdentifier == process.processIdentifier }),
 			application.processIdentity == process
 		else { throw ManagementError("The observed application generation could not be verified. Refresh desktop_apps before acting.") }
