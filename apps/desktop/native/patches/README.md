@@ -53,6 +53,14 @@ Unresolved delivery blocks later automated clipboard writes until a live read co
 edit or that exact process generation ends. Only reservation metadata survives a GUI restart;
 no clipboard contents, hashes, or deferred restoration are persisted.
 
+`peekaboo-quit.patch` preserves accepted but unfinished normal quit in
+[native computer use](https://github.com/githubnext/ace2/issues/8).
+A normal quit can leave an application waiting for an unsaved-work decision. That is one
+dispatched operation with unverified completion and unsafe retry, not a safely repeatable no-op.
+The quit-specific result validator permits this canonical outcome with `false` termination so
+the existing bridge returns the boolean and its signed process receipt. Other false/success
+contradictions stay errors. Force-quit behavior, target revalidation, and mutation lanes are unchanged.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and applies each patch before compiling Swift. A repeated build accepts each only when its reverse
 patch check succeeds. If neither direction applies, the build fails with Git's diagnostics rather

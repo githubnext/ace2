@@ -141,7 +141,12 @@ if (!head.success || head.stdout.toString().trim() !== revision) {
 }
 // Keep local dependency fixes bound to the reviewed pin and verify every patch independently.
 for (
-	const name of ["peekaboo-click.patch", "peekaboo-insert.patch", "peekaboo-pointer-window.patch"]
+	const name of [
+		"peekaboo-click.patch",
+		"peekaboo-insert.patch",
+		"peekaboo-pointer-window.patch",
+		"peekaboo-quit.patch",
+	]
 ) {
 	const patch = join(native, "patches", name);
 	const forward = Bun.spawnSync([...git, "apply", "--check", patch]);

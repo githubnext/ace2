@@ -58,7 +58,7 @@ struct ManagementTarget: Codable {
 
 private struct ManagementRequest: Decodable {
 	enum Operation: String, Decodable {
-		case activate, focus, restore, move, resize
+		case activate, quit, focus, restore, move, resize
 	}
 	struct Position: Decodable {
 		let x: Double
@@ -107,6 +107,8 @@ private struct ManagementResult: Encodable {
 	var outcome = "refused"
 	var action = "management"
 	var native_outcome: DesktopActionOutcome?
+	var terminated: Bool?
+	var message: String?
 	var requires_fresh_observation = false
 	var error: ManagementMessage?
 }
@@ -117,7 +119,7 @@ private struct ManagementReply: Encodable {
 	let target_receipt: Receipt?
 }
 
-func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
+func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHandshakeResponse) async throws -> Data {
 	var result = ManagementResult()
 	var receipt: Receipt?
 	var invoked = false
@@ -127,13 +129,19 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		try request.validate()
 		let process = try request.target.processIdentity()
 		let window: WindowMutationIdentity?
-		if request.op == .activate {
+		if request.op == .activate || request.op == .quit {
 			guard request.target.window_id == nil, request.target.bounds == nil, request.target.is_minimized == nil else {
-				throw ManagementError("Activation takes an application target from desktop_apps.")
+				throw ManagementError("Activation and quit take an application target from desktop_apps.")
 			}
 			window = nil
 		} else {
 			window = try request.target.windowIdentity()
+		}
+		if request.op == .quit {
+			guard handshake.negotiatedVersion >= PeekabooBridgeConstants.processGenerationPinnedApplicationQuitVersion,
+				handshake.supportedOperations.contains(.quitApplication),
+				(handshake.enabledOperations ?? handshake.supportedOperations).contains(.quitApplication)
+			else { throw ManagementError("The desktop runtime does not support process-generation-pinned quit. Update the runtime before acting.") }
 		}
 		// Match Peekaboo's capture preflight; absent session state does not establish a lock.
 		let session = CGSessionCopyCurrentDictionary() as NSDictionary?
@@ -156,6 +164,7 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		try Task.checkCancellation()
 		let outcome: DesktopActionOutcome?
 		let operation: PeekabooBridgeOperation
+		var terminated: Bool?
 		invoked = true
 		switch request.op {
 		case .activate:
@@ -167,6 +176,13 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 			guard action.targetIdentity?.processIdentity == process, action.targetIdentity?.exactWindow == nil else {
 				throw ManagementError("Activation returned no matching application-only receipt.")
 			}
+			outcome = action.outcome
+		case .quit:
+			operation = .quitApplication
+			let action = try await client.quitApplicationResult(request: .init(
+				identifier: "PID:\(process.processIdentifier)", force: false, expectedIdentity: process
+			), supportsPinnedQuit: true)
+			terminated = action.payload
 			outcome = action.outcome
 		case .focus:
 			operation = .focusWindow
@@ -208,13 +224,17 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 			throw ManagementError("The management action's signed target did not match the original inventory target.")
 		}
 		result.requires_fresh_observation = outcome.dispatchState.mutationDispatched
+		result.terminated = terminated
+		if terminated == false {
+			result.message = "The normal quit request was accepted, but termination was not confirmed. Inspect remaining windows for unsaved work or other dialogs; do not blindly retry or force quit."
+		}
 		switch outcome.state {
 		case .refused:
 			result.outcome = "refused"
 		case .indeterminate, .partial:
 			result.outcome = "unknown"
 		default:
-			result.outcome = outcome.evidence == .operationStillRunning ? "unknown" : "completed"
+			result.outcome = outcome.evidence == .operationStillRunning || terminated == false ? "unknown" : "completed"
 		}
 	} catch let failure as DesktopActionFailure {
 		result.outcome = failure.outcome.dispatchState.mutationDispatched ? "unknown" : "refused"
