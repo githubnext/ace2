@@ -308,7 +308,7 @@ function prompt(item: GithubItem): string {
 	const work = item.kind === "prs"
 		? "Continue this pull request on its existing branch: make the needed changes, validate them, and push them to it instead of opening a new pull request."
 		: "Make the needed changes, validate them, and open or update a pull request.";
-	return `Let's work on ${item.title} (${item.url}). Read the item and its discussion, inspect the project, and follow its instructions. ${work}`;
+	return `Let's work on ${item.title} (${item.url}). Read the item and its discussion and inspect the project. ${work}`;
 }
 
 export function Github({ kind, project, connected, onCreate }: {
