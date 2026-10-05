@@ -22,6 +22,13 @@ the original exact target checks and focus readback remain in force. An ambiguou
 retains an indeterminate outcome instead of allowing another input route. Point-click occlusion
 and background paste behavior are separate parts of that issue.
 
+`peekaboo-pointer-window.patch` addresses
+[WebKit controls being reported as occluded](https://github.com/githubnext/ace2/issues/106).
+Positional click validation and pointer receiver identification use Peekaboo's existing
+containing-window resolver, including the native `AXWindow` link when a leaf has no direct window
+ID. A different or unresolved window remains refused; process, generation, bounds, and target
+checks are unchanged. It adds no coordinate-routing or input fallback.
+
 `peekaboo-insert.patch` addresses
 [literal newlines submitting web composers](https://github.com/githubnext/ace2/issues/76).
 Unicode keyboard events are still keyboard events: WebKit can treat a newline as Return.
