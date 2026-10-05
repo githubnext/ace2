@@ -152,6 +152,8 @@ export type HostRequest =
 	/** Owner actions; tailnet peers create, archive, and delete channels on their own hosts. */
 	| { op: "create"; project: string; name?: string; model?: ModelRef }
 	| { op: "archive"; channel: string; archived: boolean }
+	/** Archive the project's channels on this host that have no work in progress. */
+	| { op: "archive-inactive"; project: string }
 	| { op: "delete"; channel: string }
 	/**
 	 * Forward a request to a channel on this host or a peer, starting its worker if dormant. The
