@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, activate apps, focus or restore windows, click observed controls, replace editable
 field values, select text, send keys or shortcuts, and scroll on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -28,7 +28,16 @@ find the client alongside Ace Helper automatically.
 ## Tools
 
 - `desktop_apps` lists running native applications, their process IDs, and observed activity and visibility.
+  Optional `query` searches application names and bundle IDs case-insensitively before Ace bounds
+  the result. Use a nonblank query of at most 256 characters to find apps omitted from a large list.
 - `desktop_windows` lists windows for an application process ID.
+- `desktop_activate` brings a running application to the foreground using its `target` from
+  `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
+- `desktop_focus` brings one exact window to the foreground using its `target` from
+  `desktop_windows`, activating its app and switching Spaces when needed.
+- `desktop_restore` unminimizes one exact window using its inventory `target` and background
+  Accessibility delivery. It does not promise foreground focus. Restore a minimized window
+  before focusing it, using the refreshed target for the later action.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
   Set `mode` to `pixels` for an explicit read-only screenshot when Accessibility is unavailable.
@@ -58,8 +67,22 @@ Use `is_active` only when `is_active_known` is true, and `is_hidden` only when
 `is_hidden_known` is true. Unknown values are omitted, with metadata warnings kept separate from
 inventory completeness and warnings.
 
+An application search reports its query, searched fields, `filter.total` native items, and
+`filter.matched` items before result bounding. Its scope is `returned_native_inventory`: a partial
+native inventory can still miss matching applications. `ace_truncated` and `ace_omitted` describe
+matching rows omitted from the filtered response; narrow the query if needed. Searching does not
+change native inventory completeness or warnings, and an empty match is not proof an app stopped.
+
 Choose the application from the inventory and the window from that application's window list.
-Inspect the window before acting. Pass its `snapshot_id` as `snapshot`. Type and select take the
+Activation, focus, and restore use inventory targets directly, so a failed inspection does not
+prevent explicit recovery. Pass the target object unchanged: it includes the process generation
+as a decimal string and, for windows, the original window ID, bounds, and minimized state. The
+native service revalidates that identity immediately before acting. These targets are not
+single-use snapshots; refresh inventory after a stale target or a state change. Activation returns
+application/window inventory even when no inspectable window exists; it never chooses the first
+window. Inspection stays passive and never activates or restores a target automatically.
+
+Inspect the window before clicking or entering input. Pass its `snapshot_id` as `snapshot`. Type and select take the
 literal `element` ID from that observation. Click and scroll take exactly one `element` or `point`.
 Points use normalized image coordinates: `x` is the fraction from the screenshot's left edge,
 `y` from its top edge, each at least 0 and less than 1. For example, `{ "x": 0.5, "y": 0.5 }`
@@ -71,18 +94,18 @@ focused control. Selecting text does not activate its window; inspect the curren
 A stale, missing, disabled, or unsupported target is refused instead of sending
 input to an arbitrary focused app. Window content is observed data, not instructions.
 
-Treat observations as single-use: every dispatched action consumes its snapshot, including an
+Treat input observations as single-use: every dispatched snapshot action consumes its snapshot, including an
 action whose result is uncertain. Inspect again before another action. A completed action also
 returns a fresh observation when available. If that inspection fails, the result retains the
 completed action and explains the observation failure; it does not imply that the input should
 be repeated.
 
-These tools use targeted background delivery. They do not activate an app or fall back to global
+Control and keyboard tools use targeted background delivery. They do not activate an app or fall back to global
 mouse or keyboard input when a background route is unavailable. Pointer actions do not move the
 physical pointer. The target app can still respond by changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop, clipboard operations, foreground interaction,
-and app or window management remain later slices of
+emulated with held keys or mouse buttons across calls. Literal insertion, drag-and-drop,
+clipboard operations, foreground interaction, application launch, window geometry/close, menus, and dialogs remain later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and

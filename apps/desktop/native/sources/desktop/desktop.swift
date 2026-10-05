@@ -68,6 +68,7 @@ private final class Desktop {
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
 						.selectText, .targetedScroll,
+						.activateApplication, .focusWindow, .restoreWindow,
 					],
 					hostKind: .gui,
 					requestTimeoutSeconds: 25
