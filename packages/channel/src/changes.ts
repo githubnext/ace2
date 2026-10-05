@@ -67,6 +67,7 @@ export async function changes(
 	context: Context,
 ): Promise<Changes> {
 	const range = await base(env, cwd, project, context);
+	const branch = (await read(env, cwd, "rev-parse --abbrev-ref HEAD", context)).trim();
 	const tracked = numstat(await read(env, cwd, `diff -M --numstat -z ${range.base}`, context));
 	const files = await Promise.all(
 		[...tracked, ...await untracked(env, cwd, context)].slice(0, FILES).map(async (change) => {
@@ -78,7 +79,13 @@ export async function changes(
 			return Object.assign(change, { version });
 		}),
 	);
-	return { ...(lane ? { lane } : {}), cwd, ...range, files };
+	return {
+		...(lane ? { lane } : {}),
+		...(branch && branch !== "HEAD" ? { branch } : {}),
+		cwd,
+		...range,
+		files,
+	};
 }
 
 /** `file` must be one `changes` listed; it is passed to git only as a quoted literal path. */

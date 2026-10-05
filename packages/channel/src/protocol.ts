@@ -60,7 +60,15 @@ export type Change = {
  * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus
  * uncommitted and untracked files. A chat without a lane shows the checkout against HEAD.
  */
-export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
+export type Changes = {
+	lane?: string;
+	/** The checked-out branch; absent when HEAD is detached. */
+	branch?: string;
+	cwd: string;
+	base: string;
+	head: string;
+	files: Change[];
+};
 
 /** GitHub views are read through the host; they are not durable channel state. */
 export type GithubKind = "issues" | "prs";
@@ -77,6 +85,13 @@ export type GithubItem = {
 	labels: { name: string; color: string }[];
 };
 export type GithubList = { items: GithubItem[]; more: boolean };
+export type GithubCheck = {
+	name: string;
+	url?: string;
+	state: "pending" | "passed" | "failed" | "skipped";
+};
+/** The newest pull request from a branch, with its latest check results. */
+export type GithubPull = GithubItem & { checks: GithubCheck[] };
 export type GithubComment = {
 	id: string;
 	url: string;

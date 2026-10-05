@@ -93,6 +93,8 @@ type Props = {
 	render: Render;
 	/** Notified when a tab is closed, so owners can release its resources. */
 	onTabClose?: (uid: string, data: Content) => void;
+	/** Receives the function that shows the chat's Diff tab, opening one beside the chat if needed. */
+	opener?: { current?: () => void };
 };
 
 const MIN = 350;
@@ -648,7 +650,7 @@ function Pane(props: PaneProps) {
 	);
 }
 
-function useLayout({ id, name, chat, changed, onTabClose }: Props) {
+function useLayout({ id, name, chat, changed, onTabClose, opener }: Props) {
 	const [data] = useState(() => read(id));
 	const [api] = useState(() => Split.create(data.state, { min: minimum }));
 	const [meta, setMeta] = useState<Meta>(data.meta);
@@ -720,6 +722,23 @@ function useLayout({ id, name, chat, changed, onTabClose }: Props) {
 		if (!api.open({ tab: uid, to: { pane }, background: true })) return;
 		setMeta((meta) => ({ ...meta, [uid]: content("diff", chat) }));
 	}, [api, chat, changed, diff, meta]);
+
+	const reveal = useEffectEvent(() => {
+		const tabs = api.get().tabs;
+		const uid = tabs.find((uid) => {
+			const value = meta[uid];
+			return value?.type === "diff" && value.chat === chat;
+		});
+		if (uid) return activate(uid);
+		const pane = Split.host(api.get(), CHAT);
+		if (pane) add(pane, "diff");
+	});
+
+	useLayoutEffect(() => {
+		if (!opener) return;
+		opener.current = reveal;
+		return () => void (opener.current = undefined);
+	}, [opener]);
 
 	function nav(event: KeyboardEvent<HTMLElement>, pane: Split.Pane) {
 		const tabs = pane.tabs;

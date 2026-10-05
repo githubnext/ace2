@@ -170,6 +170,7 @@ const localOps = new Set<HostRequest["op"]>([
 	"github-list",
 	"github-detail",
 	"github-files",
+	"github-pull",
 	"settings",
 	"diagnostics",
 	"key-set",
@@ -292,6 +293,8 @@ async function handle(
 			return github.detail(request);
 		case "github-files":
 			return github.files(request.repo, request.number);
+		case "github-pull":
+			return github.pull(request.repo, request.branch);
 		case "settings":
 			return settings();
 		case "diagnostics":

@@ -31,6 +31,12 @@ outside channel history. Issues and PRs share the Channels sidebar and project p
 Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
 action creates a channel in the selected project and invokes its agent with the item's title and URL.
 
+A channel's details sidebar shows the root chat's changes and branch, the newest pull request from
+that branch with its checks, subagents and links from the transcript, and the channel's usage.
+The pull request is read through the same GitHub CLI account while the sidebar is open, again when
+the branch moves and every minute, and is not cached. A channel can work on many lanes and pull
+requests over time; the sidebar follows the chat's current lane.
+
 Avatars come from GitHub logins. Each host resolves its owner's login with `gh api user`, returns
 it from `hello` to peers, and publishes it to the directory. The app maps message authors'
 Tailscale logins to GitHub avatars and shows initials when no login is known.
