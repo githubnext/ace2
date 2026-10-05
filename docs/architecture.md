@@ -28,7 +28,8 @@ the app's own host performs authenticated GitHub reads. The app caches GitHub re
 IndexedDB, scoped to its host connection. It refreshes in the background at startup and every
 three hours, keeping cached content visible while requests run or fail. GitHub content stays
 outside channel history. Issues and PRs share the Channels sidebar and project picker, with
-Open, Closed, and All filters in the sidebar. GitHub issue and PR links open these pages inside Ace.
+Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
+action creates a channel in the selected project and invokes its agent with the item's title and URL.
 
 ## Channel
 
