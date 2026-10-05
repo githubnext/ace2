@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 
 import {
 	type Desktop,
+	DESKTOP_BUTTONS,
 	DESKTOP_CLICKS,
 	DESKTOP_DIRECTIONS,
 	DESKTOP_KEYS,
@@ -319,6 +320,24 @@ function validateAction(request: DesktopAction) {
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
+	if (request.op === "drag") {
+		validatePoint(request.from);
+		validatePoint(request.to);
+		if (request.from.x === request.to.x && request.from.y === request.to.y) {
+			throw new Error("Choose distinct start and end points for a drag.");
+		}
+		if (request.button !== undefined && !DESKTOP_BUTTONS.includes(request.button)) {
+			throw new Error("Choose the left or right mouse button for a drag.");
+		}
+		if (
+			request.duration_ms !== undefined
+			&& (!Number.isInteger(request.duration_ms) || request.duration_ms < 1
+				|| request.duration_ms > 10000)
+		) {
+			throw new Error("Drag duration must be 1 to 10000 milliseconds.");
+		}
+		return;
+	}
 	if (request.op === "click" || request.op === "scroll") {
 		if ((request.element === undefined) === (request.point === undefined)) {
 			throw new Error("Choose exactly one observed element ID or normalized screenshot point.");
@@ -617,6 +636,7 @@ export const desktop: Desktop = async (request, context) => {
 			"insert",
 			"select",
 			"scroll",
+			"drag",
 			"activate",
 			"focus",
 			"restore",
