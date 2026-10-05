@@ -468,8 +468,7 @@ function validateAction(request: DesktopAction) {
 	}
 }
 
-function validateManagement(request: DesktopManagement) {
-	const target = request.target;
+function validateAppTarget(target: DesktopAppTarget) {
 	if (
 		!target || typeof target !== "object" || !Number.isInteger(target.pid)
 		|| target.pid < 1 || target.pid > 2_147_483_647
@@ -477,14 +476,22 @@ function validateManagement(request: DesktopManagement) {
 		|| !/^[1-9][0-9]{0,19}$/.test(target.process_start_identity_decimal)
 		|| BigInt(target.process_start_identity_decimal) > 18_446_744_073_709_551_615n
 	) throw new Error("Pass the application's target object from fresh desktop inventory unchanged.");
+}
+
+function validateAppOnly(target: DesktopAppTarget) {
+	validateAppTarget(target);
+	if (Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))) {
+		throw new Error("Pass only the application's target object from desktop_apps.");
+	}
+}
+
+function validateManagement(request: DesktopManagement) {
+	const target = request.target;
 	if (request.op === "activate" || request.op === "quit") {
-		if (
-			Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))
-		) {
-			throw new Error("Activation and quit take an application target from desktop_apps.");
-		}
+		validateAppOnly(target);
 		return;
 	}
+	validateAppTarget(target);
 	const window = request.target;
 	if (
 		!Number.isInteger(window.window_id) || window.window_id < 1 || window.window_id > 4_294_967_295
@@ -751,6 +758,7 @@ export const desktop: Desktop = async (request, context) => {
 			"clipboard-write",
 			"apps",
 			"windows",
+			"menus",
 			"inspect",
 			"click",
 			"type",
@@ -790,6 +798,16 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		if (request.op === "menus") {
+			validateAppOnly(request.target);
+			const data = await native(["menus"], signal, { input: JSON.stringify(request) });
+			const target = data.target as DesktopAppTarget | undefined;
+			if (
+				target?.pid !== request.target.pid
+				|| target.process_start_identity_decimal !== request.target.process_start_identity_decimal
+			) throw new Error("Native menu inventory returned a different application generation.");
+			return { text: bounded(data, "menus") };
+		}
 		if (request.op === "clipboard-read") {
 			if (request.format !== undefined && request.format !== "text" && request.format !== "image") {
 				throw new Error("Choose text or image clipboard format.");

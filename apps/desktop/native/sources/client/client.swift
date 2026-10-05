@@ -30,6 +30,7 @@ private enum Client {
 			|| (operation == "management" && args.count == 2)
 			|| (operation == "launch" && args.count == 2)
 			|| (operation == "clipboard" && args.count == 2)
+			|| (operation == "menus" && args.count == 2)
 		else { throw ClientError.usage }
 		let identity = try SigningIdentity.current()
 		let client = PeekabooBridgeClient(
@@ -52,6 +53,8 @@ private enum Client {
 			return try await nativeAction(client)
 		case "clipboard":
 			return try await nativeClipboard(client)
+		case "menus":
+			return try await nativeMenus(client)
 		case "management":
 			return try await nativeManagement(client, handshake: handshake)
 		case "launch":
@@ -322,7 +325,7 @@ private enum ClientError: LocalizedError {
 	var errorDescription: String? {
 		switch self {
 		case .usage:
-			"Usage: ace-desktop-client <socket> apps | windows <pid> | inspect <pid> <window> <absolute-output-path> [accessibility|pixels] | action < JSON"
+			"Usage: ace-desktop-client <socket> apps | windows <pid> | menus < JSON | inspect <pid> <window> <absolute-output-path> [accessibility|pixels] | action < JSON"
 		case .target:
 			"The native observation did not confirm the requested process and window. Refresh the window list and try again."
 		case .image:

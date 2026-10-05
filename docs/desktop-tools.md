@@ -77,6 +77,18 @@ find the client alongside Ace Helper automatically.
   activation attempts. Timeout or interruption remains `unknown`: LaunchServices can open the app
   later, and the native operation retains its lane until it settles. Observe `desktop_apps`
   before choosing another action; do not blindly repeat the launch.
+- `desktop_menus` reads one application's menu structure using its exact `target` from
+  `desktop_apps`. Signed native responses and before/after application inventories bind it to the
+  same process generation. It opens no menu, activates nothing, and returns no input snapshot.
+  Rows contain literal title arrays, separators and supplied shortcut text. Native state can be
+  cached for 2 seconds after traversal; no observation timestamp or cache-hit flag is available.
+  `native_completeness` is always `unknown`: lazy submenus, unavailable AX attributes and native
+  traversal limits can omit items. `ace_truncated` and `ace_omitted` describe only Ace's separate
+  output limit, and `native_row_count` counts rows received before that limit. Enabled/checked
+  flags are omitted because the native service substitutes defaults when attributes are absent.
+  Menu paths are descriptive and cannot be used as action snapshots. Native AX reads are
+  synchronous; traversal budgets are soft, so a blocked read can delay cancellation and GUI
+  responsiveness. A host timeout does not establish that the native read has finished.
 - `desktop_activate` brings a running application to the foreground using its `target` from
   `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
 - `desktop_quit` requests normal quit of one running application using its exact `target` from

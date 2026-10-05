@@ -37,6 +37,7 @@ export type DesktopRequest =
 	| { op: "clipboard-write"; text: string }
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
+	| { op: "menus"; target: DesktopAppTarget }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
 		op: "click";
@@ -319,6 +320,17 @@ export function desktop(execute: Desktop): Extension {
 				executionMode: "sequential",
 				execute: async ({ application }, api, context) =>
 					act({ op: "launch", application }, api, context),
+			}),
+			defineTool({
+				name: "desktop_menus",
+				description:
+					"Read one application's available menu structure using its exact target from desktop_apps. This opens no menu, sends no input, and does not activate the app. The result is bound to the same process generation before and after the native read. Native results may come from a 2-second cache; their observation time and completeness are unknown, including lazy or budget-limited submenus. Ace truncation counts are separate. Paths are literal title arrays for discovery, not reusable action targets. Enabled/checked state is omitted because the native service substitutes defaults for unavailable attributes. Native AX reads are synchronous and can delay cancellation or GUI responsiveness. No screenshot or input snapshot is returned.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+				}),
+				replay: "safe",
+				execute: async ({ target }, _api, context) =>
+					result(await execute({ op: "menus", target }, context)),
 			}),
 			defineTool({
 				name: "desktop_activate",

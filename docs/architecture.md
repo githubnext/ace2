@@ -198,6 +198,10 @@ signing team. Tools expose application and window inventories, observation, elem
 clicks, scrolling, atomic drags, replacement of editable field values, text selection/insertion, and keys or shortcuts. Screenshot
 points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+Read-only menu inventory uses signed native responses and application inventories before and after
+the read to bind one observed process generation. Its possible native cache and unknown completeness
+remain explicit; bounded title paths do not grant input authority. Native menu traversal is currently
+synchronous and can delay GUI responsiveness or cancellation. No menu mutation is exposed.
 Separate activation, quit, close, focus, minimize, restore, move, and resize tools accept generation-bound inventory targets, with exact
 window bounds where applicable. The native service revalidates those receipts before dispatch;
 activation and focus explicitly change the foreground desktop. Inspection never activates a target
