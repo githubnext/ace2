@@ -27,6 +27,7 @@ private enum Client {
 			|| (operation == "windows" && args.count == 3)
 			|| (operation == "inspect" && (args.count == 5 || args.count == 6))
 			|| (operation == "action" && args.count == 2)
+			|| (operation == "management" && args.count == 2)
 		else { throw ClientError.usage }
 		let identity = try SigningIdentity.current()
 		let client = PeekabooBridgeClient(
@@ -47,6 +48,8 @@ private enum Client {
 		switch operation {
 		case "action":
 			return try await nativeAction(client)
+		case "management":
+			return try await nativeManagement(client)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
 			var metadata: [ServiceApplicationInfo] = []
@@ -85,7 +88,7 @@ private enum Client {
 			let inventory = try await client.listWindowMutationInventory(target: .application("PID:\(pid)"))
 			return try encode(Windows(
 				pid: pid,
-				windows: inventory.items.map(Window.init),
+				windows: inventory.items.map { Window($0, pid: pid) },
 				inventory_completeness: inventory.completeness.rawValue,
 				inventory_warnings: inventory.warnings
 			))
@@ -180,7 +183,7 @@ private struct Message: Encodable {
 
 struct Receipt: Encodable {
 	let pid: Int32
-	let window_id: Int
+	let window_id: Int?
 	let process_start_identity_decimal: String
 }
 
@@ -201,6 +204,7 @@ private struct App: Encodable {
 	let is_hidden_known: Bool
 	let process_start_identity_decimal: String?
 	let warnings: [String]?
+	let target: ManagementTarget?
 
 	init(_ app: ServiceApplicationInfo, metadata: ServiceApplicationInfo?, activityKnown: Bool) {
 		name = app.name
@@ -214,6 +218,7 @@ private struct App: Encodable {
 		process_start_identity_decimal = app.processStartIdentity.map(String.init)
 		let combined = (app.metadataWarnings ?? []) + (metadata?.metadataWarnings ?? [])
 		warnings = combined.isEmpty ? nil : Array(Set(combined)).sorted()
+		target = app.processIdentity.map(ManagementTarget.init)
 	}
 }
 
@@ -234,8 +239,9 @@ private struct Window: Encodable {
 	let observation_capability: String?
 	let observation_reason: String?
 	let process_start_identity_decimal: String?
+	let target: ManagementTarget?
 
-	init(_ window: ServiceWindowInfo) {
+	init(_ window: ServiceWindowInfo, pid: Int32) {
 		window_id = window.windowID
 		window_title = window.title
 		bounds = Bounds(window.bounds)
@@ -245,10 +251,11 @@ private struct Window: Encodable {
 		observation_capability = window.observationCapability?.mode.rawValue
 		observation_reason = window.observationCapability?.reason?.rawValue
 		process_start_identity_decimal = window.mutationIdentity.map { String($0.processIdentity.processStartIdentity) }
+		target = ManagementTarget(window: window, pid: pid)
 	}
 }
 
-private struct Bounds: Encodable {
+struct Bounds: Codable {
 	let x: Double
 	let y: Double
 	let width: Double
