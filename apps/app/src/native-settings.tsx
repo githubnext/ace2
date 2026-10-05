@@ -11,6 +11,15 @@ const permissions = [
 	{ key: "eventSynthesizing", label: "Keyboard input" },
 ] as const;
 
+const clipboardPolicies: Record<NativeState["clipboardRead"]["policy"], string> = {
+	default: "Use macOS default",
+	ask: "Ask",
+	always_allow: "Always allow",
+	always_deny: "Always deny",
+	unavailable_on_this_os: "No macOS grant required",
+	unknown: "Unknown",
+};
+
 const states: Record<NativeState["state"], string> = {
 	stopped: "Not running",
 	starting: "Starting…",
@@ -69,7 +78,7 @@ export function NativeStatus(
 
 	const value = result.value;
 	const needsPermission = value?.state === "ready"
-		&& permissions.some(({ key }) => !value[key]);
+		&& (permissions.some(({ key }) => !value[key]) || !value.clipboardRead.readAdmitted);
 	const error = action.error || result.error || value?.error;
 
 	return (
@@ -103,6 +112,18 @@ export function NativeStatus(
 						)}
 					</div>
 				))}
+				<div className="space-y-1">
+					<p>
+						Clipboard reading:{" "}
+						{value ? clipboardPolicies[value.clipboardRead.policy] : "Not checked"}
+					</p>
+					{value && !value.clipboardRead.readAdmitted && (
+						<p className="text-muted-foreground">
+							Allow Ace to read the clipboard in macOS System Settings. Checking this status does
+							not read clipboard contents.
+						</p>
+					)}
+				</div>
 			</div>
 			{action.busy && <p role="status">Requesting permission…</p>}
 			{error && <p role="alert" className="text-destructive">{error}</p>}

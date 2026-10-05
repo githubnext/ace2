@@ -1,11 +1,17 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { chmod, link, mkdtemp, open, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { promisify } from "node:util";
 
 import {
+	CLIPBOARD_FILES_LIMIT,
+	CLIPBOARD_IMAGE_LIMIT,
+	CLIPBOARD_JSON_LIMIT,
+	CLIPBOARD_KINDS,
+	CLIPBOARD_TEXT_LIMIT,
+	type ClipboardValue,
 	type Desktop,
 	DESKTOP_KEYS,
 	DESKTOP_MODIFIERS,
@@ -100,7 +106,7 @@ async function native(
 		const error = value.error;
 		const reason = error ? `${error.code}: ${error.message}` : "Native desktop operation failed";
 		const permission = error?.code.toLowerCase().includes("permission")
-			? " Check Ace's Accessibility and Screen Recording access in Ace Settings."
+			? " Check Ace's native permissions and clipboard read policy in Ace Settings."
 			: "";
 		throw new Error(`${reason}.${permission}`);
 	}
@@ -217,10 +223,155 @@ async function inspect(
 	}
 }
 
+function clipboardPath(path: unknown): asserts path is string {
+	if (typeof path !== "string" || !isAbsolute(path) || path.length > 4096 || path.includes("\0")) {
+		throw new Error("Use an absolute execution-host path of at most 4096 UTF-16 code units.");
+	}
+}
+
+function clipboardJSON(data: Record<string, unknown>): string {
+	const text = JSON.stringify(data);
+	if (Buffer.byteLength(text) > CLIPBOARD_JSON_LIMIT) {
+		throw new Error(
+			"The complete clipboard result exceeds 24000 JSON bytes; it was not truncated.",
+		);
+	}
+	return text;
+}
+
+function validateClipboard(value: ClipboardValue) {
+	if (!value || typeof value !== "object" || !CLIPBOARD_KINDS.includes(value.kind)) {
+		throw new Error("Choose a text, image, or files clipboard value.");
+	}
+	if (value.kind === "text") {
+		if (typeof value.text !== "string" || value.text.length > CLIPBOARD_TEXT_LIMIT) {
+			throw new Error("Clipboard text must contain at most 8192 UTF-16 code units.");
+		}
+		return;
+	}
+	if (value.kind === "image") return clipboardPath(value.path);
+	if (
+		!Array.isArray(value.paths) || !value.paths.length || value.paths.length > CLIPBOARD_FILES_LIMIT
+	) {
+		throw new Error("Choose 1 to 32 ordinary local file or directory paths.");
+	}
+	for (const path of value.paths) clipboardPath(path);
+	if (
+		Buffer.byteLength(JSON.stringify({ kind: value.kind, paths: value.paths }))
+			> CLIPBOARD_JSON_LIMIT
+	) {
+		throw new Error("The complete file clipboard value must fit 24000 JSON bytes.");
+	}
+}
+
+async function clipboardImage(path: string, signal: AbortSignal): Promise<Buffer> {
+	signal.throwIfAborted();
+	// Refuse non-files without waiting for a pipe writer before fstat can inspect them.
+	const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+	try {
+		const info = await file.stat();
+		if (!info.isFile() || !info.size || info.size > CLIPBOARD_IMAGE_LIMIT) {
+			throw new Error("Clipboard images must be regular, nonempty files of at most 10 MiB.");
+		}
+		// Bound reads themselves: a file can grow after its size was checked.
+		const data = Buffer.alloc(CLIPBOARD_IMAGE_LIMIT + 1);
+		let length = 0;
+		while (length < data.length) {
+			signal.throwIfAborted();
+			const { bytesRead } = await file.read(data, length, data.length - length, null);
+			if (!bytesRead) break;
+			length += bytesRead;
+		}
+		signal.throwIfAborted();
+		if (!length || length > CLIPBOARD_IMAGE_LIMIT) {
+			throw new Error("Clipboard images must contain 1 byte to 10 MiB.");
+		}
+		return data.subarray(0, length);
+	} finally {
+		await file.close();
+	}
+}
+
+async function clipboardRead(
+	request: Extract<DesktopRequest, { op: "clipboard-read" }>,
+	signal: AbortSignal,
+): Promise<DesktopResult> {
+	if (!CLIPBOARD_KINDS.includes(request.kind)) {
+		throw new Error("Choose text, image, or files to read.");
+	}
+	if (request.kind !== "image") {
+		if (request.path !== undefined) {
+			throw new Error("Only image clipboard reads accept an output path.");
+		}
+		const data = await native(["clipboard"], signal, { input: JSON.stringify(request) });
+		if (data.kind !== request.kind || typeof data.present !== "boolean") {
+			throw new Error("Native clipboard read returned an unexpected representation.");
+		}
+		if (data.present && request.kind === "text" && typeof data.text !== "string") {
+			throw new Error("Native clipboard read returned no complete text.");
+		}
+		if (data.present && request.kind === "files") {
+			if (
+				!Array.isArray(data.paths) || !data.paths.length
+				|| data.paths.length > CLIPBOARD_FILES_LIMIT
+			) {
+				throw new Error("Native clipboard read returned an invalid file list.");
+			}
+			for (const path of data.paths) clipboardPath(path);
+		}
+		return { text: clipboardJSON(data) };
+	}
+	clipboardPath(request.path);
+	// Stage beside the destination so publishing a new artifact is atomic and cannot replace a file.
+	const directory = await mkdtemp(join(dirname(request.path), ".ace-clipboard-"));
+	try {
+		const path = join(directory, "image");
+		const data = await native(["clipboard"], signal, {
+			input: JSON.stringify({ ...request, path }),
+		});
+		if (data.kind !== "image" || typeof data.present !== "boolean") {
+			throw new Error("Native clipboard read returned an unexpected image representation.");
+		}
+		if (!data.present) return { text: clipboardJSON(data) };
+		const bytes = await clipboardImage(path, signal);
+		const image = data.image as { mimeType?: string; bytes?: number } | undefined;
+		if (
+			!image || !["image/png", "image/jpeg", "image/tiff"].includes(String(image.mimeType))
+			|| image.bytes !== bytes.length
+		) {
+			throw new Error("Native clipboard image metadata does not match its bounded artifact.");
+		}
+		clipboardJSON({ ...data, path: request.path });
+		let preview: Awaited<ReturnType<typeof screenshot>> | undefined;
+		let previewError: string | undefined;
+		try {
+			preview = await screenshot(path, join(directory, "preview.jpg"), signal);
+		} catch (error) {
+			signal.throwIfAborted();
+			previewError = (error instanceof Error ? error.message : String(error)).slice(0, 2000);
+		}
+		const text = clipboardJSON({
+			...data,
+			path: request.path,
+			...(preview ? { preview: { width: preview.width, height: preview.height } } : {}),
+			...(previewError ? { preview_error: previewError } : {}),
+		});
+		signal.throwIfAborted();
+		await chmod(path, 0o600);
+		await link(path, request.path);
+		return { text, ...(preview ? { image: preview.image } : {}) };
+	} finally {
+		await rm(directory, { recursive: true, force: true });
+	}
+}
+
 function validateAction(request: DesktopAction) {
+	if (request.op === "clipboard-write" || request.op === "paste") validateClipboard(request.value);
+	if (request.op === "clipboard-write") return;
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
+	if (request.op === "paste") return;
 	if (request.op === "key") {
 		if (!DESKTOP_KEYS.includes(request.key)) throw new Error("Choose one supported key.");
 		const modifiers = request.modifiers;
@@ -266,7 +417,13 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 	let text = JSON.stringify({ action: data });
 	if (Buffer.byteLength(text) > MAX_TEXT) {
 		text = JSON.stringify({
-			action: { outcome, target_receipt: data.target_receipt },
+			action: {
+				outcome,
+				target_receipt: data.target_receipt,
+				clipboard_changed: data.clipboard_changed,
+				clipboard_cleanup: data.clipboard_cleanup,
+				consumption: data.consumption,
+			},
 			warning: "Native action metadata exceeded the result limit. Inspect the current state.",
 		});
 	}
@@ -276,10 +433,32 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 async function act(request: DesktopAction, signal: AbortSignal): Promise<DesktopResult> {
 	let dispatched = false;
 	let data: Record<string, unknown>;
+	let directory: string | undefined;
+	const clipboard = request.op === "clipboard-write" || request.op === "paste";
 	try {
 		validateAction(request);
-		data = await native(["action"], signal, {
-			input: JSON.stringify(request),
+		let input = request;
+		if (clipboard) {
+			const value = request.value;
+			if (value.kind === "image") {
+				const bytes = await clipboardImage(value.path, signal);
+				directory = await mkdtemp(join(tmpdir(), "ace-clipboard-"));
+				const path = join(directory, "image");
+				await writeFile(path, bytes, { mode: 0o600, signal });
+				input = { ...request, value: { kind: "image", path } };
+			} else if (value.kind === "files") {
+				await Promise.all(value.paths.map(async (path) => {
+					const file = await stat(path);
+					if (!file.isFile() && !file.isDirectory()) {
+						throw new Error(
+							"Clipboard file references must name ordinary local files or directories.",
+						);
+					}
+				}));
+			}
+		}
+		data = await native([clipboard ? "clipboard" : "action"], signal, {
+			input: JSON.stringify(input),
 			onDispatch() {
 				dispatched = true;
 			},
@@ -289,16 +468,29 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		}
 	} catch (error) {
 		const outcome = dispatched ? "unknown" : "refused";
-		return actionResult({
+		data = {
 			outcome,
 			reason: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
+			...(clipboard && !dispatched ? { clipboard_changed: false } : {}),
 			message: dispatched
-				? "The desktop action may have partially run. Inspect the current state before retrying. Stopping does not undo input already delivered."
+				? "The desktop action may have partially run. Inspect the current UI or clipboard state before retrying. Stopping does not undo delivered input or clipboard changes."
 				: "The desktop action was not sent to the native desktop.",
-		}, outcome);
+		};
+	}
+	if (directory) {
+		try {
+			await rm(directory, { recursive: true, force: true });
+		} catch (error) {
+			data.staging_cleanup_error = (error instanceof Error ? error.message : String(error)).slice(
+				0,
+				2000,
+			);
+		}
 	}
 	const outcome = data.outcome as DesktopOutcome;
-	if (outcome !== "completed") return actionResult(data, outcome);
+	if (outcome !== "completed" || request.op === "clipboard-write") {
+		return actionResult(data, outcome);
+	}
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
 	try {
 		const receipt = data.target_receipt as Reply["target_receipt"];
@@ -334,7 +526,19 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 export const desktop: Desktop = async (request, context) => {
 	if (
 		!request
-		|| !["apps", "windows", "inspect", "click", "type", "key", "insert", "select"].includes(
+		|| ![
+			"apps",
+			"windows",
+			"inspect",
+			"click",
+			"type",
+			"key",
+			"insert",
+			"select",
+			"clipboard-read",
+			"clipboard-write",
+			"paste",
+		].includes(
 			request.op,
 		)
 	) {
@@ -356,6 +560,7 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		if (request.op === "clipboard-read") return await clipboardRead(request, signal);
 		const args = request.op === "apps"
 			? ["apps"]
 			: ["windows", positive(request.pid)];

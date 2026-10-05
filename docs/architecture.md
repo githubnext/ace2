@@ -178,14 +178,22 @@ Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
 signing team. Tools expose application and window inventories, observation, single element clicks,
-replacement of editable field values, text selection/insertion, and keys or shortcuts. Actions use background delivery bound to a
-snapshot's exact process, window, and controls; every dispatched action requires a new observation.
+replacement of editable field values, text selection/insertion, keys or shortcuts, and clipboard
+read/write/paste. Image and file values name paths on the execution host; the host stages bounded
+image data and returns complete bounded text/file metadata or a local image artifact and preview.
+Clipboard read policy is observed without reading contents and follows the GUI's native macOS permission.
+Window input and temporary paste use background delivery bound to a
+snapshot's exact process, window, and controls; every dispatched window action requires a new observation.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
-completed operations, refusals before dispatch, and uncertain delivery. The host bounds
+completed operations, refusals, and uncertain delivery; clipboard results report clipboard changes
+and cleanup separately. The host bounds
 accessibility text and resizes screenshots before returning them. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
-coordinates concurrent native operations. The collaborator-agent
+coordinates concurrent native operations. Clipboard transactions also use its clipboard gate;
+previous clipboard contents stay only in the long-lived GUI's memory, with generation-checked
+cleanup after cancellation. Pi never replays clipboard writes or paste; no restore journal is added.
+The collaborator-agent
 switch applies to desktop tools with the rest of the agent's tools. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 

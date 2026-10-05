@@ -107,7 +107,7 @@ function desktopFailure(outcome: "refused" | "unknown", reason: string): Desktop
 			outcome,
 			reason,
 			message: outcome === "unknown"
-				? "The desktop action may have partially run. Inspect the target's current state before retrying. Stopping does not undo input already delivered."
+				? "The desktop action may have partially run. Inspect the current UI or clipboard state before retrying. Stopping does not undo delivered input or clipboard changes."
 				: "The desktop action was not sent to the native desktop.",
 		}),
 	};

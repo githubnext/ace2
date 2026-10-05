@@ -1,0 +1,673 @@
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeClipboard.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeClipboard.swift
+new file mode 100644
+--- /dev/null
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeClipboard.swift
+@@ -0,0 +1,185 @@
++import Foundation
++import PeekabooAutomationKit
++import PeekabooFoundation
++
++public struct PeekabooBridgeClipboardPasteRequest: Codable, Sendable {
++    public let snapshot: String
++    public let value: ClipboardValue
++    public init(snapshot: String, value: ClipboardValue) { self.snapshot = snapshot; self.value = value }
++}
++
++public struct PeekabooBridgeClipboardError: Codable, Sendable {
++    public let code: String
++    public let message: String
++    public var hint: String?
++}
++
++public struct PeekabooBridgeClipboardReceipt: Codable, Sendable {
++    public let pid: Int32
++    public let window_id: Int
++    public let process_start_identity_decimal: String
++}
++
++/// Mutation replies contain no original or replacement clipboard payload.
++public struct PeekabooBridgeClipboardMutation: Codable, Sendable {
++    public var outcome: String
++    public var native_outcome: DesktopActionOutcome?
++    public var clipboard_changed: Bool
++    public var clipboard_cleanup: String?
++    public var consumption: String?
++    public var requires_fresh_observation = false
++    public var error: PeekabooBridgeClipboardError?
++    public var target_receipt: PeekabooBridgeClipboardReceipt?
++}
++
++extension PeekabooBridgeClient {
++    public func clipboardRead(kind: ClipboardValue.Kind) async throws -> ClipboardContents {
++        guard case let .clipboardContents(contents) = try await self.send(.clipboardRead(kind)) else {
++            throw PeekabooBridgeErrorEnvelope(code: .internalError, message: "Unexpected clipboard read response")
++        }
++        return contents
++    }
++
++    public func clipboardWrite(value: ClipboardValue) async throws -> PeekabooBridgeClipboardMutation {
++        guard case let .clipboardMutation(result) = try await self.send(.clipboardWrite(value)) else {
++            throw PeekabooBridgeErrorEnvelope(code: .internalError, message: "Unexpected clipboard write response")
++        }
++        return result
++    }
++
++    public func clipboardPaste(snapshot: String, value: ClipboardValue) async throws -> PeekabooBridgeClipboardMutation {
++        guard case let .clipboardMutation(result) = try await self.send(.clipboardPaste(.init(snapshot: snapshot, value: value))) else {
++            throw PeekabooBridgeErrorEnvelope(code: .internalError, message: "Unexpected clipboard paste response")
++        }
++        return result
++    }
++}
++
++@MainActor
++extension PeekabooBridgeServer {
++    func handleClipboardRequest(_ request: PeekabooBridgeRequest) async throws -> PeekabooBridgeHandledResponse {
++        try await ClipboardPasteTransactionGate.withExclusiveTransaction {
++            try PeekabooBridgeRequestContext.checkRequestIsActive()
++            switch request {
++            case let .clipboardRead(kind):
++                return try .init(response: .clipboardContents(self.clipboard.readItems(kind: kind)))
++            case let .clipboardWrite(value):
++                let write = try value.writeRequest()
++                try PeekabooBridgeRequestContext.checkRequestIsActive()
++                var result = PeekabooBridgeClipboardMutation(outcome: "completed", clipboard_changed: false)
++                do {
++                    let written = try self.clipboard.setActionResult(write)
++                    result.native_outcome = written.outcome
++                    result.clipboard_changed = true
++                } catch let failure as DesktopActionFailure {
++                    guard failure.outcome.dispatchState.mutationDispatched else { throw failure }
++                    result.outcome = "unknown"
++                    result.native_outcome = failure.outcome
++                    result.clipboard_changed = true
++                    result.error = .init(code: "CLIPBOARD_WRITE_FAILED", message: failure.message, hint: failure.hint)
++                }
++                return Self.clipboardResponse(result)
++            case let .clipboardPaste(payload):
++                return try await self.pasteClipboard(payload)
++            default:
++                throw Self.invalidRequest(for: request)
++            }
++        }
++    }
++
++    private func pasteClipboard(_ payload: PeekabooBridgeClipboardPasteRequest) async throws -> PeekabooBridgeHandledResponse {
++        guard !payload.snapshot.isEmpty, payload.snapshot.utf16.count <= 256,
++              try await self.services.snapshots.ownsSnapshot(snapshotId: payload.snapshot),
++              let detection = try await self.services.snapshots.getDetectionResult(snapshotId: payload.snapshot),
++              let context = detection.metadata.windowContext,
++              let identity = context.windowMutationIdentity,
++              let bounds = context.windowBounds,
++              context.windowID == identity.windowID,
++              context.applicationProcessId == identity.ownerProcessIdentifier,
++              let focused = context.focusedElement
++        else { throw Self.clipboardRefusal("Inspect an exact window with a focused control before pasting.") }
++        guard let keyboard = self.services.automation as? any ClipboardGuardedExactWindowHotkeyServiceProtocol,
++              keyboard.supportsClipboardGuardedExactWindowHotkeys
++        else { throw Self.clipboardRefusal("The native host cannot bind paste to its clipboard generation and exact focused window.") }
++        let write = try payload.value.writeRequest()
++        // All prior items and representations remain in GUI memory until cleanup. No restore journal survives a crash.
++        guard let transaction = try self.clipboard.prepareTemporaryWrite(
++            maximumBytes: 32 * 1024 * 1024, maximumItems: 128, maximumRepresentations: 512
++        ) as? any ClipboardTemporaryWriteClaimProviding else {
++            throw Self.clipboardRefusal("The native clipboard owner cannot retain a generation claim.")
++        }
++        let lease = try await self.services.snapshots.beginSnapshotMutation(snapshotId: payload.snapshot)
++        var result = PeekabooBridgeClipboardMutation(
++            outcome: "refused", clipboard_changed: false, clipboard_cleanup: "not_needed", consumption: "unverified")
++        result.target_receipt = .init(pid: identity.ownerProcessIdentifier, window_id: identity.windowID,
++                                     process_start_identity_decimal: String(identity.ownerProcessStartIdentity))
++        var attemptedInput = false
++        do {
++            try PeekabooBridgeRequestContext.checkRequestIsActive()
++            let written = try transaction.writeWithClaim(write)
++            try PeekabooBridgeRequestContext.checkRequestIsActive()
++            attemptedInput = true
++            let input = try await keyboard.hotkeyWithOutcome(
++                keys: "cmd,v", holdDuration: 50,
++                target: .init(identity: identity, bounds: bounds, focusedElement: focused),
++                clipboardClaim: written.claim)
++            result.native_outcome = input.outcome
++            guard let outcome = input.outcome,
++                  let target = input.targetIdentity?.exactWindow,
++                  target.identity.hasSameStableReceipt(as: identity), target.bounds == bounds else {
++                throw DesktopActionFailure.indeterminate(evidence: .completionUnknown,
++                    message: "Paste returned without its expected exact-window outcome.")
++            }
++            switch outcome.state {
++            case .refused: result.outcome = "refused"
++            case .partial, .indeterminate: result.outcome = "unknown"
++            default: result.outcome = outcome.evidence == .operationStillRunning ? "unknown" : "completed"
++            }
++            result.requires_fresh_observation = outcome.dispatchState.mutationDispatched
++        } catch let failure as DesktopActionFailure {
++            result.outcome = failure.outcome.dispatchState.mutationDispatched ? "unknown" : "refused"
++            result.native_outcome = failure.outcome
++            result.requires_fresh_observation = failure.outcome.dispatchState.mutationDispatched ||
++                failure.outcome.escalation == .refreshTarget
++            result.error = .init(code: failure.standardErrorCode?.rawValue ?? "DESKTOP_PASTE_FAILED",
++                                 message: failure.message, hint: failure.hint)
++        } catch {
++            result.outcome = attemptedInput ? "unknown" : "refused"
++            result.requires_fresh_observation = attemptedInput
++            result.error = .init(code: "DESKTOP_PASTE_FAILED", message: error.localizedDescription)
++        }
++        result.clipboard_changed = transaction.didMutate
++        // A cancelled/disconnected caller cannot cancel this bounded settle or the synchronous generation-checked restore.
++        if attemptedInput { await ClipboardPasteTransactionGate.waitForPasteConsumption(milliseconds: 150) }
++        do {
++            result.clipboard_cleanup = try transaction.cleanup().status.rawValue
++        } catch {
++            result.clipboard_cleanup = "failed"
++            result.error = .init(code: "CLIPBOARD_CLEANUP_FAILED",
++                                 message: "Restoring the previous clipboard failed; paste delivery is reported separately.")
++        }
++        do {
++            try await self.services.snapshots.finishSnapshotMutation(lease,
++                requiresFreshObservation: result.requires_fresh_observation)
++        } catch {
++            result.requires_fresh_observation = true
++            result.error = .init(code: "SNAPSHOT_FINISH_FAILED",
++                                 message: "The paste result is retained; inspect again before another input.")
++        }
++        guard result.clipboard_changed else {
++            throw Self.clipboardRefusal(result.error?.message ?? "Paste was refused before changing the clipboard.")
++        }
++        return Self.clipboardResponse(result)
++    }
++
++    private static func clipboardResponse(_ result: PeekabooBridgeClipboardMutation) -> PeekabooBridgeHandledResponse {
++        // The outer receipt proves the GUI-owned clipboard transaction; input delivery/cleanup are separate typed facts.
++        .init(response: .clipboardMutation(result), mutation: .init(
++            outcome: .dispatchedUnverified(delivery: ClipboardMutationResultSemantics.delivery,
++                                          evidence: .deliveryAccepted, unitCount: .one), target: .global))
++    }
++
++    private static func clipboardRefusal(_ message: String) -> DesktopActionFailure {
++        .preDispatchRefusal(reason: .targetUnavailable, message: message)
++    }
++}
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
+@@ -36,6 +36,9 @@
+ 
+ public enum PeekabooBridgeOperation: String, Codable, Sendable, CaseIterable, Hashable {
+     // Core
++    case clipboardRead
++    case clipboardWrite
++    case clipboardPaste
+     case permissionsStatus
+     case requestPostEventPermission
+     case daemonStatus
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
+@@ -29,6 +29,7 @@
+ 
+     /// Operations enabled by default for remote helper hosts.
+     public static let remoteDefaultAllowlist: Set<PeekabooBridgeOperation> = [
++        .clipboardRead, .clipboardWrite, .clipboardPaste,
+         .permissionsStatus,
+         .requestPostEventPermission,
+         .daemonStatus,
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
+@@ -60,6 +60,15 @@
+         }
+ 
+         return switch operation {
++        case .clipboardRead:
++            descriptor(completion: .readOnly, targetPolicy: .notApplicable, responseFamilies: [.clipboardContents])
++        case .clipboardWrite:
++            descriptor(ownership: .service, completion: .dispatchedUnverified(clipboardForeground),
++                       targetPolicy: .global, responseFamilies: [.clipboardMutation])
++        case .clipboardPaste:
++            descriptor(ownership: .service, requiredPermissions: [.accessibility, .postEvent],
++                       completion: .dispatchedUnverified(clipboardForeground),
++                       targetPolicy: .global, responseFamilies: [.clipboardMutation])
+         case .permissionsStatus:
+             descriptor(
+                 completion: .readOnly,
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseFamily.swift
+@@ -3,7 +3,9 @@
+ extension PeekabooBridgeOperationResultSemantics.ResponseFamily {
+     func matches(_ response: PeekabooBridgeResponse) -> Bool {
+         switch (self, response) {
+-        case (.agentExecutionTrace, .agentExecutionTrace),
++        case (.clipboardContents, .clipboardContents),
++             (.clipboardMutation, .clipboardMutation),
++             (.agentExecutionTrace, .agentExecutionTrace),
+              (.application, .application),
+              (.applicationMutationInventory, .applicationMutationInventory),
+              (.applications, .applications),
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResponseTargetEvidence.swift
+@@ -123,7 +123,8 @@
+                 bounds: termination.receipt.windowBounds)]
+         case let .error(envelope):
+             return envelope.actionTargetReceipt.map { [DesktopTargetEvidenceAdapter.evidence(receipt: $0)] } ?? []
+-        case .operationSessionRollover,
++        case .clipboardContents, .clipboardMutation,
++             .operationSessionRollover,
+              .handshake,
+              .permissionsStatus,
+              .daemonStatus,
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultContracts.swift
+@@ -58,6 +58,8 @@
+         case application
+         case applicationMutationInventory
+         case applications
++        case clipboardContents
++        case clipboardMutation
+         case bool
+         case browserStatus
+         case browserToolResponse
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
+@@ -446,7 +446,8 @@
+             .performAction(target: payload.target, actionName: payload.actionName)
+         case let .selectText(payload):
+             .selectText(target: payload.target, request: payload.request)
+-        case .attestedOperation,
++        case .clipboardRead, .clipboardWrite, .clipboardPaste,
++             .attestedOperation,
+              .projectedAction,
+              .handshake,
+              .permissionsStatus,
+@@ -596,7 +597,7 @@
+             .suspectedNoop,
+         ]
+         switch request.operation {
+-        case .agentExecutionTrace:
++        case .clipboardWrite, .clipboardPaste, .agentExecutionTrace:
+             return [.dispatchedUnverified]
+         case .requestPostEventPermission, .browserExecute, .swipe, .drag, .moveMouse,
+              .clickMenuItem, .clickMenuItemByName, .clickMenuExtra,
+@@ -648,7 +649,7 @@
+             return [.dispatchedUnverified]
+         case .browserConnect:
+             return [.confirmedNoChange, .dispatchedUnverified]
+-        case .permissionsStatus, .observeProcessGeneration, .certificationProducerAttestation,
++        case .clipboardRead, .permissionsStatus, .observeProcessGeneration, .certificationProducerAttestation,
+              .createExactWindowHeldPointerOwner,
+              .daemonStatus, .daemonStop, .browserStatus,
+              .browserDisconnect,
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
+@@ -247,7 +247,7 @@
+     /// never own the desktop lane or mutation watermark: its child re-enters this same Bridge and
+     /// each nested tool call owns its own exact-target lane and signed receipt.
+     var bypassesOuterDesktopMutationLane: Bool {
+-        self.unwrappedOperationRequest.operation == .agentExecutionTrace
++        [.agentExecutionTrace, .clipboardWrite, .clipboardPaste].contains(self.unwrappedOperationRequest.operation)
+     }
+ }
+ 
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
+@@ -6,6 +6,9 @@
+     indirect case attestedOperation(PeekabooBridgeAttestedOperationRequest)
+     indirect case projectedAction(PeekabooBridgeProjectedActionRequest)
+     case handshake(PeekabooBridgeHandshake)
++    case clipboardRead(ClipboardValue.Kind)
++    case clipboardWrite(ClipboardValue)
++    case clipboardPaste(PeekabooBridgeClipboardPasteRequest)
+     case permissionsStatus
+     case requestPostEventPermission
+     case daemonStatus
+@@ -134,6 +137,9 @@
+         case let .attestedOperation(payload): payload.request.operation
+         case let .projectedAction(payload): payload.request.operation
+         case .handshake: .permissionsStatus
++        case .clipboardRead: .clipboardRead
++        case .clipboardWrite: .clipboardWrite
++        case .clipboardPaste: .clipboardPaste
+         case .permissionsStatus: .permissionsStatus
+         case .requestPostEventPermission: .requestPostEventPermission
+         case .daemonStatus: .daemonStatus
+@@ -262,6 +268,8 @@
+     case operationSessionRollover(PeekabooBridgeOperationSessionRefusal)
+     indirect case projectedAction(PeekabooBridgeProjectedActionResponse)
+     case handshake(PeekabooBridgeHandshakeResponse)
++    case clipboardContents(ClipboardContents)
++    case clipboardMutation(PeekabooBridgeClipboardMutation)
+     case permissionsStatus(PermissionsStatus)
+     case daemonStatus(PeekabooDaemonStatus)
+     case agentExecutionTrace(PeekabooBridgeAgentExecutionTraceResponse)
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
+@@ -12,6 +12,8 @@
+         permissions: PermissionsStatus) async throws -> PeekabooBridgeHandledResponse
+     {
+         switch request.operation {
++        case .clipboardRead, .clipboardWrite, .clipboardPaste:
++            return try await self.handleClipboardRequest(request)
+         case .permissionsStatus, .daemonStatus, .daemonStop:
+             return try await .init(
+                 response: self.handleCoreRequest(request, peer: peer, permissions: permissions))
+diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
+--- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
++++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer.swift
+@@ -105,6 +105,7 @@
+         }
+     }
+ 
++    let clipboard = ClipboardService()
+     let services: any PeekabooBridgeServiceProviding
+     let hostKind: PeekabooBridgeHostKind
+     let allowlistedTeams: Set<String>
+diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardItems.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardItems.swift
+new file mode 100644
+--- /dev/null
++++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardItems.swift
+@@ -0,0 +1,173 @@
++import AppKit
++import Foundation
++import ImageIO
++import PeekabooFoundation
++import UniformTypeIdentifiers
++
++/// Typed, bounded clipboard payloads shared by the GUI owner and its authenticated client.
++public struct ClipboardValue: Codable, Sendable {
++    public enum Kind: String, Codable, Sendable { case text, image, files }
++    public let kind: Kind
++    public let text: String?
++    public let image: Data?
++    public let paths: [String]?
++
++    public init(kind: Kind, text: String? = nil, image: Data? = nil, paths: [String]? = nil) {
++        self.kind = kind
++        self.text = text
++        self.image = image
++        self.paths = paths
++    }
++
++    public func writeRequest() throws -> ClipboardWriteRequest {
++        let items: [[ClipboardRepresentation]]
++        switch self.kind {
++        case .text:
++            guard let text, text.utf16.count <= 8192, image == nil, paths == nil else {
++                throw Self.invalid("Text must contain at most 8,192 UTF-16 code units.")
++            }
++            items = [[.init(utiIdentifier: NSPasteboard.PasteboardType.string.rawValue, data: Data(text.utf8))]]
++        case .image:
++            guard let image, text == nil, paths == nil else { throw Self.invalid("Supply one image.") }
++            let info = try Self.imageInfo(image)
++            items = [[.init(utiIdentifier: info.uti, data: image)]]
++        case .files:
++            guard let paths, !paths.isEmpty, paths.count <= 32, text == nil, image == nil,
++                  try JSONEncoder().encode(self).count <= 24_000,
++                  paths.allSatisfy({ $0.hasPrefix("/") && !$0.contains("\0") && $0.utf16.count <= 4096 })
++            else { throw Self.invalid("Supply 1–32 complete absolute local file paths within 24 KB.") }
++            items = paths.map { path in
++                let url = URL(fileURLWithPath: path)
++                return [.init(utiIdentifier: NSPasteboard.PasteboardType.fileURL.rawValue,
++                              data: Data(url.absoluteString.utf8))]
++            }
++        }
++        return ClipboardWriteRequest(representations: items[0], items: items)
++    }
++
++    public static func imageInfo(_ data: Data) throws -> ClipboardImageInfo {
++        guard !data.isEmpty, data.count <= 10 * 1024 * 1024,
++              let source = CGImageSourceCreateWithData(data as CFData, nil),
++              let type = CGImageSourceGetType(source) as String?,
++              let mime = [UTType.png.identifier: "image/png", UTType.jpeg.identifier: "image/jpeg",
++                          UTType.tiff.identifier: "image/tiff"][type],
++              CGImageSourceGetCount(source) == 1,
++              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
++              let width = properties[kCGImagePropertyPixelWidth] as? NSNumber,
++              let height = properties[kCGImagePropertyPixelHeight] as? NSNumber,
++              width.doubleValue > 0, height.doubleValue > 0,
++              width.doubleValue * height.doubleValue <= 64_000_000
++        else { throw Self.invalid("Use one PNG, JPEG, or TIFF image of at most 10 MiB and 64 million pixels.") }
++        return .init(mimeType: mime, uti: type, bytes: data.count)
++    }
++
++    static func invalid(_ message: String) -> DesktopActionFailure {
++        .preDispatchRefusal(reason: .invalidRequest, message: message)
++    }
++}
++
++public struct ClipboardImageInfo: Codable, Sendable {
++    public let mimeType: String
++    public let uti: String
++    public let bytes: Int
++}
++
++public struct ClipboardContents: Codable, Sendable {
++    public let kind: ClipboardValue.Kind
++    public var present = false
++    public var text: String?
++    public var paths: [String]?
++    public var image: ClipboardImageInfo?
++    public var imageData: Data?
++    public let change_count: Int
++}
++
++@MainActor
++extension ClipboardService {
++    public func readItems(kind: ClipboardValue.Kind) throws -> ClipboardContents {
++        try Self.requireSilentReadAccess(self.readAccessStatus())
++        let generation = self.pasteboard.changeCount
++        var result = ClipboardContents(kind: kind, change_count: generation)
++        guard let items = self.pasteboard.pasteboardItems else { throw ClipboardTemporaryWriteError.snapshotUnavailable }
++        switch kind {
++        case .text:
++            if self.pasteboard.types?.contains(.string) == true {
++                guard let value = self.pasteboard.string(forType: .string) else {
++                    throw ClipboardTemporaryWriteError.snapshotUnavailable
++                }
++                result.present = true
++                result.text = value
++            }
++        case .image:
++            let supported = [NSPasteboard.PasteboardType.png, .tiff,
++                             NSPasteboard.PasteboardType(UTType.jpeg.identifier)]
++            if let type = supported.first(where: { self.pasteboard.types?.contains($0) == true }) {
++                guard let data = self.pasteboard.data(forType: type) else {
++                    throw ClipboardTemporaryWriteError.snapshotUnavailable
++                }
++                let info = try ClipboardValue.imageInfo(data)
++                guard info.uti == type.rawValue else {
++                    throw ClipboardValue.invalid("The clipboard image representation does not match its declared type.")
++                }
++                result.present = true
++                result.image = info
++                result.imageData = data
++            }
++        case .files:
++            guard !items.contains(where: { item in
++                item.types.contains { $0.rawValue.localizedCaseInsensitiveContains("promise") }
++            }) else { throw ClipboardValue.invalid("Promised clipboard files are unsupported; copy materialized files or folders.") }
++            var paths: [String] = []
++            for item in items where item.types.contains(.fileURL) {
++                guard let string = item.string(forType: .fileURL), let url = URL(string: string),
++                      url.isFileURL, url.host == nil || url.host == "" || url.host == "localhost",
++                      url.path.hasPrefix("/"), !url.path.contains("\0"), url.path.utf16.count <= 4096
++                else { throw ClipboardValue.invalid("The clipboard contains an unsupported file URL.") }
++                paths.append(url.path)
++                guard paths.count <= 32 else { throw ClipboardValue.invalid("The complete file list exceeds 32 items.") }
++            }
++            if !paths.isEmpty {
++                result.present = true
++                result.paths = paths
++            }
++        }
++        guard self.pasteboard.changeCount == generation else { throw ClipboardTemporaryWriteError.snapshotChanged }
++        if kind != .image, try JSONEncoder().encode(result).count > 24_000 {
++            throw ClipboardValue.invalid("The complete clipboard result exceeds 24 KB; nothing was truncated.")
++        }
++        return result
++    }
++
++    func setItems(
++        _ representations: [[ClipboardRepresentation]],
++        didDispatch: inout Bool,
++        expectedChangeCount: Int?,
++        didClaim: (Int) -> Void) throws -> ClipboardReadResult
++    {
++        guard !representations.isEmpty, representations.count <= 32,
++              representations.allSatisfy({ !$0.isEmpty }),
++              representations.flatMap({ $0 }).reduce(0, { $0 + $1.data.count }) <= 10 * 1024 * 1024
++        else { throw ClipboardValue.invalid("The complete clipboard write exceeds its item or byte limit.") }
++        let items = try representations.map { values in
++            let item = NSPasteboardItem()
++            for value in values {
++                guard item.setData(value.data, forType: .init(value.utiIdentifier)) else {
++                    throw ClipboardServiceError.writeFailed("Could not prepare a clipboard item")
++                }
++            }
++            return item
++        }
++        try Task.checkCancellation()
++        try self.requireTemporaryOwnership(expectedChangeCount)
++        let claimed = self.pasteboard.clearContents()
++        didDispatch = true
++        didClaim(claimed)
++        try self.requireTemporaryOwnership(claimed)
++        guard self.pasteboard.writeObjects(items) else {
++            throw ClipboardServiceError.writeFailed("Could not write the prepared clipboard items")
++        }
++        try self.requireTemporaryOwnership(claimed)
++        let primary = representations[0][0]
++        return .init(utiIdentifier: primary.utiIdentifier, data: primary.data, textPreview: nil)
++    }
++}
+diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
+--- a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
++++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/System/ClipboardService.swift
+@@ -17,14 +17,17 @@
+ /// Request to write multiple representations to the clipboard.
+ public struct ClipboardWriteRequest: Sendable {
+     public var representations: [ClipboardRepresentation]
++    public var items: [[ClipboardRepresentation]]?
+     public var alsoText: String?
+     public var allowLarge: Bool
+ 
+     public init(
+         representations: [ClipboardRepresentation],
+         alsoText: String? = nil,
+-        allowLarge: Bool = false)
+-    {
++        allowLarge: Bool = false,
++        items: [[ClipboardRepresentation]]? = nil)
++    {
++        self.items = items
+         self.representations = representations
+         self.alsoText = alsoText
+         self.allowLarge = allowLarge
+@@ -240,7 +243,7 @@
+ @MainActor
+ public final class ClipboardService: ClipboardServiceActionResultProviding, ClipboardTemporaryWriteProviding,
+ ClipboardReadAccessProviding {
+-    private let pasteboard: NSPasteboard
++    let pasteboard: NSPasteboard
+     private let sizeLimit: Int
+     private let readAccessStatusReader: @MainActor (NSPasteboard) -> ClipboardReadAccessStatus
+     private var slots: [String: [ClipboardRepresentation]] = [:]
+@@ -289,9 +292,18 @@
+     }
+ 
+     public func prepareTemporaryWrite() throws -> any ClipboardTemporaryWriteTransaction {
++        try self.prepareTemporaryWrite(maximumBytes: Int.max, maximumItems: Int.max, maximumRepresentations: Int.max)
++    }
++
++    public func prepareTemporaryWrite(
++        maximumBytes: Int, maximumItems: Int, maximumRepresentations: Int) throws
++        -> any ClipboardTemporaryWriteTransaction
++    {
+         try Self.requireSilentReadAccess(self.readAccessStatus())
+         let originalChangeCount = self.pasteboard.changeCount
+-        let items = try self.temporarySnapshotItems()
++        let items = try self.temporarySnapshotItems(
++            maximumBytes: maximumBytes, maximumItems: maximumItems,
++            maximumRepresentations: maximumRepresentations)
+         guard self.pasteboard.changeCount == originalChangeCount else {
+             throw ClipboardTemporaryWriteError.snapshotChanged
+         }
+@@ -326,7 +338,9 @@
+         }
+     }
+ 
+-    private func temporarySnapshotItems() throws -> [[ClipboardRepresentation]] {
++    private func temporarySnapshotItems(
++        maximumBytes: Int, maximumItems: Int, maximumRepresentations: Int) throws -> [[ClipboardRepresentation]]
++    {
+         guard let items = self.pasteboard.pasteboardItems else {
+             throw ClipboardTemporaryWriteError.snapshotUnavailable
+         }
+@@ -336,14 +350,24 @@
+             }
+             return []
+         }
++        guard items.count <= maximumItems else { throw ClipboardTemporaryWriteError.snapshotUnavailable }
++        var bytes = 0
++        var representations = 0
+         return try items.map { item in
+             guard !item.types.isEmpty else {
+                 throw ClipboardTemporaryWriteError.snapshotUnavailable
+             }
++            representations += item.types.count
++            guard representations <= maximumRepresentations else { throw ClipboardTemporaryWriteError.snapshotUnavailable }
+             return try item.types.map { type in
++                guard !type.rawValue.localizedCaseInsensitiveContains("promise") else {
++                    throw ClipboardTemporaryWriteError.snapshotUnavailable
++                }
+                 guard let data = item.data(forType: type) else {
+                     throw ClipboardTemporaryWriteError.snapshotUnavailable
+                 }
++                guard data.count <= maximumBytes - bytes else { throw ClipboardTemporaryWriteError.snapshotUnavailable }
++                bytes += data.count
+                 return ClipboardRepresentation(utiIdentifier: type.rawValue, data: data)
+             }
+         }
+@@ -377,7 +401,7 @@
+         return Self.writeResult(for: ClipboardWriteRequest(representations: snapshot[0]))
+     }
+ 
+-    private func requireTemporaryOwnership(_ expectedChangeCount: Int?) throws {
++    func requireTemporaryOwnership(_ expectedChangeCount: Int?) throws {
+         if let expectedChangeCount, self.pasteboard.changeCount != expectedChangeCount {
+             throw ClipboardTemporaryWriteError.ownershipChanged
+         }
+@@ -465,6 +489,9 @@
+         expectedChangeCount: Int? = nil,
+         didClaim: (Int) -> Void = { _ in }) throws -> ClipboardReadResult
+     {
++        if let items = request.items {
++            return try self.setItems(items, didDispatch: &didDispatch, expectedChangeCount: expectedChangeCount, didClaim: didClaim)
++        }
+         guard !request.representations.isEmpty else {
+             throw ClipboardServiceError.writeFailed("No representations provided.")
+         }
+@@ -671,7 +698,16 @@
+     }
+ 
+     private func matches(request: ClipboardWriteRequest) -> Bool {
+-        self.matches(representations: request.representations, alsoText: request.alsoText)
++        if let expected = request.items {
++            guard self.readAccessStatus().readAdmitted, let actual = self.pasteboard.pasteboardItems,
++                  expected.count == actual.count else { return false }
++            let generation = self.pasteboard.changeCount
++            for (values, item) in zip(expected, actual) {
++                for value in values where item.data(forType: .init(value.utiIdentifier)) != value.data { return false }
++            }
++            return self.pasteboard.changeCount == generation
++        }
++        return self.matches(representations: request.representations, alsoText: request.alsoText)
+     }
+ 
+     private func matches(representations: [ClipboardRepresentation], alsoText: String?) -> Bool {
