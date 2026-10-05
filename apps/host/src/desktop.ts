@@ -8,6 +8,8 @@ import { promisify } from "node:util";
 import {
 	type Desktop,
 	DESKTOP_KEYS,
+	DESKTOP_MODIFIERS,
+	DESKTOP_SELECTIONS,
 	type DesktopAction,
 	type DesktopOutcome,
 	type DesktopRequest,
@@ -220,14 +222,43 @@ function validateAction(request: DesktopAction) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
 	if (request.op === "key") {
-		if (!DESKTOP_KEYS.includes(request.key)) throw new Error("Choose one supported basic key.");
+		if (!DESKTOP_KEYS.includes(request.key)) throw new Error("Choose one supported key.");
+		const modifiers = request.modifiers;
+		if (
+			modifiers !== undefined && (
+				!Array.isArray(modifiers) || modifiers.length > 4
+				|| new Set(modifiers).size !== modifiers.length
+				|| modifiers.some((modifier) => !DESKTOP_MODIFIERS.includes(modifier))
+			)
+		) {
+			throw new Error("Use each of command, control, option, and shift at most once.");
+		}
+		return;
+	}
+	if (request.op === "insert") {
+		if (typeof request.text !== "string" || !request.text || request.text.length > 8192) {
+			throw new Error("Inserted text must contain 1 to 8192 UTF-16 code units.");
+		}
 		return;
 	}
 	if (typeof request.element !== "string" || !request.element || request.element.length > 256) {
 		throw new Error("Choose an element ID from the inspected snapshot.");
 	}
 	if (request.op === "type" && (typeof request.text !== "string" || request.text.length > 8192)) {
-		throw new Error("Desktop text must be a string of at most 8192 characters.");
+		throw new Error("Replacement text must contain at most 8192 UTF-16 code units.");
+	}
+	if (request.op === "select") {
+		if (typeof request.text !== "string" || !request.text || request.text.length > 4096) {
+			throw new Error("Selection text must contain 1 to 4096 UTF-16 code units.");
+		}
+		for (const context of [request.prefix, request.suffix]) {
+			if (context !== undefined && (typeof context !== "string" || context.length > 2048)) {
+				throw new Error("Selection context must contain at most 2048 UTF-16 code units.");
+			}
+		}
+		if (request.selection !== undefined && !DESKTOP_SELECTIONS.includes(request.selection)) {
+			throw new Error("Choose text, cursor_before, or cursor_after for selection.");
+		}
 	}
 }
 
@@ -301,7 +332,12 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 }
 
 export const desktop: Desktop = async (request, context) => {
-	if (!request || !["apps", "windows", "inspect", "click", "type", "key"].includes(request.op)) {
+	if (
+		!request
+		|| !["apps", "windows", "inspect", "click", "type", "key", "insert", "select"].includes(
+			request.op,
+		)
+	) {
 		throw new Error("Unknown native desktop request.");
 	}
 	if (process.platform !== "darwin") {

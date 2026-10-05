@@ -16,7 +16,17 @@ export type DesktopRequest =
 	| { op: "inspect"; pid: number; window: number }
 	| { op: "click"; snapshot: string; element: string }
 	| { op: "type"; snapshot: string; element: string; text: string }
-	| { op: "key"; snapshot: string; key: DesktopKey };
+	| { op: "insert"; snapshot: string; text: string }
+	| {
+		op: "select";
+		snapshot: string;
+		element: string;
+		text: string;
+		prefix?: string;
+		suffix?: string;
+		selection?: DesktopSelection;
+	}
+	| { op: "key"; snapshot: string; key: DesktopKey; modifiers?: DesktopModifier[] };
 
 export const DESKTOP_KEYS = [
 	"enter",
@@ -28,9 +38,69 @@ export const DESKTOP_KEYS = [
 	"down",
 	"left",
 	"right",
+	"space",
+	"home",
+	"end",
+	"pageup",
+	"pagedown",
+	"a",
+	"b",
+	"c",
+	"d",
+	"e",
+	"f",
+	"g",
+	"h",
+	"i",
+	"j",
+	"k",
+	"l",
+	"m",
+	"n",
+	"o",
+	"p",
+	"q",
+	"r",
+	"s",
+	"t",
+	"u",
+	"v",
+	"w",
+	"x",
+	"y",
+	"z",
+	"0",
+	"1",
+	"2",
+	"3",
+	"4",
+	"5",
+	"6",
+	"7",
+	"8",
+	"9",
+	"f1",
+	"f2",
+	"f3",
+	"f4",
+	"f5",
+	"f6",
+	"f7",
+	"f8",
+	"f9",
+	"f10",
+	"f11",
+	"f12",
 ] as const;
+export const DESKTOP_MODIFIERS = ["command", "control", "option", "shift"] as const;
+export const DESKTOP_SELECTIONS = ["text", "cursor_before", "cursor_after"] as const;
 export type DesktopKey = (typeof DESKTOP_KEYS)[number];
-export type DesktopAction = Extract<DesktopRequest, { op: "click" | "type" | "key" }>;
+export type DesktopModifier = (typeof DESKTOP_MODIFIERS)[number];
+export type DesktopSelection = (typeof DESKTOP_SELECTIONS)[number];
+export type DesktopAction = Extract<
+	DesktopRequest,
+	{ op: "click" | "type" | "key" | "insert" | "select" }
+>;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
 export type DesktopResult = {
 	text: string;
@@ -41,7 +111,8 @@ export type DesktopResult = {
 export type Desktop = (request: DesktopRequest, context: Context) => Promise<DesktopResult>;
 
 export function isDesktopAction(request: DesktopRequest): request is DesktopAction {
-	return request.op === "click" || request.op === "type" || request.op === "key";
+	return request.op === "click" || request.op === "type" || request.op === "key"
+		|| request.op === "insert" || request.op === "select";
 }
 
 function result(value: DesktopResult): ToolExecutionResult {
@@ -123,17 +194,48 @@ export function desktop(execute: Desktop): Extension {
 					act({ op: "type", snapshot, element, text }, api, context),
 			}),
 			defineTool({
-				name: "desktop_key",
+				name: "desktop_select",
 				description:
-					"Press and release one basic key in the exact window and focused element bound by a fresh desktop_inspect result. Pass its snapshot_id as snapshot. The snapshot is single-use; stale or unsupported targets are refused. This does not send shortcuts or hold keys. Inspect again after the action; never repeat an interrupted action without checking the current state.",
+					"Select literal text in one editable Accessibility element from a fresh desktop_inspect result, or place its caret before/after that text. Pass snapshot_id as snapshot and the literal element ID as element. Use immediately adjacent prefix/suffix text to disambiguate repeated matches; ambiguous or missing text is refused. Selection defaults to text. This does not activate the window. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input.",
 				parameters: Type.Object({
 					snapshot,
-					key: Type.Union(DESKTOP_KEYS.map((key) => Type.Literal(key))),
+					element,
+					text: Type.String({ minLength: 1, maxLength: 4096 }),
+					prefix: Type.Optional(Type.String({ maxLength: 2048 })),
+					suffix: Type.Optional(Type.String({ maxLength: 2048 })),
+					selection: Type.Optional(
+						Type.Union(DESKTOP_SELECTIONS.map((value) => Type.Literal(value))),
+					),
 				}),
 				replay: "unsafe",
 				executionMode: "sequential",
-				execute: async ({ snapshot, key }, api, context) =>
-					act({ op: "key", snapshot, key }, api, context),
+				execute: async (args, api, context) => act({ op: "select", ...args }, api, context),
+			}),
+			defineTool({
+				name: "desktop_insert",
+				description:
+					"Insert text at the current caret or replace the current selection in the control focused in a fresh desktop_inspect result. The target is bound to that exact application process and window, but the caret/selection can change after inspection. Supports Unicode and multiline text when the control allows it. Unlike desktop_type, this preserves text outside the selection. It does not use the clipboard or change focus; unsupported targets are refused. Pass snapshot_id as snapshot. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input.",
+				parameters: Type.Object({ snapshot, text: Type.String({ minLength: 1, maxLength: 8192 }) }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ snapshot, text }, api, context) =>
+					act({ op: "insert", snapshot, text }, api, context),
+			}),
+			defineTool({
+				name: "desktop_key",
+				description:
+					"Press and release one key or shortcut in the exact window and focused control bound by a fresh desktop_inspect result. Optional modifiers are command, control, option, and shift; each may appear once. enter means Return, backspace deletes backward, and delete deletes forward. Letter/digit keys use the keyboard layout; use desktop_insert for literal text. Pass snapshot_id as snapshot. Unsupported shortcuts and stale targets are refused, without global input or activation. The snapshot is single-use; inspect again after the action and never blindly repeat interrupted input. No keys remain held across calls.",
+				parameters: Type.Object({
+					snapshot,
+					key: Type.Union(DESKTOP_KEYS.map((key) => Type.Literal(key))),
+					modifiers: Type.Optional(Type.Array(
+						Type.Union(DESKTOP_MODIFIERS.map((value) => Type.Literal(value))),
+						{ maxItems: 4, uniqueItems: true },
+					)),
+				}),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async (args, api, context) => act({ op: "key", ...args }, api, context),
 			}),
 		],
 	});

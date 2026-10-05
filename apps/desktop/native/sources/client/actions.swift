@@ -5,7 +5,7 @@ import PeekabooFoundation
 
 private struct ActionRequest: Decodable {
 	enum Operation: String, Decodable {
-		case click, type, key
+		case click, type, key, insert, select
 	}
 
 	let op: Operation
@@ -13,13 +13,23 @@ private struct ActionRequest: Decodable {
 	let element: String?
 	let text: String?
 	let key: String?
+	let modifiers: [String]?
+	let prefix: String?
+	let suffix: String?
+	let selection: String?
 
 	func validate() throws {
 		guard !snapshot.isEmpty, snapshot.utf16.count <= 256 else {
 			throw ActionError("Use a snapshot ID returned by desktop_inspect.")
 		}
+		if op != .key, modifiers != nil {
+			throw ActionError("Only key presses accept modifiers.")
+		}
+		if op != .select, prefix != nil || suffix != nil || selection != nil {
+			throw ActionError("Only text selection accepts prefix, suffix, or selection.")
+		}
 		switch op {
-		case .click, .type:
+		case .click, .type, .select:
 			guard let element, !element.isEmpty, element.utf16.count <= 256, key == nil else {
 				throw ActionError("Choose a literal element ID from the inspected snapshot.")
 			}
@@ -27,22 +37,46 @@ private struct ActionRequest: Decodable {
 				guard let text, text.utf16.count <= 8192 else {
 					throw ActionError("Replacement text must contain at most 8,192 UTF-16 code units.")
 				}
+			} else if op == .select {
+				guard let text, !text.isEmpty, text.utf16.count <= 4096,
+					(prefix?.utf16.count ?? 0) <= 2048, (suffix?.utf16.count ?? 0) <= 2048
+				else {
+					throw ActionError("Select nonempty text of at most 4,096 UTF-16 code units, with prefix and suffix of at most 2,048 each.")
+				}
+				if let selection, TextSelectionType(rawValue: selection) == nil {
+					throw ActionError("Choose text, cursor_before, or cursor_after selection.")
+				}
 			} else if text != nil {
 				throw ActionError("A click does not accept text.")
 			}
+		case .insert:
+			guard element == nil, key == nil, let text, !text.isEmpty, text.utf16.count <= 8192 else {
+				throw ActionError("Insert nonempty text of at most 8,192 UTF-16 code units into the observed focused control.")
+			}
 		case .key:
-			guard element == nil, text == nil, let key, specialKeys[key] != nil else {
-				throw ActionError("Choose enter, tab, escape, backspace, delete, up, down, left, or right.")
+			guard element == nil, text == nil, let key, keyboardKeys.contains(key) else {
+				throw ActionError("Choose a supported navigation key, letter, digit, or f1 through f12.")
+			}
+			let modifiers = modifiers ?? []
+			guard modifiers.count <= 4, Set(modifiers).count == modifiers.count,
+				modifiers.allSatisfy({ keyboardModifiers.contains($0) })
+			else {
+				throw ActionError("Use each of command, control, option, and shift at most once.")
 			}
 		}
 	}
 }
 
-private let specialKeys: [String: SpecialKey] = [
-	"enter": .return, "tab": .tab, "escape": .escape,
-	"backspace": .delete, "delete": .forwardDelete,
-	"up": .upArrow, "down": .downArrow, "left": .leftArrow, "right": .rightArrow,
-]
+private let keyboardModifiers: Set<String> = ["command", "control", "option", "shift"]
+private let keyboardKeys: Set<String> = {
+	var keys: Set<String> = [
+		"enter", "tab", "escape", "backspace", "delete", "up", "down", "left", "right",
+		"space", "home", "end", "pageup", "pagedown",
+	]
+	keys.formUnion("abcdefghijklmnopqrstuvwxyz0123456789".map(String.init))
+	keys.formUnion((1...12).map { "f\($0)" })
+	return keys
+}()
 
 private struct ActionError: LocalizedError {
 	let message: String
@@ -68,6 +102,7 @@ private struct ActionResult: Encodable {
 	let snapshot_id: String
 	var native_outcome: DesktopActionOutcome?
 	var selected_leaf_evidence: [DesktopSelectedLeafEvidence]?
+	var selection: TextSelectionResult?
 	var requires_fresh_observation = false
 	var error: ActionMessage?
 }
@@ -92,6 +127,11 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 	var invoked = false
 	do {
 		try request.validate()
+		let chord = try request.key.map { key in
+			// Ace keeps delete as forward delete; Peekaboo's unqualified delete means backspace.
+			let primary = key == "delete" ? "forwarddelete" : key
+			return try KeyboardChord(parsing: ((request.modifiers ?? []) + [primary]).joined(separator: "+"))
+		}
 		result.requires_fresh_observation = true
 		guard try await client.ownsSnapshot(snapshotId: request.snapshot) else {
 			throw ActionError("This observation no longer belongs to the running desktop. Inspect the window again.")
@@ -115,9 +155,9 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			guard let observed = detection.elements.findById(element) else {
 				throw ActionError("The element ID is not in this snapshot. Inspect the window again.")
 			}
-			guard observed.isEnabled else { throw ActionError("The observed element is disabled.") }
+			guard observed.knownIsEnabled != false else { throw ActionError("The observed element is disabled.") }
 		}
-		if request.op == .key, context.focusedElement == nil {
+		if request.op == .key || request.op == .insert, context.focusedElement == nil {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
 		}
 		lease = try await client.beginSnapshotMutation(snapshotId: request.snapshot)
@@ -139,7 +179,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		case .key:
 			// Text-action emulation rejects WKWebView's focused receiver; deliver the exact-window key instead.
 			evidence = try await ActionEvidence(client.hotkeyWithOutcome(
-				keys: specialKeys[request.key!]!.rawValue,
+				keys: chord!.serviceKeys,
 				holdDuration: 0,
 				target: .init(
 					windowIdentity: identity,
@@ -147,6 +187,28 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 					focusedElement: context.focusedElement!
 				)
 			))
+		case .insert:
+			evidence = try await ActionEvidence(client.typeActionsWithOutcome(
+				[.text(request.text!)],
+				cadence: .fixed(milliseconds: 0),
+				snapshotId: request.snapshot,
+				target: .init(
+					windowIdentity: identity,
+					windowBounds: bounds,
+					focusedElement: context.focusedElement!
+				)
+			))
+		case .select:
+			let selected = try await client.selectText(
+				target: request.element!,
+				request: .init(
+					text: request.text!, prefix: request.prefix, suffix: request.suffix,
+					selectionType: request.selection.flatMap(TextSelectionType.init(rawValue:)) ?? .text
+				),
+				snapshotId: request.snapshot
+			)
+			evidence = ActionEvidence(selected)
+			result.selection = selected.payload.textSelection
 		}
 		result.native_outcome = evidence.outcome
 		result.selected_leaf_evidence = evidence.selected
