@@ -52,7 +52,11 @@ find the client alongside Ace Helper automatically.
   screenshot points inside the same captured window. `button` defaults to `left`, with `right`
   also supported. `duration_ms` defaults to 500 and accepts 1 to 10000 milliseconds. The native
   bridge owns the whole gesture, including release cleanup after cancellation or client death.
-  No pointer button stays held across tool calls; a drag cannot cross windows.
+  No pointer button stays held across tool calls; a drag cannot cross windows. Accepted native
+  delivery does not prove that the application moved or dropped anything; verify the effect with
+  a fresh `desktop_inspect`. An inactive view may ignore the gesture, as observed during native
+  validation. If observation shows no effect, explicitly use `desktop_focus`, then inspect again
+  before deciding on another action. Ace does not automatically switch to foreground delivery.
 - `desktop_type` replaces the entire string value of one observed editable Accessibility element.
   It does not append text, send keystrokes, or use the clipboard. Fields that do not support this
   operation are refused.
