@@ -59,6 +59,10 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 	var result = ClipboardWriteResult()
 	var invoked = false
 	do {
+		guard request.format == nil else {
+			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
+				message: "Clipboard format applies only to reads; writes accept plain text.")
+		}
 		guard let text = request.text, text.utf16.count <= 8192 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
 				message: "Clipboard text must contain at most 8192 UTF-16 code units.")
