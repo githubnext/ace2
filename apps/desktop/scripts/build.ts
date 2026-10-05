@@ -59,7 +59,19 @@ export async function build(channel: string): Promise<void> {
 
 /** Runs this checkout's development app with its own source host and isolated profile. */
 async function dev(): Promise<void> {
+	let host: Subprocess | undefined;
+	let app: Subprocess | undefined;
+	let stopped = false;
+	// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
+	const stop = () => {
+		stopped = true;
+		if (app) return app.kill();
+		host?.kill("SIGTERM");
+	};
+	// Signals during the synchronous build are handled after it, before anything is launched.
+	for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
 	await build("dev");
+	if (stopped) return;
 	const bin = join(root, "dist", "dev-macos-arm64", "Ace-dev.app", "Contents", "MacOS");
 	const { identifier } = await Bun.file(join(bin, "..", "Resources", "version.json")).json() as {
 		identifier: string;
@@ -69,8 +81,10 @@ async function dev(): Promise<void> {
 		throw new Error(`Port ${config.port} belongs to an installed Ace. Choose another ACE_PORT.`);
 	}
 	// Attaching to an existing listener would serve another run's or checkout's code.
-	const running = await health(config.port).catch((error: Error) => {
-		throw new Error(`${error.message}. Set ACE_PORT to run this checkout on another port.`);
+	const running = await health(config.port).catch(() => {
+		throw new Error(
+			`Port ${config.port} is used by another Ace or program. Leave it running and set ACE_PORT to run this checkout on another port.`,
+		);
 	});
 	if (running) {
 		throw new Error(
@@ -89,25 +103,23 @@ async function dev(): Promise<void> {
 		ACE_KEYCHAIN_SERVICE: config.keychain,
 		ACE_PORT: String(config.port),
 	});
-	const host = Bun.spawn([
+	host = Bun.spawn([
 		process.execPath,
 		"--no-env-file",
 		join(root, "..", "host", "src", "cli.ts"),
 		"serve",
 	], { env, stdio: ["ignore", "inherit", "inherit"] });
-	let app: Subprocess | undefined;
-	// Like Electrobun's runner, stop the launcher with SIGTERM, which also ends the app process.
-	const stop = () => app ? app.kill() : host.kill("SIGTERM");
-	for (const signal of ["SIGINT", "SIGTERM"] as const) process.on(signal, stop);
 	try {
 		const deadline = Date.now() + 30_000;
 		while (!(await health(config.port))) {
+			if (stopped) return;
 			if (host.exitCode !== null || Date.now() > deadline) {
 				throw new Error(`This checkout's Ace host did not start on port ${config.port}`);
 			}
 			await Bun.sleep(100);
 		}
 		console.log(`Ace-dev ${identifier}: ${config.home}, port ${config.port}`);
+		if (stopped) return;
 		app = Bun.spawn([join(bin, "launcher")], {
 			cwd: bin,
 			env,
