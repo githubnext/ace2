@@ -1,4 +1,4 @@
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -20,12 +20,20 @@ if (!app) throw new Error("The Ace application bundle is missing");
 const contents = join(build, app, "Contents");
 const bin = join(contents, "MacOS");
 const native = fileURLToPath(new URL("../native", import.meta.url));
+const swift = Bun.spawnSync(["xcrun", "swift", "--version"]);
+const swiftVersion = /Swift version (\d+)\.(\d+)/.exec(swift.stdout.toString());
+if (
+	!swift.success || !swiftVersion || Number(swiftVersion[1]) < 6
+	|| (Number(swiftVersion[1]) === 6 && Number(swiftVersion[2]) < 2)
+) {
+	throw new Error("Building native desktop inspection requires Xcode with Swift 6.2 or newer");
+}
 run([
 	"/usr/bin/plutil",
 	"-insert",
 	"LSMinimumSystemVersion",
 	"-string",
-	"14.0",
+	"15.0",
 	join(contents, "Info.plist"),
 ]);
 
@@ -50,7 +58,7 @@ run([
 	"clang",
 	"-dynamiclib",
 	"-fobjc-arc",
-	"-mmacosx-version-min=14.0",
+	"-mmacosx-version-min=15.0",
 	"-framework",
 	"Foundation",
 	"-framework",
@@ -65,7 +73,7 @@ run([
 	"clang",
 	"-dynamiclib",
 	"-fobjc-arc",
-	"-mmacosx-version-min=14.0",
+	"-mmacosx-version-min=15.0",
 	"-framework",
 	"Cocoa",
 	"-framework",
@@ -82,13 +90,61 @@ writeFileSync(
 );
 const frameworks = join(contents, "Frameworks");
 mkdirSync(frameworks, { recursive: true });
+const swiftBuild = [
+	"xcrun",
+	"swift",
+	"build",
+	"--package-path",
+	native,
+	"--configuration",
+	"release",
+	"--force-resolved-versions",
+	"-Xlinker",
+	"-rpath",
+	"-Xlinker",
+	"@loader_path/../Frameworks",
+];
+run(swiftBuild);
+const location = Bun.spawnSync([...swiftBuild, "--show-bin-path"]);
+if (!location.success) throw new Error("Cannot locate the native desktop build products");
+const products = location.stdout.toString().trim();
+const binaries = ["libAceDesktop.dylib", "ace-desktop-client"];
+for (const name of binaries) copyFileSync(join(products, name), join(bin, name));
+// Discover the runtimes from Mach-O dependencies instead of assuming a Swift library list.
+run([
+	"xcrun",
+	"swift-stdlib-tool",
+	"--copy",
+	"--platform",
+	"macosx",
+	...binaries.flatMap((name) => ["--scan-executable", join(bin, name)]),
+	"--destination",
+	frameworks,
+]);
+const resolved = JSON.parse(readFileSync(join(native, "Package.resolved"), "utf8")) as {
+	pins: { identity: string }[];
+};
+const checkouts = join(native, ".build", "checkouts");
+const dependencies = new Map(readdirSync(checkouts).map((name) => [name.toLowerCase(), name]));
+for (const { identity } of resolved.pins) {
+	const checkout = dependencies.get(identity);
+	if (!checkout) throw new Error(`The resolved native dependency ${identity} is missing`);
+	const source = join(checkouts, checkout);
+	const licenses = readdirSync(source).filter((name) =>
+		/^(LICENSE|LICENCE|NOTICE)([.-].*)?$/i.test(name)
+	);
+	if (!licenses.length) throw new Error(`The native dependency ${identity} has no license file`);
+	const destination = join(contents, "Resources", "Licenses", identity);
+	mkdirSync(destination, { recursive: true });
+	for (const name of licenses) copyFileSync(join(source, name), join(destination, name));
+}
 run(["/usr/bin/ditto", join(sdk, "Sparkle.framework"), join(frameworks, "Sparkle.framework")]);
 run([
 	"xcrun",
 	"clang",
 	"-dynamiclib",
 	"-fobjc-arc",
-	"-mmacosx-version-min=14.0",
+	"-mmacosx-version-min=15.0",
 	"-framework",
 	"Cocoa",
 	"-F",

@@ -3,6 +3,14 @@
 A collaborative coding environment where people and agents work together in channels that run on
 your own machines.
 
+**Your tailnet is your team and the sole authority for team membership and collaboration access.**
+Ace has no separate accounts, invitations, or team access controls. The channel owner can turn
+collaborator agent invocation on or off for all of the agent's available tools together.
+
+Ace is open source software for teams to clone, fork, and operate themselves. Any shared services
+are deployed by the team in its own infrastructure or cloud account. Ace will not operate a
+hosted service. See [the team](docs/architecture.md#the-team) for the trust model.
+
 ## Run
 
 Requires Bun 1.4 or later and a model provider key. Ace reads a key such as `OPENAI_API_KEY` from
@@ -42,8 +50,8 @@ Development desktop builds use their own catalog, settings, and Keychain service
 The installed stable app and CLI use `ace`. Build with Bun 1.4 or later; the packaged UI uses
 Electrobun's compatible bundled runtime, and Ace Helper carries its own compiled runtime.
 
-With Tailscale running, the host also shares its channels with the tailnet, and the app shows
-teammates' channels. See [the team](docs/architecture.md#the-team).
+Start Tailscale to collaborate: the host shares its channels over the tailnet, and the app shows
+teammates' channels. Local work can run without Tailscale; remote collaboration uses the tailnet.
 
 On your phone or another of your devices, with Tailscale on, open the address the host prints
 (`http://<machine>.<tailnet>.ts.net:4140`). Only the host's owner is served; Tailscale names the
@@ -54,9 +62,9 @@ web app can reach them. Deploy it with `bun --filter @ace/app deploy`, point eac
 `bun ace web https://ace-app.<your-subdomain>.workers.dev`, then open it and enter
 `<machine>.<tailnet>.ts.net:5140`. Add it to the home screen to use it as an app.
 
-A hosted channel lives in a Durable Object and runs its tools on the host that created it, while
-that host runs `ace serve` or the desktop app. To try one locally, put `ACE_SECRET` and a model key
-in `services/channel/.dev.vars`, then:
+A hosted channel lives in a Durable Object deployed by your team and runs its tools on the host
+that created it, while that host runs `ace serve` or the desktop app. To try one locally, put
+`ACE_SECRET` and a model key in `services/channel/.dev.vars`, then:
 
 ```sh
 bun --filter @ace/channel-service dev                     # http://localhost:8787
@@ -86,3 +94,4 @@ signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules
 - [Terms](docs/terms.md): what Ace's words mean. Binding.
 - [Architecture](docs/architecture.md): how channels, hosts, and shared services fit together.
 - [Desktop plan](docs/desktop.md): packaging, settings, onboarding, and distribution.
+- [Native desktop inspection](docs/desktop-tools.md): inspect macOS windows with Peekaboo.

@@ -14,6 +14,7 @@ import {
 	type TextLineReader,
 } from "@earendil-works/pi-durable/env";
 
+import type { Desktop, DesktopRequest, DesktopResult } from "./desktop";
 import type { Metadata } from "./protocol";
 
 declare function btoa(data: string): string;
@@ -21,7 +22,7 @@ declare function atob(data: string): string;
 
 /** Channel to workspace. */
 export type Call =
-	| { call: number; method: Method; cwd: string; args: unknown[] }
+	| { call: number; method: Method | "desktop"; cwd: string; args: unknown[] }
 	| { cancel: number };
 
 /** Metadata is projected by the workspace host even when no client watches the channel. */
@@ -133,7 +134,7 @@ export class Link {
 	}
 
 	request(
-		method: Method,
+		method: Method | "desktop",
 		cwd: string,
 		args: unknown[],
 		context: Context,
@@ -141,13 +142,14 @@ export class Link {
 	): Promise<Result<unknown, Error>> {
 		const send = this.#send;
 		if (!send) {
-			const error = method === "exec"
+			const error = method === "exec" || method === "desktop"
 				? new ExecutionError("unknown", "The workspace is offline")
 				: new FileError("unknown", "The workspace is offline");
 			return Promise.resolve(err(error));
 		}
 		const call = this.#next++;
 		const signal = context.abortSignal;
+		if (signal?.aborted) return Promise.resolve(err(new ExecutionError("aborted", "Aborted")));
 		return new Promise((resolve) => {
 			const abort = () => send({ cancel: call });
 			signal?.addEventListener("abort", abort, { once: true });
@@ -160,6 +162,12 @@ export class Link {
 			});
 			send({ call, method, cwd, args: args.map(encode) });
 		});
+	}
+
+	async desktop(request: DesktopRequest, context: Context): Promise<DesktopResult> {
+		const result = await this.request("desktop", "", [request], context);
+		if (!result.ok) throw result.error;
+		return result.value as DesktopResult;
 	}
 
 	/** An execution environment at `cwd` on the workspace. `id` names the workspace's file namespace. */
@@ -205,22 +213,39 @@ export class Link {
 }
 
 /** The workspace's side: run each call on a local environment and send back its outcome. */
-export function serve(env: (cwd: string) => ExecutionEnv, send: (reply: Reply) => void) {
-	const running = new Map<number, AbortController>();
-	return async (call: Call) => {
-		if ("cancel" in call) return running.get(call.cancel)?.abort();
-		if (!METHODS.includes(call.method)) {
+export function serve(
+	env: (cwd: string) => ExecutionEnv,
+	send: (reply: Reply) => void,
+	desktop?: Desktop,
+) {
+	const running = new Map<number, { abort: AbortController; done: Promise<void> }>();
+	let closed = false;
+	const handle = async (call: Call) => {
+		if ("cancel" in call) return running.get(call.cancel)?.abort.abort();
+		if (closed) {
+			return send({
+				call: call.call,
+				result: err(failure(new Error("The workspace disconnected"))),
+			});
+		}
+		if (call.method !== "desktop" && !METHODS.includes(call.method)) {
 			return send({
 				call: call.call,
 				result: err(failure(new Error(`Unknown method ${call.method}`))),
 			});
 		}
 		const abort = new AbortController();
-		running.set(call.call, abort);
+		const { promise: done, resolve: finish } = Promise.withResolvers<void>();
+		running.set(call.call, { abort, done });
 		const context = withAbortSignal(abort.signal, BACKGROUND_CONTEXT);
-		const target = env(call.cwd);
-		const args = call.args.map(decode);
 		try {
+			const args = call.args.map(decode);
+			if (call.method === "desktop") {
+				if (!desktop) throw new Error("Native desktop inspection is unavailable on this workspace");
+				const value = await desktop(args[0] as DesktopRequest, context);
+				return send({ call: call.call, result: ok(value) });
+			}
+			const target = env(call.cwd);
 			const result = call.method === "exec"
 				? await target.exec(args[0] as string, {
 					...(args[1] as object),
@@ -239,6 +264,15 @@ export function serve(env: (cwd: string) => ExecutionEnv, send: (reply: Reply) =
 			send({ call: call.call, result: err(failure(error)) });
 		} finally {
 			running.delete(call.call);
+			finish();
 		}
 	};
+	return Object.assign(handle, {
+		async close() {
+			closed = true;
+			const calls = [...running.values()];
+			for (const { abort } of calls) abort.abort();
+			await Promise.all(calls.map(({ done }) => done));
+		},
+	});
 }

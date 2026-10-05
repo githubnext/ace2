@@ -179,7 +179,15 @@ export type Event =
 		name: string;
 		args: unknown;
 	}
-	| { kind: "result"; chat: ChatId; call: string; error: boolean; text: string; stopped?: boolean }
+	| {
+		kind: "result";
+		chat: ChatId;
+		call: string;
+		error: boolean;
+		text: string;
+		images?: Image[];
+		stopped?: boolean;
+	}
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
 	/** Channel-wide metadata, sent initially and whenever its name or summary changes. */
 	| ({ kind: "metadata"; chat: ChatId } & Metadata)

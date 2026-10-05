@@ -6,6 +6,17 @@ export type HelperState = {
 
 export type HelperAction = "status" | "start" | "stop" | "restart" | "settings" | "log";
 
+export type NativeState = {
+	state: "stopped" | "starting" | "ready" | "stopping" | "error";
+	accessibility: boolean;
+	screenRecording: boolean;
+	error?: string;
+};
+
+export type NativeAction =
+	| { op: "status" }
+	| { op: "permission"; permission: "accessibility" | "screenRecording" };
+
 export type UpdateState = {
 	phase:
 		| "disabled"
@@ -41,6 +52,7 @@ export type DesktopRPC = {
 			lights: { params: { token: string; expanded: boolean }; response: null };
 			zoom: { params: { token: string }; response: null };
 			helper: { params: { token: string; action: HelperAction }; response: HelperState };
+			native: { params: { token: string; action: NativeAction }; response: NativeState };
 			updates: { params: { token: string; action: UpdateAction }; response: UpdateState };
 		};
 		messages: {};

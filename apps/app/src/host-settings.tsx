@@ -6,6 +6,7 @@ import type { Diagnostics } from "@ace/host/protocol";
 
 import { desktop } from "./desktop";
 import { host } from "./host";
+import { NativeStatus } from "./native-settings";
 
 const tailnet = {
 	missing: "Tailscale is not installed",
@@ -103,7 +104,11 @@ export function HostStatus() {
 									>
 										Restart Ace Helper
 									</Button>
-									<Button variant="outline" disabled={!available} onClick={() => setConfirm(true)}>
+									<Button
+										variant="outline"
+										disabled={!available}
+										onClick={() => setConfirm(true)}
+									>
 										Stop Ace Helper…
 									</Button>
 								</>
@@ -141,6 +146,7 @@ export function HostStatus() {
 					</div>
 				</section>
 			)}
+			{desktop && <NativeStatus native={desktop.native} refresh={retry} />}
 			{status !== "open"
 				? <p role="status">Connect to Ace Helper to check tools and team connectivity.</p>
 				: checks.value

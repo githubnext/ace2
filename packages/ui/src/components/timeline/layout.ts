@@ -132,6 +132,7 @@ function key(
 					t.status,
 					t.args,
 					t.result,
+					...(t.images || []),
 					expanded.has(t.id),
 					expandedResults.has(t.id),
 					settling.has(t.id),
@@ -196,7 +197,15 @@ function tools(
 ): Block[] {
 	return items.map(t =>
 		toolBlock(
-			{ id: t.id, name: t.name, status: t.status, agent: t.agent, args: t.args, result: t.result },
+			{
+				id: t.id,
+				name: t.name,
+				status: t.status,
+				agent: t.agent,
+				args: t.args,
+				result: t.result,
+				images: t.images,
+			},
 			expanded.has(t.id),
 			expandedResults.has(t.id),
 			settling.has(t.id),

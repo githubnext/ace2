@@ -22,7 +22,20 @@ function tool(tool: Tool, busy: boolean): Event.Message.Content.Tool {
 		name: tool.name,
 		arguments: (tool.args ?? {}) as Record<string, unknown>,
 		status,
-		...(tool.result ? { result: { content: tool.result.text } } : {}),
+		...(tool.result
+			? {
+				result: {
+					content: tool.result.text,
+					...(tool.result.images
+						? {
+							images: tool.result.images.map((image) =>
+								`data:${image.mimeType};base64,${image.data}`
+							),
+						}
+						: {}),
+				},
+			}
+			: {}),
 	};
 }
 
