@@ -11,10 +11,12 @@ import {
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
 	type DesktopAction,
+	type DesktopManagement,
 	type DesktopOutcome,
 	type DesktopRequest,
 	type DesktopResult,
 	isDesktopAction,
+	isDesktopManagement,
 } from "@ace/channel/desktop";
 
 import { config } from "./config";
@@ -28,7 +30,7 @@ type Reply = {
 	success: boolean;
 	data: Record<string, unknown> | null;
 	error?: { code: string; message: string; details?: string };
-	target_receipt?: { pid: number; window_id: number; process_start_identity_decimal?: string };
+	target_receipt?: { pid: number; window_id?: number; process_start_identity_decimal?: string };
 };
 
 async function run(
@@ -218,6 +220,7 @@ async function inspect(
 }
 
 function validateAction(request: DesktopAction) {
+	if (isDesktopManagement(request)) return validateManagement(request);
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
@@ -256,6 +259,38 @@ function validateAction(request: DesktopAction) {
 	}
 }
 
+function validateManagement(request: DesktopManagement) {
+	const target = request.target;
+	if (
+		!target || typeof target !== "object" || !Number.isInteger(target.pid)
+		|| target.pid < 1 || target.pid > 2_147_483_647
+		|| typeof target.process_start_identity_decimal !== "string"
+		|| !/^[1-9][0-9]{0,19}$/.test(target.process_start_identity_decimal)
+		|| BigInt(target.process_start_identity_decimal) > 18_446_744_073_709_551_615n
+	) throw new Error("Pass the application's target object from fresh desktop inventory unchanged.");
+	if (request.op === "activate") {
+		if (
+			Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))
+		) {
+			throw new Error("Activation takes an application target from desktop_apps.");
+		}
+		return;
+	}
+	const window = request.target;
+	if (
+		!Number.isInteger(window.window_id) || window.window_id < 1 || window.window_id > 4_294_967_295
+		|| typeof window.is_minimized !== "boolean" || !window.bounds
+		|| ![window.bounds.x, window.bounds.y, window.bounds.width, window.bounds.height].every(
+			Number.isFinite,
+		)
+		|| window.bounds.width <= 0 || window.bounds.height <= 0
+	) {
+		throw new Error(
+			"Pass the window's target object, including its original bounds, from desktop_windows unchanged.",
+		);
+	}
+}
+
 function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): DesktopResult {
 	let text = JSON.stringify({ action: data });
 	if (Buffer.byteLength(text) > MAX_TEXT) {
@@ -272,7 +307,7 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	let data: Record<string, unknown>;
 	try {
 		validateAction(request);
-		data = await native(["action"], signal, {
+		data = await native([isDesktopManagement(request) ? "management" : "action"], signal, {
 			input: JSON.stringify(request),
 			onDispatch() {
 				dispatched = true;
@@ -293,10 +328,11 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	}
 	const outcome = data.outcome as DesktopOutcome;
 	if (outcome !== "completed") return actionResult(data, outcome);
+	if (isDesktopManagement(request)) return await observeManagement(request, data, signal);
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
 	try {
 		const receipt = data.target_receipt as Reply["target_receipt"];
-		if (!receipt?.process_start_identity_decimal) {
+		if (!receipt?.process_start_identity_decimal || !receipt.window_id) {
 			throw new Error("No exact-window action receipt.");
 		}
 		const observation = await inspect({
@@ -325,10 +361,120 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	}
 }
 
+async function observeManagement(
+	request: DesktopManagement,
+	action: Record<string, unknown>,
+	signal: AbortSignal,
+): Promise<DesktopResult> {
+	const data: Record<string, unknown> = { action };
+	const receipt = action.target_receipt as Reply["target_receipt"];
+	if (
+		!receipt || receipt.pid !== request.target.pid
+		|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal
+		|| (request.op === "activate"
+			? receipt.window_id !== undefined
+			: receipt.window_id !== request.target.window_id)
+	) {
+		return actionResult({
+			...action,
+			outcome: "unknown",
+			reason:
+				"The native action returned a different target receipt. Refresh the target before any retry.",
+		}, "unknown");
+	}
+	try {
+		const apps = await native(["apps"], signal);
+		if (!Array.isArray(apps.apps)) throw new Error("Native application inventory is unavailable.");
+		data.application_inventory_completeness = apps.inventory_completeness;
+		data.application_inventory_warnings = apps.inventory_warnings;
+		const app = apps.apps.find((app) => app.pid === receipt.pid);
+		data.application = app || null;
+		if (!app) throw new Error("The target application was not returned by the later inventory.");
+		if (app.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
+			throw new Error("The application changed process generation after the action.");
+		}
+		const windows = await native(["windows", String(receipt.pid)], signal);
+		if (!Array.isArray(windows.windows)) throw new Error("Native window inventory is unavailable.");
+		data.window_inventory_completeness = windows.inventory_completeness;
+		data.window_inventory_warnings = windows.inventory_warnings;
+		data.windows = windows.windows;
+		if (
+			windows.windows.some((window) =>
+				window.process_start_identity_decimal !== receipt.process_start_identity_decimal
+			)
+		) {
+			throw new Error(
+				"Later window inventory could not be bound to the original application generation.",
+			);
+		}
+		if (request.op === "activate") {
+			return managementResult(data, action);
+		}
+		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
+			throw new Error("The exact window was not returned by the later inventory.");
+		}
+		const observation = await inspect({
+			op: "inspect",
+			pid: receipt.pid,
+			window: receipt.window_id!,
+		}, signal);
+		const fresh = JSON.parse(observation.text) as Record<string, unknown>;
+		const current = fresh.target_receipt as Reply["target_receipt"];
+		if (current?.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
+			throw new Error("The application changed process generation before the later inspection.");
+		}
+		return {
+			text: bounded({ ...data, ...fresh }, "ui_elements"),
+			image: observation.image,
+			outcome: "completed",
+			isError: false,
+		};
+	} catch (error) {
+		data.observation_error = (error instanceof Error ? error.message : String(error)).slice(
+			0,
+			2000,
+		);
+		data.message =
+			"The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly.";
+		return managementResult(data, action);
+	}
+}
+
+function managementResult(
+	data: Record<string, unknown>,
+	action: Record<string, unknown>,
+): DesktopResult {
+	try {
+		const text = Array.isArray(data.windows) ? bounded(data, "windows") : JSON.stringify(data);
+		if (Buffer.byteLength(text) > MAX_TEXT) {
+			throw new Error("The later inventory exceeds the result limit.");
+		}
+		return { text, outcome: "completed", isError: false };
+	} catch {
+		return actionResult({
+			...action,
+			observation_error: data.observation_error || "The later inventory exceeds the result limit.",
+			message:
+				"The native action completed. Later inventory was omitted to fit the result limit; refresh the target without blindly repeating the action.",
+		}, "completed");
+	}
+}
+
 export const desktop: Desktop = async (request, context) => {
 	if (
 		!request
-		|| !["apps", "windows", "inspect", "click", "type", "key", "select"].includes(
+		|| ![
+			"apps",
+			"windows",
+			"inspect",
+			"click",
+			"type",
+			"key",
+			"select",
+			"activate",
+			"focus",
+			"restore",
+		].includes(
 			request.op,
 		)
 	) {
