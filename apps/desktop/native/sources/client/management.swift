@@ -58,7 +58,7 @@ struct ManagementTarget: Codable {
 
 private struct ManagementRequest: Decodable {
 	enum Operation: String, Decodable {
-		case activate, quit, focus, minimize, restore, move, resize
+		case activate, quit, close, focus, minimize, restore, move, resize
 	}
 	struct Position: Decodable {
 		let x: Double
@@ -123,6 +123,7 @@ func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeH
 	var result = ManagementResult()
 	var receipt: Receipt?
 	var invoked = false
+	var closing: WindowMutationIdentity?
 	do {
 		let request = try readManagement()
 		result.action = request.op.rawValue
@@ -184,6 +185,12 @@ func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeH
 			), supportsPinnedQuit: true)
 			terminated = action.payload
 			outcome = action.outcome
+		case .close:
+			operation = .backgroundCloseWindow
+			closing = window
+			outcome = try await client.closeWindowResult(
+				target: .windowId(window!.windowID), expectedIdentity: window!, allowForegroundFallback: false
+			).outcome
 		case .focus:
 			operation = .focusWindow
 			let action = try await client.focusWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!)
@@ -231,17 +238,24 @@ func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeH
 		if terminated == false {
 			result.message = "The normal quit request was accepted, but termination was not confirmed. Inspect remaining windows for unsaved work or other dialogs; do not blindly retry or force quit."
 		}
+		if request.op == .close, !outcome.isConfirmed {
+			result.message = "The close request was not confirmed complete. Inspect remaining windows for unsaved work or other dialogs; do not blindly retry close."
+		}
 		switch outcome.state {
 		case .refused:
 			result.outcome = "refused"
 		case .indeterminate, .partial:
 			result.outcome = "unknown"
 		default:
-			result.outcome = outcome.evidence == .operationStillRunning || terminated == false ? "unknown" : "completed"
+			result.outcome = outcome.evidence == .operationStillRunning || terminated == false || (request.op == .close && !outcome.isConfirmed) ? "unknown" : "completed"
 		}
 	} catch let failure as DesktopActionFailure {
 		result.outcome = failure.outcome.dispatchState.mutationDispatched ? "unknown" : "refused"
 		result.native_outcome = failure.outcome
+		// The bridge attributes failures only after verifying the signed request-bound target.
+		if let closing, failure.targetReceipt == closing.actionTargetReceipt {
+			receipt = Receipt(pid: closing.ownerProcessIdentifier, window_id: closing.windowID, process_start_identity_decimal: String(closing.ownerProcessStartIdentity))
+		}
 		result.requires_fresh_observation = failure.outcome.dispatchState.mutationDispatched || failure.outcome.escalation == .refreshTarget
 		result.error = ManagementMessage(code: failure.standardErrorCode?.rawValue ?? "DESKTOP_ACTION_FAILED", message: failure.message, hint: failure.hint)
 	} catch {
