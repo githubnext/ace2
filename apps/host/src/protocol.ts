@@ -135,6 +135,7 @@ export type HostRequest =
 	}
 	| { op: "github-detail"; repo: string; kind: GithubKind; number: number }
 	| { op: "github-files"; repo: string; number: number }
+	| { op: "github-pull"; repo: string; branch: string }
 	/** These settings belong to the local owner and are never forwarded to peers. */
 	| { op: "settings" }
 	| { op: "diagnostics" }
