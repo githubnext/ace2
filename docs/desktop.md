@@ -165,8 +165,22 @@ missing and quit, and helper controls in the menu and Settings are unavailable. 
 build from Finder works only while its `bun run dev` host is running. Use the installed Ace-dev or
 Canary to test Ace Helper itself.
 
-The build is signed ad hoc unless `ACE_CODESIGN_IDENTITY` names an Apple Development identity, which
-native desktop inspection of the app requires.
+Development builds sign every executable with one identity: `ACE_CODESIGN_IDENTITY` when set,
+otherwise the repository's local Git setting `ace.codesignIdentity`, otherwise ad hoc. Set the
+Git value once per Mac to an Apple Development SHA-1 from `security find-identity -v -p codesigning`;
+use the SHA-1 because several certificates can share a name:
+
+```sh
+git config ace.codesignIdentity <sha-1>
+```
+
+It is stored in the repository's `.git/config`, which all its worktrees and lanes share, so agents and
+background builds use it without exporting anything. It is never committed; contributors without it
+build ad hoc, and `ACE_CODESIGN_IDENTITY=-` forces an ad-hoc build. With an Apple Development
+signature, codesign's default designated requirement names the bundle identifier and the
+certificate, so macOS privacy permissions and Keychain access granted to a checkout's build carry
+across its rebuilds, while other checkouts, which have other identifiers, still need their own.
+Native desktop inspection of the app also requires a team signature.
 
 On first launch, press Cmd+O to open a project folder. Verify that the dashboard opens with no
 provider key and that opening a folder creates no channel. Add a provider key in Settings before
@@ -181,11 +195,11 @@ catalog and Keychain service, and `~/Library/Application Support/Ace-dev` for pr
 Ace Helper through `SMAppService`. Build it only from a checkout based on the current `origin/main`:
 
 ```sh
-ACE_DEV_INSTALL=1 ACE_CODESIGN_IDENTITY=<sha-1> bun scripts/build.ts dev
+ACE_DEV_INSTALL=1 bun scripts/build.ts dev
 ```
 
-`ACE_CODESIGN_IDENTITY` is the SHA-1 reported by `security find-identity -v -p codesigning`; use the
-same valid Apple Development identity for every install. macOS records a launch constraint from the
+Use the same valid Apple Development identity, from `ace.codesignIdentity` or
+`ACE_CODESIGN_IDENTITY`, for every install. macOS records a launch constraint from the
 registered helper's signature, so an ad-hoc or differently signed replacement fails with a launch
 constraint violation. The build refuses ad-hoc signing. Apple recommends an
 [Apple-issued identity for both the app and helper](https://developer.apple.com/forums/thread/799910).

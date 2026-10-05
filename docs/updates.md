@@ -133,10 +133,10 @@ explicitly to build and publish a release. Manual builds may run at any time. A 
 [native desktop inspection](desktop-tools.md) to examine the installed app on its execution host.
 
 Native desktop inspection in development requires an Apple Development signing identity selected
-with `ACE_CODESIGN_IDENTITY`. Ad-hoc development builds still run, but inspection reports that a
+with `ace.codesignIdentity` or `ACE_CODESIGN_IDENTITY` (see [UI testing](desktop.md#ui-testing)). Ad-hoc development builds still run, but inspection reports that a
 trusted Apple signature is required. Release builds use the Developer ID identity below.
 
-Keep the same signing identity for installed development builds with `ACE_CODESIGN_IDENTITY`.
+Keep the same signing identity for installed development builds.
 Changing from Apple Development to Developer ID, or to an ad-hoc signature, can invalidate
 Ace Helper's macOS launch constraint even when the Team ID stays the same.
 
