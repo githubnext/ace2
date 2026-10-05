@@ -224,6 +224,11 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			throw ActionError("The snapshot has no exact focused control. Click a control, then inspect the window again.")
 		}
 		let window = try UIAutomationTarget.ExactWindow(identity: identity, bounds: bounds)
+		var scrollWindow: UIAutomationTarget.ExactWindow?
+		if request.op == .scroll {
+			// Request-pinned scroll receipts retain the snapshot's focus evidence as well as its geometry.
+			scrollWindow = try .init(identity: identity, bounds: bounds, focusedElement: context.focusedElement)
+		}
 		var point: CGPoint?
 		var drag: ExactWindowDragRequest?
 		if request.point != nil || request.op == .drag {
@@ -261,7 +266,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			evidence = try await ActionEvidence(client.scrollWithOutcome(.init(
 				direction: ScrollDirection(rawValue: request.direction!)!, amount: request.amount!,
 				target: request.element, point: point, snapshotId: request.snapshot,
-				expectedWindow: window, foreground: false
+				expectedWindow: scrollWindow!, foreground: false
 			)))
 		case .drag:
 			evidence = try await ActionEvidence(client.dragExactWindow(drag!))
