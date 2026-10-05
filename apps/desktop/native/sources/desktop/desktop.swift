@@ -71,7 +71,7 @@ private final class Desktop {
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
 						.selectText, .literalInsert, .clipboardTextRead, .clipboardTextWrite, .targetedScroll, .exactWindowDrag,
-						.activateApplication, .quitApplication, .focusWindow, .restoreWindow,
+						.activateApplication, .quitApplication, .focusWindow, .minimizeWindow, .restoreWindow,
 						.moveWindow, .resizeWindow,
 					],
 					hostKind: .gui,

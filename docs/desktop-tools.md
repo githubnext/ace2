@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, activate or quit apps, focus, restore, move or resize windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, activate or quit apps, focus, minimize, restore, move or resize windows, click observed controls, replace editable
 field values, select and insert text, send keys or shortcuts, scroll, drag, and read or write plain-text clipboard contents on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -70,6 +70,11 @@ find the client alongside Ace Helper automatically.
   A later inventory failure or missing app does not change the original quit outcome.
 - `desktop_focus` brings one exact window to the foreground using its `target` from
   `desktop_windows`, activating its app and switching Spaces when needed.
+- `desktop_minimize` minimizes one exact window using its unchanged inventory `target` and
+  background Accessibility delivery. Native verification confirms the minimized state, including
+  an already-minimized no-op; an accepted but unverified change remains `unknown`. The result
+  refreshes window inventory without attempting a screenshot of the minimized window. Restore
+  explicitly with `desktop_restore` and the refreshed target before inspection or input.
 - `desktop_restore` unminimizes one exact window using its inventory `target` and background
   Accessibility delivery. It does not promise foreground focus. Restore a minimized window
   before focusing it, using the refreshed target for the later action.
@@ -135,7 +140,7 @@ matching rows omitted from the filtered response; narrow the query if needed. Se
 change native inventory completeness or warnings, and an empty match is not proof an app stopped.
 
 Choose the application from the inventory and the window from that application's window list.
-Activation, quit, focus, restore, move, and resize use inventory targets directly, so a failed inspection does not
+Activation, quit, focus, minimize, restore, move, and resize use inventory targets directly, so a failed inspection does not
 prevent explicit recovery. Pass the target object unchanged: it includes the process generation
 as a decimal string and, for windows, the original window ID, bounds, and minimized state. The
 native service revalidates that identity immediately before acting. These targets are not
