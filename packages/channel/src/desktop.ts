@@ -36,6 +36,7 @@ export type DesktopRequest =
 	| { op: "clipboard-read"; format?: "text" | "image" | "files" }
 	| { op: "clipboard-write"; text: string }
 	| { op: "clipboard-write"; format: "image"; path: string }
+	| { op: "clipboard-write"; format: "files"; paths: string[] }
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "menus"; target: DesktopAppTarget; path?: string[] }
@@ -275,31 +276,55 @@ export function desktop(execute: Desktop): Extension {
 			defineTool({
 				name: "desktop_clipboard_write",
 				description:
-					"Replace this execution host's clipboard with text (up to 8192 UTF-16 units), or use format image and an absolute path on this execution host to one PNG/JPEG/TIFF file (at most 10 MiB and 64 million pixels). Image writes preserve the original bytes, orientation and transparency; they do not copy a file reference. Supply either text or format image with path. This persists until another copy or write; it does not paste or preserve the previous contents. A pending unverified paste refuses the write. Never blindly repeat an interrupted write: read the current clipboard before deciding what to do next.",
+					"Replace this execution host's clipboard with text (up to 8192 UTF-16 units), an image, or file references. Use format image with one absolute path to a PNG/JPEG/TIFF file (at most 10 MiB and 64 million pixels); its original bytes, orientation and transparency are preserved. Use format files with 1–32 absolute paths to existing files, directories or symbolic links on this execution host; metadata-only preflight does not read contents or resolve links. File references preserve order and duplicates within the complete 24 KB read-result bound. file_count reports requested references, not a receiver's copy or paste result. Supply only one form. This persists until another copy or write; it does not paste or preserve the previous contents. A pending unverified paste refuses the write. Never blindly repeat an interrupted write: read the current clipboard before deciding what to do next.",
 				parameters: Type.Object({
 					text: Type.Optional(Type.String({ maxLength: 8192 })),
-					format: Type.Optional(Type.Literal("image")),
+					format: Type.Optional(Type.Union([Type.Literal("image"), Type.Literal("files")])),
 					path: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+					paths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), {
+						minItems: 1,
+						maxItems: 32,
+					})),
 				}, {
 					additionalProperties: false,
 					oneOf: [
 						{
 							required: ["text"],
-							not: { anyOf: [{ required: ["format"] }, { required: ["path"] }] },
+							not: {
+								anyOf: [{ required: ["format"] }, { required: ["path"] }, { required: ["paths"] }],
+							},
 						},
-						{ required: ["format", "path"], not: { required: ["text"] } },
+						{
+							required: ["format", "path"],
+							properties: { format: { const: "image" } },
+							not: { anyOf: [{ required: ["text"] }, { required: ["paths"] }] },
+						},
+						{
+							required: ["format", "paths"],
+							properties: { format: { const: "files" } },
+							not: { anyOf: [{ required: ["text"] }, { required: ["path"] }] },
+						},
 					],
 				}),
 				replay: "unsafe",
 				executionMode: "sequential",
-				execute: async ({ text, format, path }, api, context) => {
-					if (format === "image" && path !== undefined && text === undefined) {
+				execute: async ({ text, format, path, paths }, api, context) => {
+					if (
+						format === "image" && path !== undefined && text === undefined && paths === undefined
+					) {
 						return act({ op: "clipboard-write", format, path }, api, context);
 					}
-					if (text !== undefined && format === undefined && path === undefined) {
+					if (
+						format === "files" && paths !== undefined && text === undefined && path === undefined
+					) {
+						return act({ op: "clipboard-write", format, paths }, api, context);
+					}
+					if (
+						text !== undefined && format === undefined && path === undefined && paths === undefined
+					) {
 						return act({ op: "clipboard-write", text }, api, context);
 					}
-					throw new Error("Supply text, or format image with an absolute image path.");
+					throw new Error("Supply text, format image with path, or format files with paths.");
 				},
 			}),
 			defineTool({
