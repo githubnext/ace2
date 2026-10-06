@@ -240,14 +240,15 @@ The same clipboard gate retains a content-free reservation while a dispatched pa
 Later automated writes require observed consumption or termination of the exact receiver process
 generation. The reservation survives GUI restart; clipboard contents and comparison state do not.
 Explicit clipboard tools read complete bounded plain text, an image preview, or advertised local
-file references, or persistently
-replace plain text; they do not paste. Reads use the existing silent permission policy and require
+file references, or persistently replace text or an image; they do not paste. Reads use the existing silent permission policy and require
 a stable generation, without entering or releasing the mutation gate. The GUI copies one bounded
 image representation, renders an oriented preview off its main actor, and verifies the generation
 again. Source and preview metadata stay distinct; the bounded preview uses the existing image
 result and durable history without clipboard files or a second store. File reads return exact
 advertised URLs and decoded paths without filesystem access; macOS may filter references before
-exposing them to Ace. Writes enter the same gate,
+exposing them to Ace. Image writes take an execution-host path: the host alone reads a bounded
+regular file, and the GUI decodes its immutable copy before publishing the original representation.
+Only source metadata is returned. Writes enter the same gate,
 including pending-paste admission, and expose content-free native outcomes without window inspection.
 Explicitly read content enters ordinary tool history as observed data; no permission layer is added.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish

@@ -14,6 +14,7 @@ private struct ClipboardRequest: Decodable {
 	let op: Operation
 	let format: Format?
 	let text: String?
+	let image: Data?
 }
 
 private struct ClipboardReply<T: Encodable>: Encodable {
@@ -25,6 +26,7 @@ private struct ClipboardWriteResult: Encodable {
 	var outcome = "refused"
 	var native_outcome: DesktopActionOutcome?
 	var clipboard_changed: Bool?
+	var source: ClipboardImageContents.Source?
 	var error: ClipboardMessage?
 }
 
@@ -38,16 +40,16 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 	var data = Data()
 	while let chunk = try FileHandle.standardInput.read(upToCount: 4096), !chunk.isEmpty {
 		data.append(chunk)
-		guard data.count <= 65_536 else {
+		guard data.count <= 14 * 1024 * 1024 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
-				message: "The clipboard request exceeds 64 KiB.")
+				message: "The encoded clipboard request exceeds 14 MiB.")
 		}
 	}
 	let request = try JSONDecoder().decode(ClipboardRequest.self, from: data)
 	if request.op == .read {
-		guard request.text == nil else {
+		guard request.text == nil, request.image == nil, data.count <= 65_536 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
-				message: "Clipboard reads do not accept text.")
+				message: "Clipboard reads do not accept content and must fit 64 KiB.")
 		}
 		if request.format == .files {
 			let result = try await client.clipboardFilesRead()
@@ -63,9 +65,26 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 	var result = ClipboardWriteResult()
 	var invoked = false
 	do {
-		guard request.format == nil else {
+		if request.format == .image {
+			guard request.text == nil, let image = request.image,
+				!image.isEmpty, image.count <= 10 * 1024 * 1024 else {
+				throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
+					message: "Image writes require at most 10 MiB of image data and no text.")
+			}
+			invoked = true
+			let written = try await client.clipboardImageWrite(image)
+			result.outcome = written.outcome
+			result.native_outcome = written.native_outcome
+			result.clipboard_changed = written.clipboard_changed
+			result.source = written.source
+			if let error = written.error {
+				result.error = .init(code: error.code, message: error.message, hint: error.hint)
+			}
+			return try JSONEncoder().encode(ClipboardReply(data: result))
+		}
+		guard request.format == nil, request.image == nil, data.count <= 65_536 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
-				message: "Clipboard format applies only to reads; writes accept plain text.")
+				message: "Supply plain text or format image with image data.")
 		}
 		guard let text = request.text, text.utf16.count <= 8192 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,

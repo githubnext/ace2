@@ -781,8 +781,7 @@ function itemHeight(
 
 	h += CONTENT_GAP;
 
-	// Avatar is offset by the byline + header gap + a 2px baseline nudge, so a one-line row must clear that or the avatar visibly clips at the bottom.
-	return Math.max(h, AVATAR_NUDGE + (hasByline ? BYLINE_HEIGHT + HEADER_GAP + AVATAR : AVATAR));
+	return Math.max(h, AVATAR + AVATAR_NUDGE);
 }
 
 function workingSectionHeight(
