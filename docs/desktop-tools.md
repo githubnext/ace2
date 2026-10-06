@@ -278,7 +278,7 @@ input begins. There is no fallback to global mouse or keyboard input. The target
 changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
 emulated with held keys or mouse buttons across calls. Remaining clipboard writes, foreground
-interactions, menu commands, and complete dialog workflows are later slices of
+interactions, commands in Ace’s own menus, and complete dialog workflows are later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and
