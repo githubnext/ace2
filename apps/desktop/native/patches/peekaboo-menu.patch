@@ -1,9 +1,9 @@
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift
 new file mode 100644
-index 000000000..7e5eb6fdb
+index 000000000..ee69c742b
 --- /dev/null
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift
-@@ -0,0 +1,334 @@
+@@ -0,0 +1,309 @@
 +import ApplicationServices
 +import Foundation
 +import os
@@ -45,17 +45,6 @@ index 000000000..7e5eb6fdb
 +            try await self.operationLaneCoordinator.run(scope: .process(request.expectedIdentity), access: .write) {
 +                // This command never reads the inventory cache; a later inventory should re-read changed menus.
 +                defer { self.menuCache.removeValue(forKey: "PID:\(request.expectedIdentity.processIdentifier)") }
-+                if request.expectedIdentity.processIdentifier == ProcessInfo.processInfo.processIdentifier {
-+                    let mainRead = MenuCommandAX.readOnlySelfProbe(request)
-+                    let workerRead: String = await withCheckedContinuation { continuation in
-+                        Thread.detachNewThread {
-+                            continuation.resume(returning: MenuCommandAX.readOnlySelfProbe(request))
-+                        }
-+                    }
-+                    throw DesktopActionFailure.preDispatchRefusal(
-+                        reason: .operationUnsupported,
-+                        message: "Read-only self-menu diagnostic; AXPress was not attempted. Main: \(mainRead). Worker: \(workerRead).")
-+                }
 +                let outcome = try await MenuCommandAX.run(request)
 +                return try UIAutomationActionResult(
 +                    payload: (), outcome: outcome,
@@ -68,44 +57,24 @@ index 000000000..7e5eb6fdb
 +private enum MenuCommandAX {
 +    static let delivery = DesktopActionOutcome.Delivery(mechanism: .accessibilityAction, mode: .background)
 +
-+    static func readOnlySelfProbe(_ request: MenuCommandRequest) -> String {
-+        guard SystemIdentityResolver.processStartIdentity(request.expectedIdentity.processIdentifier) ==
-+                request.expectedIdentity.processStartIdentity else { return "generation changed" }
-+        let app = AXUIElementCreateApplication(request.expectedIdentity.processIdentifier)
-+        guard AXUIElementSetMessagingTimeout(app, 1) == .success else { return "application timeout unavailable" }
-+        defer { AXUIElementSetMessagingTimeout(app, 0) }
-+        var bar: CFTypeRef?
-+        let barStatus = AXUIElementCopyAttributeValue(app, kAXMenuBarAttribute as CFString, &bar)
-+        guard barStatus == .success, let bar, CFGetTypeID(bar) == AXUIElementGetTypeID() else {
-+            return "menu bar AX \(barStatus.rawValue)"
-+        }
-+        let element = unsafeDowncast(bar, to: AXUIElement.self)
-+        guard AXUIElementSetMessagingTimeout(element, 1) == .success else { return "menu timeout unavailable" }
-+        defer { AXUIElementSetMessagingTimeout(element, 0) }
-+        var count: CFIndex = 0
-+        let countStatus = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
-+        var names: CFArray?
-+        let namesStatus = AXUIElementCopyAttributeNames(element, &names)
-+        let advertised = (names as? [String])?.contains(kAXChildrenAttribute as String)
-+        var value: CFTypeRef?
-+        let valueStatus = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
-+        let valueCount = (value as? [AXUIElement])?.count
-+        var visible: CFTypeRef?
-+        let visibleStatus = AXUIElementCopyAttributeValue(element, kAXVisibleChildrenAttribute as CFString, &visible)
-+        let visibleCount = (visible as? [AXUIElement])?.count
-+        return "main thread \(Thread.isMainThread), count AX \(countStatus.rawValue)/\(count), " +
-+            "attributes AX \(namesStatus.rawValue)/\(String(describing: advertised)), " +
-+            "value AX \(valueStatus.rawValue)/\(String(describing: valueCount)), " +
-+            "visible AX \(visibleStatus.rawValue)/\(String(describing: visibleCount))"
-+    }
-+
 +    static func run(_ request: MenuCommandRequest) async throws -> DesktopActionOutcome {
 +        let cancelled = OSAllocatedUnfairLock(initialState: false)
++        let deadline = ContinuousClock.now.advanced(by: .seconds(5))
 +        return try await withTaskCancellationHandler {
++            let prepared: PreparedLeaf?
++            if request.expectedIdentity.processIdentifier == ProcessInfo.processInfo.processIdentifier {
++                // AppKit exposes its own menu children only to reads on the main thread.
++                prepared = try await MainActor.run {
++                    let read = MenuCommandRead(request: request, cancelled: cancelled, deadline: deadline)
++                    return try PreparedLeaf(element: self.prepare(read), deadline: deadline)
++                }
++            } else {
++                prepared = nil
++            }
 +            let result: Result<DesktopActionOutcome, DesktopActionFailure> = await withCheckedContinuation { continuation in
 +                Thread.detachNewThread {
 +                    do {
-+                        continuation.resume(returning: .success(try self.perform(request, cancelled: cancelled)))
++                        continuation.resume(returning: .success(try self.perform(request, cancelled: cancelled, deadline: deadline, prepared: prepared)))
 +                    } catch let failure as DesktopActionFailure {
 +                        continuation.resume(returning: .failure(failure))
 +                    } catch {
@@ -122,11 +91,13 @@ index 000000000..7e5eb6fdb
 +        }
 +    }
 +
-+    private static func perform(
-+        _ request: MenuCommandRequest,
-+        cancelled: OSAllocatedUnfairLock<Bool>) throws -> DesktopActionOutcome
-+    {
-+        let read = MenuCommandRead(request: request, cancelled: cancelled)
++    // A retained immutable Core Foundation handle crosses threads; mutable readers never do.
++    private struct PreparedLeaf: @unchecked Sendable {
++        let element: AXUIElement
++        let deadline: ContinuousClock.Instant
++    }
++
++    private static func prepare(_ read: MenuCommandRead) throws -> AXUIElement {
 +        let original = try read.resolve()
 +        let current = try read.resolve()
 +        guard original.count == current.count,
@@ -156,6 +127,17 @@ index 000000000..7e5eb6fdb
 +            throw DesktopActionFailure.preDispatchRefusal(
 +                reason: .operationUnsupported, message: "The exact menu command does not support AXPress.")
 +        }
++        return leaf
++    }
++
++    private static func perform(
++        _ request: MenuCommandRequest,
++        cancelled: OSAllocatedUnfairLock<Bool>,
++        deadline: ContinuousClock.Instant,
++        prepared: PreparedLeaf?) throws -> DesktopActionOutcome
++    {
++        let read = MenuCommandRead(request: request, cancelled: cancelled, deadline: prepared?.deadline ?? deadline)
++        let leaf = try prepared?.element ?? self.prepare(read)
 +        try read.check()
 +        guard AXUIElementSetMessagingTimeout(leaf, 2) == .success else {
 +            throw read.refusal("The native menu command timeout could not be set before input.")
@@ -192,13 +174,14 @@ index 000000000..7e5eb6fdb
 +private final class MenuCommandRead {
 +    let request: MenuCommandRequest
 +    let cancelled: OSAllocatedUnfairLock<Bool>
-+    let deadline = ContinuousClock.now.advanced(by: .seconds(5))
++    let deadline: ContinuousClock.Instant
 +    let application: AXUIElement
 +    var remaining = 500
 +
-+    init(request: MenuCommandRequest, cancelled: OSAllocatedUnfairLock<Bool>) {
++    init(request: MenuCommandRequest, cancelled: OSAllocatedUnfairLock<Bool>, deadline: ContinuousClock.Instant) {
 +        self.request = request
 +        self.cancelled = cancelled
++        self.deadline = deadline
 +        self.application = AXUIElementCreateApplication(request.expectedIdentity.processIdentifier)
 +    }
 +
@@ -266,16 +249,8 @@ index 000000000..7e5eb6fdb
 +            let status = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
 +            if !requireAvailable && (status == .noValue || status == .attributeUnsupported) { return [] }
 +            guard status == .success else {
-+                var names: CFArray?
-+                let namesStatus = AXUIElementCopyAttributeNames(element, &names)
-+                let advertised = (names as? [String])?.contains(kAXChildrenAttribute as String)
-+                var value: CFTypeRef?
-+                let valueStatus = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
-+                let valueCount = (value as? [AXUIElement])?.count
 +                throw self.refusal("The menu children are unavailable (AX \(status.rawValue), " +
-+                    "count \(count), remaining \(self.remaining), leaf check \(requireAvailable), " +
-+                    "attributes AX \(namesStatus.rawValue), advertised \(String(describing: advertised)), " +
-+                    "value AX \(valueStatus.rawValue), value count \(String(describing: valueCount))).")
++                    "count \(count), remaining \(self.remaining), leaf check \(requireAvailable)).")
 +            }
 +            guard count >= 0, count <= self.remaining else {
 +                throw self.refusal("The complete menu sibling set exceeds the native traversal budget " +

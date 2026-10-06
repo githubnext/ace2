@@ -108,13 +108,16 @@ find the client alongside Ace Helper automatically.
 - `desktop_menu` invokes one command using an exact application `target` and a literal `path`
   array from `desktop_menus`, with the same path and request bounds. The native service resolves
   the path afresh without the inventory cache, requires unique ancestors and an enabled leaf,
-  and submits one final `AXPress`. It never activates the app, presses intermediate menus,
-  chooses a fuzzy title, or retries. Missing lazy paths and uncertain uniqueness are refused.
+  and submits one final `AXPress`. It makes no separate activation request, presses no intermediate menus,
+  uses no fuzzy title, and never retries. The app or macOS can bring the app forward in response.
+  Missing lazy paths and uncertain uniqueness are refused.
   A completed result confirms accepted Accessibility delivery, not the command's application
   effect. Modal processing can return `unknown` even while a dialog opens. Read current windows
   or menus before deciding what to do next; do not blindly repeat the command. The result contains
   its signed application receipt and native outcome, without an automatic screenshot or inventory.
-  Raw AX work runs off the GUI actor with finite per-element messaging timeouts. Cancellation
+  External AX reads and all command delivery run off the GUI actor with finite per-element messaging
+  timeouts. Reading Ace's own menu requires its main thread; the same complete path/leaf validation
+  runs there, then only its retained leaf and original deadline pass to detached command delivery. Cancellation
   keeps the native process lane until the actual C call returns; a timeout does not guarantee
   prompt native return or undo an accepted command. While that lane is held, competing native
   work may wait. No menu or dialog dismissal is automatic.
