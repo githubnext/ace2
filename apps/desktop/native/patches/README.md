@@ -124,6 +124,14 @@ again immediately before mutation. Positional AXPress waits for its actual retur
 operation lane through cancellation; an uncertain return remains unsafe to retry. No input runs in
 the detached read, no failed action falls back to another route, and no caret position is promised.
 
+`peekaboo-open.patch` distinguishes accepted document/URL delivery from verified application launch
+for [native computer use](https://github.com/githubnext/ace2/issues/8). The existing launch service
+returns `dispatched_unverified` with `delivery_accepted` when its request contains items to open.
+The original native delivery, accepted unit count, global lane ownership and signed process target
+are retained. Readiness and activation do not prove that the app loaded the item. Launches without
+items and all refusal/uncertainty paths are unchanged; the existing bridge contract already permits
+this accepted outcome.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout
 with each complete ordered prefix, since later patches can change earlier patch contexts.

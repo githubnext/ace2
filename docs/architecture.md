@@ -221,6 +221,12 @@ launch/readiness through the native global mutation lane. The signed response bi
 to the resulting process generation; later inventory failure preserves that result. Launch exposes
 no document/URL, extra-instance, or relaunch options. The app may still open after caller timeout
 or interruption, so uncertain launch is never replayed and native ownership lasts until it settles.
+Explicit item opening reuses that signed native launch route for one existing absolute path or
+complete URL, optionally selecting an app. Otherwise macOS chooses the default handler; no app
+is assumed before dispatch. The signed request includes the item URL and binds the returned
+process generation. Accepted delivery remains unverified item effect, including after successful
+readiness and activation. Later app/window inventory cannot prove document loading or navigation,
+and failures after native submission remain uncertain without retry or dialog handling.
 Minimize verifies native window state and returns fresh inventory without capturing the minimized
 window; restoring it remains an explicit action with a refreshed target.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed

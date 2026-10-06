@@ -24,11 +24,12 @@ private struct LaunchMessage: Encodable {
 }
 
 private struct LaunchResult: Encodable {
-	let action = "launch"
+	let action: String
 	var outcome = "refused"
 	var native_outcome: DesktopActionOutcome?
 	var application: LaunchedApplication?
 	var requires_fresh_observation = false
+	var message: String?
 	var error: LaunchMessage?
 }
 
@@ -38,13 +39,15 @@ private struct LaunchReply: Encodable {
 	let target_receipt: Receipt?
 }
 
-func nativeLaunch(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHandshakeResponse) async throws -> Data {
-	var result = LaunchResult()
+func nativeLaunch(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHandshakeResponse, opensItem: Bool = false) async throws -> Data {
+	var result = LaunchResult(action: opensItem ? "open" : "launch")
 	var receipt: Receipt?
 	var invoked = false
-	let uncertain = "The app may still open later. Observe desktop_apps before any further action; do not blindly repeat the launch."
+	let uncertain = opensItem
+		? "The item may still open later. Observe desktop_apps before any further action; do not blindly repeat the open."
+		: "The app may still open later. Observe desktop_apps before any further action; do not blindly repeat the launch."
 	do {
-		let request = try readLaunch()
+		let request = try readLaunch(opensItem: opensItem)
 		guard handshake.supportedOperations.contains(.launchApplicationWithOptions),
 			(handshake.enabledOperations ?? handshake.supportedOperations).contains(.launchApplicationWithOptions)
 		else { throw LaunchError("The desktop runtime does not support attested application launch. Update the runtime before acting.") }
@@ -52,11 +55,11 @@ func nativeLaunch(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHands
 		if session?["CGSSessionScreenIsLocked"] as? Bool == true {
 			throw DesktopActionFailure.preDispatchRefusal(
 				reason: .targetUnavailable,
-				message: "The macOS GUI session is locked. Application launch was not dispatched.",
+				message: "The macOS GUI session is locked. The opening operation was not dispatched.",
 				hint: "Unlock the active user session before choosing a new action."
 			)
 		}
-		// Verify signed operation support before a launch whose process does not exist yet.
+		// The receiving process may not exist until LaunchServices returns it.
 		_ = try await client.listApplicationMutationInventory()
 		guard let preflight = await client.lastOperationReceipt(), preflight.payload.operation == PeekabooBridgeRequest.listApplicationMutationInventory.operation else {
 			throw LaunchError("The native runtime cannot attest application targets. Update the desktop runtime before acting.")
@@ -75,10 +78,18 @@ func nativeLaunch(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHands
 		result.application = LaunchedApplication(name: action.payload.name, bundle_id: action.payload.bundleIdentifier,
 			path: action.payload.bundlePath, target: ManagementTarget(process))
 		result.requires_fresh_observation = outcome.dispatchState.mutationDispatched
-		switch outcome.state {
-		case .confirmedChange, .confirmedNoChange: result.outcome = "completed"
-		case .refused: result.outcome = "refused"
-		default: result.outcome = "unknown"
+		if opensItem {
+			guard outcome.state == .dispatchedUnverified, outcome.evidence == .deliveryAccepted else {
+				throw LaunchError("The native runtime did not distinguish accepted item delivery from its effect. Inspect the receiving app before acting again.")
+			}
+			result.outcome = "completed"
+			result.message = "macOS accepted the item opening request. Its effect is unverified; inspect the receiving app before any further action."
+		} else {
+			switch outcome.state {
+			case .confirmedChange, .confirmedNoChange: result.outcome = "completed"
+			case .refused: result.outcome = "refused"
+			default: result.outcome = "unknown"
+			}
 		}
 	} catch let failure as DesktopActionFailure {
 		let dispatched = failure.outcome.dispatchState.mutationDispatched
@@ -96,29 +107,57 @@ func nativeLaunch(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHands
 	return try JSONEncoder().encode(LaunchReply(data: result, target_receipt: receipt))
 }
 
-private func readLaunch() throws -> ApplicationLaunchRequest {
+private func readLaunch(opensItem: Bool) throws -> ApplicationLaunchRequest {
 	var data = Data()
 	while let chunk = try FileHandle.standardInput.read(upToCount: 4096), !chunk.isEmpty {
 		data.append(chunk)
-		guard data.count <= 16_384 else { throw LaunchError("The launch request exceeds 16 KiB.") }
+		guard data.count <= 16_384 else { throw LaunchError("The opening request exceeds 16 KiB.") }
 	}
+	let operation = opensItem ? "open" : "launch"
+	let keys: Set<String> = opensItem ? ["op", "item", "application"] : ["op", "application"]
 	guard let request = try JSONSerialization.jsonObject(with: data) as? [String: Any],
-		Set(request.keys) == ["op", "application"], request["op"] as? String == "launch",
-		let application = request["application"] as? [String: Any], application.count == 1
-	else { throw LaunchError("Launch accepts exactly one application path or bundle_id.") }
-	let path = application["path"] as? String
-	let bundleID = application["bundle_id"] as? String
-	if let path {
-		var directory: ObjCBool = false
-		guard path.utf16.count <= 4096, path.hasPrefix("/"), path.lowercased().hasSuffix(".app"), !path.contains("\0"),
-			FileManager.default.fileExists(atPath: path, isDirectory: &directory), directory.boolValue,
-			Bundle(url: URL(fileURLWithPath: path))?.executableURL != nil
-		else { throw LaunchError("Use an existing absolute .app path for launch.") }
-	} else {
-		guard let bundleID, bundleID.utf16.count <= 256,
-			bundleID.range(of: "^[A-Za-z0-9.-]+$", options: .regularExpression) != nil
-		else { throw LaunchError("Use an exact application bundle ID for launch.") }
+		Set(request.keys).isSubset(of: keys), request["op"] as? String == operation
+	else { throw LaunchError("Use one item and optional application for open, or one application for launch.") }
+	var path: String?
+	var bundleID: String?
+	if !opensItem || request["application"] != nil {
+		guard let application = request["application"] as? [String: Any], application.count == 1 else {
+			throw LaunchError("Use exactly one application path or bundle_id.")
+		}
+		path = application["path"] as? String
+		bundleID = application["bundle_id"] as? String
+		if let path {
+			var directory: ObjCBool = false
+			guard path.utf16.count <= 4096, path.hasPrefix("/"), path.lowercased().hasSuffix(".app"), !path.contains("\0"),
+				FileManager.default.fileExists(atPath: path, isDirectory: &directory), directory.boolValue,
+				Bundle(url: URL(fileURLWithPath: path))?.executableURL != nil
+			else { throw LaunchError("Use an existing absolute .app path for launch.") }
+		} else {
+			guard let bundleID, bundleID.utf16.count <= 256,
+				bundleID.range(of: "^[A-Za-z0-9.-]+$", options: .regularExpression) != nil
+			else { throw LaunchError("Use an exact application bundle ID for launch.") }
+		}
+	}
+	var urls: [URL] = []
+	if opensItem {
+		guard let item = request["item"] as? [String: Any], item.count == 1 else {
+			throw LaunchError("Open accepts exactly one item path or url.")
+		}
+		if let path = item["path"] as? String {
+			guard path.utf16.count <= 4096, path.hasPrefix("/"), !path.contains("\0"),
+				FileManager.default.fileExists(atPath: path)
+			else { throw LaunchError("Use an existing absolute item path.") }
+			urls = [URL(fileURLWithPath: path)]
+		} else {
+			guard let raw = item["url"] as? String, raw.utf16.count <= 4096,
+				!raw.unicodeScalars.contains(where: { CharacterSet.controlCharacters.contains($0) }),
+				let url = URL(string: raw, encodingInvalidCharacters: false), let scheme = url.scheme,
+				scheme.range(of: "^[A-Za-z][A-Za-z0-9+.-]*$", options: .regularExpression) != nil,
+				url.absoluteString == raw
+			else { throw LaunchError("Use a correctly encoded absolute URL with an explicit scheme and no control characters.") }
+			urls = [url]
+		}
 	}
 	return ApplicationLaunchRequest(applicationIdentifier: path, applicationBundleIdentifier: bundleID,
-		activates: true, waitUntilReady: true, waitForWindow: false, createsNewInstance: false)
+		openURLs: urls, activates: true, waitUntilReady: true, waitForWindow: false, createsNewInstance: false)
 }

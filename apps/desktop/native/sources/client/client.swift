@@ -29,6 +29,7 @@ private enum Client {
 			|| (operation == "action" && args.count == 2)
 			|| (operation == "management" && args.count == 2)
 			|| (operation == "launch" && args.count == 2)
+			|| (operation == "open" && args.count == 2)
 			|| (operation == "clipboard" && args.count == 2)
 			|| (operation == "menus" && args.count == 2)
 		else { throw ClientError.usage }
@@ -59,6 +60,8 @@ private enum Client {
 			return try await nativeManagement(client, handshake: handshake)
 		case "launch":
 			return try await nativeLaunch(client, handshake: handshake)
+		case "open":
+			return try await nativeLaunch(client, handshake: handshake, opensItem: true)
 		case "apps":
 			let inventory = try await client.listApplicationMutationInventory()
 			var metadata: [ServiceApplicationInfo] = []
