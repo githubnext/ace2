@@ -1,6 +1,6 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, launch, activate or quit apps, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
+Ace's pi harness can inspect applications and windows, launch, activate or quit apps, open documents and URLs, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
 field values, select and insert text, send keys or shortcuts, scroll, drag, read clipboard text or images, and write plain-text clipboard contents on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
@@ -86,6 +86,22 @@ find the client alongside Ace Helper automatically.
   activation attempts. Timeout or interruption remains `unknown`: LaunchServices can open the app
   later, and the native operation retains its lane until it settles. Observe `desktop_apps`
   before choosing another action; do not blindly repeat the launch.
+- `desktop_open` takes one `item: { path: "/absolute/item" }` or
+  `item: { url: "https://example.com/path" }`, and an optional `application` selector with the same
+  path/bundle-ID meaning as `desktop_launch`. Without an app selector, macOS chooses the default
+  handler. Paths must already exist on the execution host and may identify files, directories or
+  app bundles; no shell expansion or file-content inspection occurs. URLs must be complete,
+  correctly encoded and absolute, with an explicit scheme; `file:` and custom schemes are accepted
+  with their receiving app's normal behavior. Ace never repairs malformed URLs. Item strings fit
+  4,096 UTF-16 units and the complete request fits 16 KiB, without truncation.
+  Opening deliberately brings the receiving app forward and may switch Spaces. Completion means
+  macOS accepted delivery, with signed `dispatched_unverified`/`delivery_accepted` evidence and
+  the receiving process target; it does not establish that a document loaded or a page navigated.
+  Later inventory adds context without selecting a window or verifying the item effect.
+  Failure after native submission remains unknown, including a rejected or unsupported item;
+  interruption can leave the open finishing later. Inspect the receiving app before further input
+  and never repeat an uncertain open blindly. This opens one item, with no extra-instance,
+  relaunch, batch, default-handler change or automatic dialog handling.
 - `desktop_menus` reads one application's menu structure using its exact `target` from
   `desktop_apps`. Signed native responses and before/after application inventories bind it to the
   same process generation. It sends no input or menu commands, activates nothing, and returns no
@@ -238,8 +254,8 @@ supported native chrome can refuse this preparation. The selected route never ch
 input begins. There is no fallback to global mouse or keyboard input. The target app can still respond by
 changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Clipboard operations, foreground interaction,
-application launch, window close, menus, and dialogs remain later slices of
+emulated with held keys or mouse buttons across calls. Remaining clipboard writes, foreground
+interactions, menu commands, and complete dialog workflows are later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and
