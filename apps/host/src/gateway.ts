@@ -10,7 +10,7 @@ import { Connection } from "./client";
 import { config } from "./config";
 import { diagnostics } from "./diagnostics";
 import * as directory from "./directory";
-import { GatewayClient } from "./gateway-client";
+import { GatewayClient, type Watch } from "./gateway-client";
 import * as github from "./github";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
@@ -61,6 +61,8 @@ let updating = false;
 let update = 0;
 let suspending: Promise<unknown> | undefined;
 const pending = new Set<Promise<unknown>>();
+/** Deleting kills the worker first; the watches that ends must not start it again. */
+const deleting = new Set<string>();
 
 function local(): Listing[] {
 	return catalog.list().map((record) => {
@@ -147,13 +149,16 @@ function settingsChanged(): void {
 }
 
 function connection(client: Client, channel: string, hosted?: string): Promise<Connection> {
+	if (deleting.has(channel)) return Promise.reject(new Error("The channel is being deleted"));
 	let open = client.channels.get(channel);
 	if (!open) {
 		open = hosted ? Connection.hosted(hosted, channel) : Connection.open(channel);
 		client.channels.set(channel, open);
-		open.then((connection) => connection.closed.then(() => client.channels.delete(channel)), () => {
-			client.channels.delete(channel);
-		});
+		// A released connection can close after its replacement opened; never drop the replacement.
+		const drop = () => {
+			if (client.channels.get(channel) === open) client.channels.delete(channel);
+		};
+		open.then((connection) => connection.closed.then(drop), drop);
 	}
 	return open;
 }
@@ -347,7 +352,12 @@ async function handle(
 		}
 		case "delete":
 			terminals.closeChannel(request.channel);
-			await remove(request.channel);
+			deleting.add(request.channel);
+			try {
+				await remove(request.channel);
+			} finally {
+				deleting.delete(request.channel);
+			}
 			return broadcast();
 		case "terminal": {
 			if (!catalog.owns(request.channel)) throw new Error("Terminals open on the channel's host");
@@ -367,6 +377,23 @@ async function handle(
 			client.terminals.delete(request.terminal);
 			return terminals.close(request.terminal);
 		case "channel": {
+			// Only a watch streams; other requests must not leave watchers behind in relays.
+			const watch: Watch | undefined = request.request.op === "watch"
+				? {
+					event: (event) => send({ id, event }),
+					// After the accepted reply, a failure for the same id tells the client its watch ended.
+					closed: (error) => {
+						log("debug", "gateway.watch.closed", {
+							trace,
+							user: client.user,
+							peer: client.peer,
+							channel: request.channel,
+							error,
+						});
+						send({ id, ok: false, error });
+					},
+				}
+				: undefined;
 			if (catalog.owns(request.channel)) {
 				if (request.request.op === "kill") {
 					if (client.user !== catalog.user) throw new Error("Only the channel's owner can kill it");
@@ -376,7 +403,7 @@ async function handle(
 					? { ...request.request, author: client.user }
 					: request.request;
 				const target = await connection(client, request.channel);
-				return target.request(forwarded, (event) => send({ id, event }), trace);
+				return target.request(forwarded, watch, trace);
 			}
 			const machine = !client.peer && peers.find(request.channel);
 			const hosted = !client.peer && !machine
@@ -389,16 +416,11 @@ async function handle(
 					? { ...request.request, author: client.user }
 					: request.request;
 				const target = await connection(client, request.channel, hosted.hosted);
-				return target.request(forwarded, (event) => send({ id, event }), trace);
+				return target.request(forwarded, watch, trace);
 			}
 			if (!machine) throw new Error("No reachable host runs that channel");
 			const target = await remote(client, machine.name);
-			return target.channel(
-				request.channel,
-				request.request,
-				(event) => send({ id, event }),
-				trace,
-			);
+			return target.channel(request.channel, request.request, watch, trace);
 		}
 		case "release": {
 			const open = client.channels.get(request.channel);

@@ -14,10 +14,18 @@ import type {
 	WindowState,
 } from "./protocol";
 
+/**
+ * A watch's events, then `closed` once an accepted watch ends: released, or its channel connection
+ * or a relaying host closed. The owner decides whether to watch again.
+ */
+export type Watch = { event(event: Event): void; closed?(error: string): void };
+
 type Pending = {
 	resolve(value: unknown): void;
 	reject(error: Error): void;
-	watch?: (event: Event) => void;
+	watch?: Watch;
+	/** The watch was accepted, so a later failure ends it instead of rejecting the request. */
+	accepted?: boolean;
 };
 export type Status = "connecting" | "open" | "closed";
 
@@ -76,13 +84,16 @@ export class GatewayClient {
 			(message) => this.#receive(JSON.parse(String(message.data)) as HostFrame, socket),
 		);
 		socket.addEventListener("close", () => {
-			for (const pending of this.#pending.values()) {
-				pending.reject(new Error("Disconnected from the host"));
-			}
+			const ended = [...this.#pending.values()];
 			this.#pending.clear();
 			this.#metadata.clear();
 			this.channels = [];
 			this.#set("closed");
+			const error = "Disconnected from the host";
+			for (const pending of ended) {
+				if (pending.accepted) pending.watch?.closed?.(error);
+				else pending.reject(new Error(error));
+			}
 			if (this.#closed) return;
 			this.#timer = setTimeout(() => this.#connect(), this.#retry);
 			this.#retry = Math.min(this.#retry * 2, 5000);
@@ -109,11 +120,17 @@ export class GatewayClient {
 		}
 		if ("terminal" in frame) return this.#terminals.get(frame.terminal)?.(frame);
 		const pending = this.#pending.get(frame.id);
-		if ("event" in frame) return pending?.watch?.(frame.event);
-		// A watch keeps its entry so later events still reach it.
-		if (!pending?.watch || !frame.ok) this.#pending.delete(frame.id);
-		if (frame.ok) return pending?.resolve(frame.value);
-		pending?.reject(new Error(frame.error));
+		if (!pending) return;
+		if ("event" in frame) return pending.watch?.event(frame.event);
+		// A watch keeps its entry so later events still reach it, until a failure ends it.
+		if (pending.watch && frame.ok) {
+			pending.accepted = true;
+			return pending.resolve(frame.value);
+		}
+		this.#pending.delete(frame.id);
+		if (frame.ok) return pending.resolve(frame.value);
+		if (pending.accepted) return pending.watch?.closed?.(frame.error);
+		pending.reject(new Error(frame.error));
 	}
 
 	async #rename(request: TabRename, socket: WebSocket) {
@@ -172,7 +189,7 @@ export class GatewayClient {
 
 	request<T = unknown>(
 		request: HostRequest,
-		watch?: (event: Event) => void,
+		watch?: Watch,
 		trace?: string,
 	): Promise<T> {
 		if (this.status !== "open") return Promise.reject(new Error("Not connected to the host"));
@@ -191,16 +208,19 @@ export class GatewayClient {
 	channel<T = unknown>(
 		channel: string,
 		request: Request,
-		watch?: (event: Event) => void,
+		watch?: Watch,
 		trace?: string,
 	): Promise<T> {
-		const observe = watch && ((event: Event) => {
-			if (event.kind === "metadata") {
-				const { name, summary, revision } = event;
-				this.#update(channel, { name, summary, revision });
-			}
-			watch(event);
-		});
+		const observe = watch && {
+			closed: (error: string) => watch.closed?.(error),
+			event: (event: Event) => {
+				if (event.kind === "metadata") {
+					const { name, summary, revision } = event;
+					this.#update(channel, { name, summary, revision });
+				}
+				watch.event(event);
+			},
+		};
 		return this.request<T>({ op: "channel", channel, request }, observe, trace).then((value) => {
 			if (request.op === "rename") this.#update(channel, value as Metadata);
 			return value;

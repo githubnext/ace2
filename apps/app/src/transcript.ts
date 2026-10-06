@@ -129,36 +129,72 @@ function pick(event: Extract<Event, { kind: "message" }>) {
 	return { at, author, text, ...(images ? { images } : {}), invoked };
 }
 
-/** Watches one chat of a channel, re-watching after the host reconnects. */
-export function useTranscript(channel: string | undefined, chat?: number) {
+/** Automatic re-watches allowed before a watch stays open for `STABLE` ms. */
+const RECOVERIES = 3;
+const STABLE = 60_000;
+
+/**
+ * Watches one chat of a channel. Owns the watch: re-watches after the host reconnects or the
+ * watch ends, such as when the channel's worker restarts, and releases it on unmount. A failed
+ * watch retries once when its channel's host comes back from `offline`.
+ */
+export function useTranscript(
+	channel: string | undefined,
+	chat: number | undefined,
+	offline: boolean,
+) {
 	const [state, setState] = useState<Transcript>(EMPTY);
 	const [info, setInfo] = useState<ChannelInfo>();
 	const [error, setError] = useState<string>();
 	const [attempt, setAttempt] = useState(0);
+	const [wasOffline, setWasOffline] = useState(offline);
+	if (offline !== wasOffline) {
+		setWasOffline(offline);
+		if (!offline && error) setAttempt((value) => value + 1);
+	}
 	useEffect(() => {
 		if (!channel) return;
 		let active = true;
 		let generation = 0;
+		let recoveries = 0;
+		let started = 0;
 		const start = () => {
 			const version = ++generation;
+			started = Date.now();
 			setState(EMPTY);
 			setInfo(undefined);
 			setError(undefined);
+			const current = () => active && version === generation;
 			const refresh = () =>
 				host.channel<ChannelInfo>(channel, { op: "info" }).then((value) => {
-					if (active && version === generation) setInfo(value);
+					if (current()) setInfo(value);
 				}, () => {});
 			void refresh();
-			host.channel(channel, { op: "watch", ...(chat === undefined ? {} : { chat }) }, (event) => {
-				if (!active || version !== generation) return;
-				setState((current) => apply(current, event));
-				if (event.kind === "run") void refresh();
+			host.channel(channel, { op: "watch", ...(chat === undefined ? {} : { chat }) }, {
+				event(event) {
+					if (!current()) return;
+					setState((state) => apply(state, event));
+					if (event.kind === "run") void refresh();
+				},
+				// A released watch belongs to an old generation; a reconnecting host restarts every watch.
+				closed(reason) {
+					if (!current() || host.status !== "open") return;
+					if (Date.now() - started > STABLE) recoveries = 0;
+					if (recoveries++ < RECOVERIES) return start();
+					generation++;
+					setState(EMPTY);
+					setInfo(undefined);
+					setError(reason);
+				},
 			}).catch((error: Error) => {
-				if (active && version === generation) setError(error.message);
+				if (current()) setError(error.message);
 			});
 		};
 		start();
-		const off = onOpen(start);
+		const off = onOpen(() => {
+			recoveries = 0;
+			start();
+		});
 		return () => {
 			active = false;
 			off();
