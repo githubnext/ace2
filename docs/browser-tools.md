@@ -76,10 +76,10 @@ dispatch.
   `same_document` (a fragment change; Chrome omits the loader ID), `download` (the tab's document
   was not replaced), or `failed` with Chrome's error text. None of these mean the page finished
   loading. Inspect it afterwards.
-- `unknown`: Ace cannot tell whether Chrome received the navigation, or received no usable answer.
-  Causes include a stop, the deadline, a lost browser or workspace connection, a protocol error,
-  or a worker crash after pi recorded the call. The navigation may or may not have happened, and
-  may still happen. Inspect before navigating again.
+- `unknown`: dispatch may have happened. Pi or the workspace link can lose track of the call
+  before or after it reaches Chrome (a stop, the deadline, a lost browser or workspace connection,
+  a protocol error, or a worker crash after pi recorded the call). The navigation may not have
+  happened, may have happened, or may still happen. Inspect before navigating again.
 
 A worker that restarts mid-navigation reports the call as interrupted and does not repeat it.
 
