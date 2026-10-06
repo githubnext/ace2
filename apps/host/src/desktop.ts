@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { constants, existsSync } from "node:fs";
-import { mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
+import { lstat, mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -441,14 +441,29 @@ function validateAction(request: DesktopAction) {
 	if (isDesktopManagement(request)) return validateManagement(request);
 	if (request.op === "clipboard-write") {
 		if ("format" in request) {
+			if (request.format === "files") {
+				if (
+					"text" in request || "path" in request || !Array.isArray(request.paths)
+					|| !request.paths.length || request.paths.length > 32
+					|| request.paths.some((path) =>
+						typeof path !== "string" || !path.startsWith("/") || path.length > 4096
+						|| path.includes("\0")
+					)
+				) throw new Error("Use format files with 1–32 absolute paths and no text or image path.");
+				return;
+			}
 			if (
-				request.format !== "image" || "text" in request || typeof request.path !== "string"
+				request.format !== "image" || "text" in request || "paths" in request
+				|| typeof request.path !== "string"
 				|| !request.path.startsWith("/") || request.path.length > 4096
 				|| request.path.includes("\0")
 			) throw new Error("Use format image with one absolute image path and no text.");
 			return;
 		}
-		if ("path" in request || typeof request.text !== "string" || request.text.length > 8192) {
+		if (
+			"path" in request || "paths" in request || typeof request.text !== "string"
+			|| request.text.length > 8192
+		) {
 			throw new Error("Clipboard text must contain at most 8192 UTF-16 code units.");
 		}
 		return;
@@ -662,13 +677,26 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	let data: Record<string, unknown>;
 	try {
 		validateAction(request);
-		const input = request.op === "clipboard-write" && "format" in request
-			? {
-				op: request.op,
-				format: request.format,
-				image: await clipboardImageInput(request.path, signal),
+		if (request.op === "clipboard-write" && "format" in request && request.format === "files") {
+			for (const path of request.paths) {
+				signal.throwIfAborted();
+				const entry = await lstat(path);
+				if (!entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink()) {
+					throw new Error(
+						"Clipboard file references require existing files, directories, or symbolic links.",
+					);
+				}
 			}
-			: request;
+			signal.throwIfAborted();
+		}
+		const input =
+			request.op === "clipboard-write" && "format" in request && request.format === "image"
+				? {
+					op: request.op,
+					format: request.format,
+					image: await clipboardImageInput(request.path, signal),
+				}
+				: request;
 		const operation = request.op === "menu"
 			? "menu"
 			: request.op === "clipboard-write"

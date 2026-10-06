@@ -124,6 +124,17 @@ again immediately before mutation. Positional AXPress waits for its actual retur
 operation lane through cancellation; an uncertain return remains unsafe to retry. No input runs in
 the detached read, no failed action falls back to another route, and no caret position is promised.
 
+`peekaboo-clipboard-files-write.patch` adds persistent file-reference writes for
+[clipboard access](https://github.com/githubnext/ace2/issues/72). The host checks metadata for
+existing regular files, directories, or symbolic links without reading contents or resolving links.
+The GUI validates 1–32 literal paths and prepares a complete file URL list within the reader's
+24 KB bound. A focused multi-item service method publishes one `public.file-url` representation
+per item in one `writeObjects` call, with generation checks around publication. It reuses the
+existing mutation result owner and outer pending-paste gate; it adds no backup, temporary paste,
+promise, or new authority. Silent same-generation item readback can confirm publication;
+unavailable verification retains the existing dispatched/unverified result. There is no fallback
+or restore after publication, and no claim about a receiver's later handling of the references.
+
 `peekaboo-open.patch` distinguishes accepted document/URL delivery from verified application launch
 for [native computer use](https://github.com/githubnext/ace2/issues/8). The existing launch service
 returns `dispatched_unverified` with `delivery_accepted` when its request contains items to open.

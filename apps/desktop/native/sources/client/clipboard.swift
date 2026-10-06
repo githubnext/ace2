@@ -15,6 +15,7 @@ private struct ClipboardRequest: Decodable {
 	let format: Format?
 	let text: String?
 	let image: Data?
+	let paths: [String]?
 }
 
 private struct ClipboardReply<T: Encodable>: Encodable {
@@ -27,6 +28,7 @@ private struct ClipboardWriteResult: Encodable {
 	var native_outcome: DesktopActionOutcome?
 	var clipboard_changed: Bool?
 	var source: ClipboardImageContents.Source?
+	var file_count: Int?
 	var error: ClipboardMessage?
 }
 
@@ -47,7 +49,7 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 	}
 	let request = try JSONDecoder().decode(ClipboardRequest.self, from: data)
 	if request.op == .read {
-		guard request.text == nil, request.image == nil, data.count <= 65_536 else {
+		guard request.text == nil, request.image == nil, request.paths == nil, data.count <= 65_536 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
 				message: "Clipboard reads do not accept content and must fit 64 KiB.")
 		}
@@ -65,8 +67,25 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 	var result = ClipboardWriteResult()
 	var invoked = false
 	do {
+		if request.format == .files {
+			guard request.text == nil, request.image == nil, let paths = request.paths,
+				data.count <= 65_536 else {
+				throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
+					message: "File writes require paths without other content and must fit 64 KiB.")
+			}
+			invoked = true
+			let written = try await client.clipboardFilesWrite(paths)
+			result.outcome = written.outcome
+			result.native_outcome = written.native_outcome
+			result.clipboard_changed = written.clipboard_changed
+			result.file_count = written.file_count
+			if let error = written.error {
+				result.error = .init(code: error.code, message: error.message, hint: error.hint)
+			}
+			return try JSONEncoder().encode(ClipboardReply(data: result))
+		}
 		if request.format == .image {
-			guard request.text == nil, let image = request.image,
+			guard request.text == nil, request.paths == nil, let image = request.image,
 				!image.isEmpty, image.count <= 10 * 1024 * 1024 else {
 				throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
 					message: "Image writes require at most 10 MiB of image data and no text.")
@@ -82,9 +101,9 @@ func nativeClipboard(_ client: PeekabooBridgeClient) async throws -> Data {
 			}
 			return try JSONEncoder().encode(ClipboardReply(data: result))
 		}
-		guard request.format == nil, request.image == nil, data.count <= 65_536 else {
+		guard request.format == nil, request.image == nil, request.paths == nil, data.count <= 65_536 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
-				message: "Supply plain text or format image with image data.")
+				message: "Supply plain text, format image with image data, or format files with paths.")
 		}
 		guard let text = request.text, text.utf16.count <= 8192 else {
 			throw DesktopActionFailure.preDispatchRefusal(reason: .invalidRequest,
