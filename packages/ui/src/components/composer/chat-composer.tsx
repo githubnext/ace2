@@ -37,6 +37,7 @@ import {
 import {
 	DropdownMenu,
 	DropdownMenuContent,
+	DropdownMenuGroup,
 	DropdownMenuItem,
 	DropdownMenuLabel,
 	DropdownMenuSeparator,
@@ -1420,19 +1421,21 @@ function ComposerEffort({ state }: { state: ComposerState }) {
 				<IconChevronDownMicro className="size-3 transition-transform duration-150 group-data-[popup-open]/button:scale-y-[-1]" />
 			</DropdownMenuTrigger>
 			<DropdownMenuContent align="start" sideOffset={6} className="min-w-36">
-				<DropdownMenuLabel>Reasoning effort</DropdownMenuLabel>
-				{efforts?.map(entry => (
-					<DropdownMenuItem
-						key={entry.id}
-						onClick={() => {
-							onEffortChange(entry.id);
-							view.current?.focus();
-						}}
-					>
-						<span className="min-w-0 flex-1 truncate">{entry.name}</span>
-						{entry.id === effort && <IconCheckMicro className="size-3" />}
-					</DropdownMenuItem>
-				))}
+				<DropdownMenuGroup>
+					<DropdownMenuLabel>Reasoning effort</DropdownMenuLabel>
+					{efforts?.map(entry => (
+						<DropdownMenuItem
+							key={entry.id}
+							onClick={() => {
+								onEffortChange(entry.id);
+								view.current?.focus();
+							}}
+						>
+							<span className="min-w-0 flex-1 truncate">{entry.name}</span>
+							{entry.id === effort && <IconCheckMicro className="size-3" />}
+						</DropdownMenuItem>
+					))}
+				</DropdownMenuGroup>
 			</DropdownMenuContent>
 		</DropdownMenu>
 	);
