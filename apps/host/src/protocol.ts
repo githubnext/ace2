@@ -53,6 +53,8 @@ export type Listing = {
 	created: number;
 	/** When the transcript last grew; hosts on older builds omit it. */
 	active?: number;
+	/** Live channel-wide run projection; absent on older hosts, never authoritative. */
+	busy?: boolean;
 	state: ChannelState;
 	/** The hosting service's base URL, for a hosted channel; `host` is then its workspace. */
 	hosted?: string;

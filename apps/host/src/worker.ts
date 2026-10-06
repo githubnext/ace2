@@ -56,6 +56,7 @@ if (!lock()) {
 }
 log("info", "worker.start", { bun: Bun.version });
 rmSync(paths.socket, { force: true });
+catalog.busy(id, false);
 
 const envs = new Map<string, NodeExecutionEnv>();
 const channel = await Channel.open({
@@ -65,6 +66,7 @@ const channel = await Channel.open({
 	named: record.named,
 	onMetadata: (value) => catalog.metadata(id, value),
 	onActivity: (at) => catalog.activity(id, at),
+	onBusy: (busy) => catalog.busy(id, busy),
 	owner: record.owner,
 	project: record.project,
 	lanes: paths.lanes,
@@ -106,6 +108,7 @@ async function exit(kill: boolean, reason: string) {
 	log("info", "worker.exit", { reason, kill, clients: clients.size });
 	if (kill) await channel.kill();
 	await channel.close();
+	catalog.busy(id, false);
 	for (const env of envs.values()) await env.cleanup(BACKGROUND_CONTEXT);
 	// Keep the exiting guard reachable until cleanup finishes; a missing listener looks dormant.
 	server.close();

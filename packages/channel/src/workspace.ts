@@ -29,7 +29,9 @@ export type Call =
 	| { cancel: CallId };
 
 /** Metadata and activity are projected by the workspace host even when no client watches the channel. */
-export type WorkspaceMessage = Call | { metadata: Metadata } | { active: number };
+export type WorkspaceMessage = Call | { metadata: Metadata } | { active: number } | {
+	busy: boolean;
+};
 
 /** Workspace to channel. */
 export type Reply =

@@ -78,6 +78,8 @@ export type Options = {
 	onMetadata?(value: Metadata): void;
 	/** Publish when the transcript last grew, in epoch milliseconds. */
 	onActivity?(at: number): void;
+	/** Rebuildable channel-wide projection of pi live runs, including child chats. */
+	onBusy?(busy: boolean): void;
 	log: Log;
 };
 
@@ -89,6 +91,9 @@ export class Channel {
 	#log: Log;
 	#metadata: Metadata;
 	#active = 0;
+	#runs = new Set<ConversationId>();
+	#publishedBusy?: boolean;
+	#unsubscribe?: () => void;
 	#admissions = new Map<ChatId, Promise<unknown>>();
 	#listeners = new Set<{ chat: ChatId; send: Send }>();
 
@@ -131,7 +136,19 @@ export class Channel {
 		}, context);
 		channel = new Channel(options, harness, log, value);
 		channel.#changed(value);
-		harness.subscribeCommits(({ changes }) => {
+		// Scheduling has not resumed and no caller has this channel yet, so the initial snapshot
+		// and subscription cannot miss a run transition. LiveDoc forks start empty in pi.
+		await channel.#snapshotBusy();
+		channel.#unsubscribe = harness.subscribeCommits(({ changes }) => {
+			for (const change of changes) {
+				if (change.type !== "document" || change.record.kind !== LiveDoc.definition.kind) continue;
+				const { scope } = change.record;
+				if (scope.kind !== "conversation") continue;
+				if (change.value?.run) channel.#runs.add(scope.conversationId);
+				else channel.#runs.delete(scope.conversationId);
+			}
+			// Publish once per atomic commit, not once per chat or streaming delta.
+			channel.#publishBusy();
 			if (changes.some((change) => change.type === "entry")) channel.#activity();
 		});
 		// Opening resumes work a crash interrupted; a killed channel left only terminal tasks behind.
@@ -260,8 +277,39 @@ export class Channel {
 		}
 	}
 
+	get busy(): boolean {
+		return this.#runs.size > 0;
+	}
+
 	async isIdle(): Promise<boolean> {
-		return (await this.info()).chats.every((chat) => !chat.busy);
+		return !this.busy;
+	}
+
+	async #snapshotBusy(): Promise<void> {
+		let cursor: Cursor | undefined;
+		do {
+			const page = await this.#harness.commit(
+				(tx) => tx.scanConversations({}, 256, cursor),
+				context,
+			);
+			for (const { id } of page.items) {
+				const live = await this.#harness.snapshot(LiveDoc, id, context);
+				if (live?.run) this.#runs.add(id);
+			}
+			cursor = page.next;
+		} while (cursor);
+		this.#publishBusy();
+	}
+
+	#publishBusy(): void {
+		const busy = this.busy;
+		if (busy === this.#publishedBusy) return;
+		try {
+			this.#options.onBusy?.(busy);
+			this.#publishedBusy = busy;
+		} catch (error) {
+			this.#log("warn", "busy.publish", failure(error));
+		}
 	}
 
 	/** Durably abort every chat's work, including background subagents, so reopening resumes none of it. */
@@ -276,9 +324,15 @@ export class Channel {
 		}));
 	}
 
-	close(): Promise<void> {
+	async close(): Promise<void> {
 		this.#log("info", "channel.close");
-		return this.#harness.close(context);
+		this.#unsubscribe?.();
+		try {
+			await this.#harness.close(context);
+		} finally {
+			this.#runs.clear();
+			this.#publishBusy();
+		}
 	}
 
 	/** Where a chat works: its current lane's worktree, or the project checkout before it has one. */

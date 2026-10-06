@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { resolve } from "node:path";
 
@@ -42,7 +42,20 @@ export function project(dir: string): string {
 
 /** Hosted channels are always reachable; local ones run while their worker does. */
 export function isRunning(id: string): boolean {
-	return !!catalog.read(id).hosted || existsSync(catalog.paths(id).socket);
+	if (catalog.read(id).hosted) return true;
+	return existsSync(catalog.paths(id).socket) && isWorkerAlive(id);
+}
+
+/** PID liveness also covers startup, before the worker has opened its listener. */
+export function isWorkerAlive(id: string): boolean {
+	try {
+		const owner = Number(readFileSync(catalog.paths(id).pid, "utf8"));
+		if (!Number.isSafeInteger(owner) || owner <= 0) return false;
+		process.kill(owner, 0);
+		return true;
+	} catch {
+		return false;
+	}
 }
 
 /** Create a channel on a hosting service, with this host as its workspace. */

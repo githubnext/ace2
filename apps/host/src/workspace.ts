@@ -24,12 +24,14 @@ function link(record: catalog.Listing): () => Promise<void> {
 	let wait = 1000;
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	let stopCalls: (() => Promise<void>) | undefined;
+	catalog.busy(record.id, false);
 	const connect = async () => {
 		if (stopped) return;
 		try {
 			const connected = await hostedSocket(record.hosted!, `/channels/${record.id}/workspace`);
 			if (stopped) return connected.close();
 			socket = connected;
+			connectedChannels.add(record.id);
 			wait = 1000;
 			log("info", "workspace.connect", { channel: record.id, hosted: record.hosted });
 			const handle = serve(env, (reply) => {
@@ -37,9 +39,11 @@ function link(record: catalog.Listing): () => Promise<void> {
 			}, desktop);
 			stopCalls = () => handle.close();
 			socket.addEventListener("message", ({ data }) => {
+				if (stopped || socket !== connected) return;
 				const call = JSON.parse(String(data)) as WorkspaceMessage;
 				if ("metadata" in call) return catalog.metadata(record.id, call.metadata);
 				if ("active" in call) return catalog.activity(record.id, call.active);
+				if ("busy" in call) return catalog.busy(record.id, call.busy);
 				log("debug", "workspace.call", {
 					channel: record.id,
 					...("cancel" in call
@@ -50,9 +54,13 @@ function link(record: catalog.Listing): () => Promise<void> {
 			});
 			socket.addEventListener("close", ({ code, reason }) => {
 				void handle.close();
-				socket = undefined;
 				log("warn", "workspace.drop", { channel: record.id, code, reason, stopped });
-				if (!stopped) timer = setTimeout(connect, wait);
+				// A stopped link may already have been replaced after unarchiving the channel.
+				if (stopped) return;
+				socket = undefined;
+				connectedChannels.delete(record.id);
+				if (catalog.owns(record.id)) catalog.busy(record.id, false);
+				timer = setTimeout(connect, wait);
 			});
 		} catch (error) {
 			if (stopped) return;
@@ -64,6 +72,9 @@ function link(record: catalog.Listing): () => Promise<void> {
 	connect();
 	return async () => {
 		stopped = true;
+		connectedChannels.delete(record.id);
+		// Removal may already have deleted the catalog before its watcher stops the link.
+		if (catalog.owns(record.id)) catalog.busy(record.id, false);
 		clearTimeout(timer);
 		socket?.close();
 		await stopCalls?.();
@@ -72,6 +83,11 @@ function link(record: catalog.Listing): () => Promise<void> {
 }
 
 const links = new Map<string, () => Promise<void>>();
+const connectedChannels = new Set<string>();
+
+export function isConnected(id: string): boolean {
+	return connectedChannels.has(id);
+}
 
 export async function close(): Promise<void> {
 	const closing = [...links.values()].map((stop) => stop());
