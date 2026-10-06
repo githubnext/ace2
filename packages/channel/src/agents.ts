@@ -81,16 +81,38 @@ export const Subagent: Extension = defineExtension({
 	],
 });
 
+/** A channel an agent can message, with the context needed to tell repeated names apart. */
+export type Destination = {
+	id: string;
+	name: string;
+	project: string;
+	/** The project's GitHub repository as owner/name. */
+	repo?: string;
+	/** The machine running the channel, by its tailnet name. */
+	host?: string;
+	owner?: string;
+	state?: string;
+	summary?: string;
+};
+
 export type Directory = {
-	self: { id: string; name: string };
-	list(context: Context): Promise<{
-		id: string;
-		name: string;
-		project: string;
-		summary?: string;
-	}[]>;
+	self: { id: string };
+	/** `note` explains a narrower reach, such as peer hosts being unreachable without a host. */
+	list(context: Context): Promise<{ channels: Destination[]; note?: string }>;
+	/** The destination's host authors the message from `self` and the sender it verified. */
 	deliver(delivery: Delivery, context: Context): Promise<void>;
 };
+
+function describe(channel: Destination): string {
+	return [
+		channel.id,
+		channel.name,
+		channel.host || "",
+		channel.owner || "",
+		channel.state || "",
+		channel.repo || channel.project,
+	].join("\t");
+}
 
 /** Agents in different channels coordinate only by messaging each other's chats. */
 export function messaging(directory: Directory): Extension {
@@ -100,22 +122,25 @@ export function messaging(directory: Directory): Extension {
 			defineTool({
 				name: "channels",
 				description:
-					"List the channels on this host that you can message, with their rolling summaries.",
+					"List the channels you can message on this host and reachable peer hosts, with their ids, hosts, owners, states, projects, and rolling summaries. Names can repeat; message by id.",
 				parameters: Type.Object({}),
 				replay: "safe",
 				execute: async (_args, _api, context) => {
-					const channels = await directory.list(context);
+					const { channels, note } = await directory.list(context);
 					const lines = channels.map((channel) =>
-						`${channel.id}\t${channel.name}\t${channel.project}`
+						describe(channel)
 						+ (channel.summary ? `\t${channel.summary.replace(/\s+/g, " ")}` : "")
 					);
-					return { content: [{ type: "text", text: lines.join("\n") || "No other channels." }] };
+					const text = lines.length
+						? ["id\tname\thost\towner\tstate\tproject\tsummary", ...lines].join("\n")
+						: "No other channels.";
+					return { content: [{ type: "text", text: note ? `${text}\n\n${note}` : text }] };
 				},
 			}),
 			defineTool({
 				name: "message",
 				description:
-					"Post a message to another channel's chat. Set invoke to start that chat's agent on it; otherwise people and the agent there only see it. Delivery does not wait for an answer.",
+					"Post a message to another channel's chat, on this host or a reachable peer host. Set invoke to start that chat's agent on it; otherwise people and the agent there only see it. Delivery does not wait for an answer. Your message is authored agent.<this channel's id>@<your host's login>; answer such a message by messaging that channel id.",
 				parameters: Type.Object({
 					channel: Type.String({
 						description: "Channel id or unique name; use the id when names repeat",
@@ -129,29 +154,36 @@ export function messaging(directory: Directory): Extension {
 				// The request ID makes redelivery after a crash a no-op at the destination.
 				replay: "safe",
 				execute: async (args, api, context) => {
-					const channels = await directory.list(context);
 					// Names can change after delivery; a recovered call must keep its original destination.
 					const saved = await api.memo<string>("channel", context);
-					const ref = saved || args.channel;
-					let target = channels.find((channel) => channel.id === ref);
-					if (!target && !saved) {
-						const matches = channels.filter((channel) => channel.name === ref);
-						if (matches.length > 1) {
-							throw new Error(`More than one channel is named ${ref}; use its channel id`);
+					let target = saved;
+					let name = saved && `channel ${saved}`;
+					if (!target) {
+						const { channels } = await directory.list(context);
+						let found = channels.find((channel) => channel.id === args.channel);
+						if (!found) {
+							const matches = channels.filter((channel) => channel.name === args.channel);
+							if (matches.length > 1) {
+								throw new Error(
+									`More than one channel is named ${args.channel}; use one of these ids:\n`
+										+ matches.map(describe).join("\n"),
+								);
+							}
+							found = matches[0];
 						}
-						target = matches[0];
+						if (!found) throw new Error(`No channel ${args.channel}; list channels to find its id`);
+						target = found.id;
+						name = found.host ? `${found.name} on ${found.host}` : found.name;
+						await api.memo("channel", target, context);
 					}
-					if (!target) throw new Error(`No channel ${ref}`);
-					await api.memo("channel", target.id, context);
 					await directory.deliver({
-						channel: target.id,
+						channel: target,
 						...(args.chat === undefined ? {} : { chat: args.chat }),
-						author: `agent@${directory.self.name}`,
 						text: args.text,
 						invoke: args.invoke,
 						requestId: `message:${directory.self.id}:${api.taskId}`,
 					}, context);
-					return { content: [{ type: "text", text: `Delivered to ${target.name}` }] };
+					return { content: [{ type: "text", text: `Delivered to ${name}` }] };
 				},
 			}),
 		],

@@ -5,18 +5,20 @@ import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import { openNodeSqliteStorage } from "@earendil-works/pi-durable/storage/sqlite/node";
 
-import { Channel, type Envelope, type Frame } from "@ace/channel";
+import { Channel, type Destination, type Envelope, type Frame } from "@ace/channel";
 
+import * as agents from "./agents";
 import * as catalog from "./catalog";
-import { request } from "./client";
 import { desktop } from "./desktop";
 import { models, seal } from "./keys";
 import { defaultModel } from "./manage";
 import { lines } from "./lines";
 import { log, open } from "./log";
-import type { WorkerInfo, WorkerRequest } from "./protocol";
+import type { Listing, WorkerInfo, WorkerRequest } from "./protocol";
 
 const RETIRE_AFTER = 10 * 60_000;
+const OFFLINE =
+	"Ace's host is not running on this machine, so only its own channels are reachable. Open Ace or run ace serve to reach peer hosts.";
 
 seal();
 
@@ -80,19 +82,39 @@ const channel = await Channel.open({
 		if (!env) envs.set(cwd, env = new NodeExecutionEnv({ cwd }));
 		return env;
 	},
+	// The host reaches peers; without one, as in CLI-only use, agents reach this machine's channels.
 	directory: {
-		self: { id, name: record.prefix },
-		list: async () => catalog.list().filter((other) => other.id !== id && !other.archived),
+		self: { id },
+		async list() {
+			const answer = await agents.ask({ op: "channels" });
+			if (!answer) {
+				const channels: Destination[] = catalog.list()
+					.filter((other) => other.id !== id && !other.archived)
+					.map(({ id, name, owner, project, summary }) => ({ id, name, owner, project, summary }));
+				return { channels, note: OFFLINE };
+			}
+			if (!Array.isArray(answer.value)) throw new Error("Ace's host sent an invalid channel list");
+			const channels: Destination[] = (answer.value as Listing[])
+				.filter((other) => other.id !== id && other.state !== "archived")
+				.map(({ id, name, host, owner, project, repo, state, summary }) => ({
+					id,
+					name,
+					host,
+					owner,
+					project,
+					repo,
+					state,
+					summary,
+				}));
+			return { channels };
+		},
 		async deliver(delivery) {
-			const op = delivery.invoke ? "ask" : "say";
-			const { channel: target, chat, author, text, requestId } = delivery;
-			await request(target, {
-				op,
-				...(chat === undefined ? {} : { chat }),
-				author,
-				text,
-				requestId,
-			});
+			const answer = await agents.ask({ op: "deliver", from: id, ...delivery });
+			if (answer) return void agents.submitted(answer.value);
+			if (!catalog.owns(delivery.channel)) throw new Error(OFFLINE);
+			agents.submitted(
+				await agents.receive({ login: catalog.user, relayed: false }, id, delivery),
+			);
 		},
 	},
 	log,

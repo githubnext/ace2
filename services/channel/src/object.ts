@@ -98,8 +98,8 @@ export class HostedChannel extends DurableObject<Env> {
 					return found;
 				},
 				directory: {
-					self: { id: config.id, name: config.prefix },
-					list: async () => [],
+					self: { id: config.id },
+					list: async () => ({ channels: [] }),
 					deliver: async () => {
 						throw new Error("Hosted channels cannot message other channels yet");
 					},

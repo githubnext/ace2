@@ -32,7 +32,7 @@ function start(id: string): void {
 	}
 }
 
-function attempt(path: string): Promise<Socket> {
+export function attempt(path: string): Promise<Socket> {
 	return new Promise((resolve, reject) => {
 		const socket = dial(path);
 		socket.once("connect", () => resolve(socket));
