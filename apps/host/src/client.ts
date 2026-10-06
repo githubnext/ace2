@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { connect as dial, type Socket } from "node:net";
 
 import type { Frame, Request } from "@ace/channel/protocol";
@@ -146,6 +146,8 @@ export class Connection {
 				const connected = await attempt(socket);
 				return Connection.#connect(async (receive) => local(connected, receive));
 			} catch {
+				// A delete holds the worker lock until the record is gone; nothing is left to start.
+				if (!existsSync(catalog.paths(id).record)) throw new Error("The channel was deleted");
 				if (!started) start(id);
 				started = true;
 				await Bun.sleep(wait);
