@@ -1,9 +1,9 @@
 diff --git a/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift
 new file mode 100644
-index 000000000..3c9828af6
+index 000000000..0296d9b79
 --- /dev/null
 +++ b/Core/PeekabooAutomationKit/Sources/PeekabooAutomationKit/Services/UI/MenuCommand.swift
-@@ -0,0 +1,279 @@
+@@ -0,0 +1,292 @@
 +import ApplicationServices
 +import Foundation
 +import os
@@ -223,8 +223,21 @@ index 000000000..3c9828af6
 +            var count: CFIndex = 0
 +            let status = AXUIElementGetAttributeValueCount(element, kAXChildrenAttribute as CFString, &count)
 +            if !requireAvailable && (status == .noValue || status == .attributeUnsupported) { return [] }
-+            guard status == .success, count >= 0, count <= self.remaining else {
-+                throw self.refusal("The complete menu sibling set exceeds the native traversal budget or is unavailable.")
++            guard status == .success else {
++                var names: CFArray?
++                let namesStatus = AXUIElementCopyAttributeNames(element, &names)
++                let advertised = (names as? [String])?.contains(kAXChildrenAttribute as String)
++                var value: CFTypeRef?
++                let valueStatus = AXUIElementCopyAttributeValue(element, kAXChildrenAttribute as CFString, &value)
++                let valueCount = (value as? [AXUIElement])?.count
++                throw self.refusal("The menu children are unavailable (AX \(status.rawValue), " +
++                    "count \(count), remaining \(self.remaining), leaf check \(requireAvailable), " +
++                    "attributes AX \(namesStatus.rawValue), advertised \(String(describing: advertised)), " +
++                    "value AX \(valueStatus.rawValue), value count \(String(describing: valueCount))).")
++            }
++            guard count >= 0, count <= self.remaining else {
++                throw self.refusal("The complete menu sibling set exceeds the native traversal budget " +
++                    "(count \(count), remaining \(self.remaining)).")
 +            }
 +            if count == 0 { return [] }
 +            var values: CFArray?
@@ -302,10 +315,10 @@ index 000000000..e1b60e98a
 +    }
 +}
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
-index c8ba8ea71..1995abc8f 100644
+index 4cf85d94e..04b8a0cb6 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeModels.swift
-@@ -120,6 +120,7 @@ public enum PeekabooBridgeOperation: String, Codable, Sendable, CaseIterable, Ha
+@@ -121,6 +121,7 @@ public enum PeekabooBridgeOperation: String, Codable, Sendable, CaseIterable, Ha
      // Menus
      case listMenus
      case listFrontmostMenus
@@ -314,7 +327,7 @@ index c8ba8ea71..1995abc8f 100644
      case clickMenuItemByName
      // Menu bar extras
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
-index a2b3bacc8..f28453236 100644
+index fb5c29152..4890f7ad2 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperation+Policy.swift
 @@ -103,6 +103,7 @@ extension PeekabooBridgeOperation {
@@ -326,10 +339,10 @@ index a2b3bacc8..f28453236 100644
          .clickMenuItemByName,
          .listMenuExtras,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
-index d3c4c20f1..5963b4fab 100644
+index caaa3dd08..0b6421628 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationDescriptor.swift
-@@ -506,7 +506,7 @@ extension PeekabooBridgeOperationResultSemantics {
+@@ -508,7 +508,7 @@ extension PeekabooBridgeOperationResultSemantics {
                  completion: .readOnly,
                  targetPolicy: .notApplicable,
                  responseFamilies: [.menuStructure])
@@ -353,7 +366,7 @@ index ba6bfecd0..cde5d92da 100644
              payload.expectedIdentity.map {
                  [.init(processIdentifier: $0.processIdentifier, processIdentity: $0)]
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
-index b14ec6edf..7403ab96b 100644
+index e053a6ab6..c42123bed 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeOperationResultSemantics.swift
 @@ -320,6 +320,8 @@ extension PeekabooBridgeOperationResultSemantics {
@@ -392,10 +405,10 @@ index b14ec6edf..7403ab96b 100644
              return [rule(
                  payload.deliveryMode == .background ? axBackground : axForeground,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
-index 65f2fce18..2a2ddd4e9 100644
+index 1743b0a98..34ad1ca9d 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequestResponse.swift
-@@ -86,6 +86,7 @@ public enum PeekabooBridgeRequest: Codable, Sendable {
+@@ -87,6 +87,7 @@ public enum PeekabooBridgeRequest: Codable, Sendable {
      case showAllApplications
      case listMenus(PeekabooBridgeMenuListRequest)
      case listFrontmostMenus
@@ -403,7 +416,7 @@ index 65f2fce18..2a2ddd4e9 100644
      case clickMenuItem(PeekabooBridgeMenuClickRequest)
      case clickMenuItemByName(PeekabooBridgeMenuClickByNameRequest)
      case listMenuExtras
-@@ -217,6 +218,7 @@ extension PeekabooBridgeRequest {
+@@ -219,6 +220,7 @@ extension PeekabooBridgeRequest {
          case .showAllApplications: .showAllApplications
          case .listMenus: .listMenus
          case .listFrontmostMenus: .listFrontmostMenus
@@ -412,10 +425,10 @@ index 65f2fce18..2a2ddd4e9 100644
          case .clickMenuItemByName: .clickMenuItemByName
          case .listMenuExtras: .listMenuExtras
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
-index 5cad2d202..1162ffdc8 100644
+index 5151c95a8..a7e930444 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
 +++ b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeServer+Handlers.swift
-@@ -111,7 +111,7 @@ extension PeekabooBridgeServer {
+@@ -113,7 +113,7 @@ extension PeekabooBridgeServer {
               .activateApplication, .quitApplication,
               .hideApplication, .unhideApplication, .hideOtherApplications, .showAllApplications:
              return try await self.handleApplicationRequest(request)
