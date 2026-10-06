@@ -120,7 +120,21 @@ private enum Client {
 	private static func inspect(
 		_ client: PeekabooBridgeClient, pid: Int32, window: UInt32, path: String, mode: InspectionMode
 	) async throws -> Data {
-		let accessibility = mode == .accessibility
+		guard mode == .pixels else { return try await observe(client, pid: pid, window: window, path: path, pixels: nil) }
+		// Screenshot-only results have no detection ID, so the request pins its publication explicitly.
+		let snapshot = try await client.createSnapshot()
+		do {
+			return try await observe(client, pid: pid, window: window, path: path, pixels: snapshot)
+		} catch {
+			try? await client.cleanSnapshot(snapshotId: snapshot)
+			throw error
+		}
+	}
+
+	private static func observe(
+		_ client: PeekabooBridgeClient, pid: Int32, window: UInt32, path: String, pixels: String?
+	) async throws -> Data {
+		let accessibility = pixels == nil
 		let observation = try await client.desktopObservationWithOutcome(.init(
 			target: .pid(pid, window: .id(window)),
 			capture: .init(scale: .logical1x, focus: .background),
@@ -129,23 +143,34 @@ private enum Client {
 				traversalBudget: .init(maxDepth: 15, maxElementCount: 200, maxChildrenPerNode: 100),
 				requiresFreshAccessibilityTree: accessibility
 			),
-			output: .init(path: path, saveSnapshot: accessibility, includeImageData: true),
+			output: .init(path: path, saveSnapshot: true, snapshotID: pixels, includeImageData: true),
 			timeout: .init(overall: 20, detection: 15)
 		))
 		guard let target = observation.targetIdentity,
 			target.processIdentity.processIdentifier == pid,
-			target.exactWindow?.identity.windowID == Int(window)
+			let exact = target.exactWindow, exact.identity.windowID == Int(window)
 		else { throw ClientError.target }
 		let result = observation.payload
-		guard accessibility || (result.files.publishedSnapshotID == nil && result.elements == nil)
-		else { throw ClientError.pixels }
+		if let pixels {
+			guard result.files.publishedSnapshotID == pixels, result.elements == nil else { throw ClientError.pixels }
+			// Expose the ID only after the stored canonical projection grants pointer authority for this exact capture.
+			let detection = try await client.getDetectionResult(snapshotId: pixels)
+			let (context, identity, bounds) = try snapshotWindow(detection)
+			let authority = try coordinateAuthority(
+				pixels, detection, window: .init(identity: identity, bounds: bounds)
+			)
+			guard detection.snapshotId == pixels, detection.elements.all.isEmpty, context.focusedElement == nil,
+				identity.hasSameStableReceipt(as: exact.identity), bounds == exact.bounds,
+				authority.context == CaptureCoordinateContext(metadata: result.capture.metadata, referenceID: pixels)
+			else { throw ClientError.pixels }
+		}
 		let image = try result.verifiedCaptureImageData(requirement: .requireDigest)
 		guard !image.isEmpty, image.count <= 32 * 1024 * 1024 else { throw ClientError.image }
-		// Reusable snapshots remain Bridge-owned; the host removes this caller-visible artifact after resizing.
+		// Reusable snapshots keep Bridge-owned artifact copies; the host removes this caller-visible file after resizing.
 		try image.write(to: URL(fileURLWithPath: path), options: [.atomic])
 		let data = Inspection(
-			inspection_mode: mode.rawValue,
-			note: accessibility ? nil : "Read-only pixels: no Accessibility elements or reusable action snapshot. Inspect with accessibility mode before acting.",
+			inspection_mode: accessibility ? InspectionMode.accessibility.rawValue : InspectionMode.pixels.rawValue,
+			note: accessibility ? nil : "Pixel snapshot: no Accessibility elements or focused control. Its snapshot_id authorizes only screenshot-point clicks, point scrolls, and drags in this exact window; element, text, key, and insertion actions are refused.",
 			application_name: result.target.app?.name,
 			window_title: result.target.window?.title,
 			snapshot_id: result.files.publishedSnapshotID,
@@ -337,7 +362,7 @@ private enum ClientError: LocalizedError {
 		case .image:
 			"The native observation returned an empty or oversized screenshot."
 		case .pixels:
-			"The native pixel observation unexpectedly returned Accessibility elements or an action snapshot."
+			"The native pixel observation did not publish a screenshot-only snapshot with exact-window coordinate authority."
 		}
 	}
 }
