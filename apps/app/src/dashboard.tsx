@@ -74,7 +74,9 @@ export function Dashboard(
 				<p className="max-w-[34rem] text-pretty text-sm leading-[1.55] text-foreground/65">
 					{local
 						? `What would you like to work on in ${project.name}?`
-						: `Catch up on ${project.name}’s channels on ${project.host}.`}
+						: `Catch up on ${project.name}’s channels on ${
+							[...project.hosts].join(", ")
+						}. Open a checkout on this host to start channels here.`}
 				</p>
 			</section>
 			{local && (
