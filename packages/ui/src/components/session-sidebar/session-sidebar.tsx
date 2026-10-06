@@ -31,19 +31,28 @@ import {
 import { Skeleton } from "../../ui/skeleton";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../../ui/tooltip";
 import { isSidebarRowSelected } from "./selection";
-import { IconArchive, IconCheck, IconChevronDown, IconPlus, IconX } from "../../icons";
+import { IconArchive, IconCheck, IconChevronDown, IconPlus, IconRows, IconX } from "../../icons";
 
-export type SessionSidebarGroupId = "pinned" | "mine" | "team" | "inactive" | "archived";
+export type SessionSidebarGroupId =
+	| "pinned"
+	| "mine"
+	| "team"
+	| "inactive"
+	| "archived"
+	| `project:${string}`;
 
 export type SessionSidebarGroup = {
 	id: SessionSidebarGroupId;
 	label: string;
 	rows: SidebarRow[];
+	/** Preserve caller ordering for ranked or hierarchical groups. */
+	sort?: "creation" | "none";
 	collapsed?: boolean;
 };
 
 export type SessionSidebarRepo = {
 	id: string;
+	kind?: "project" | "all";
 	name: string;
 	org: string;
 	avatar?: string;
@@ -109,6 +118,7 @@ function fallback(name: string) {
 function byOrg(repos: SessionSidebarRepo[]) {
 	let groups = new Map<string, SessionSidebarRepo[]>();
 	for (let repo of repos) {
+		if (repo.kind === "all") continue;
 		let list = groups.get(repo.org);
 		if (list) list.push(repo);
 		else groups.set(repo.org, [repo]);
@@ -117,6 +127,7 @@ function byOrg(repos: SessionSidebarRepo[]) {
 }
 
 function RepoAvatar({ repo, className }: { repo: SessionSidebarRepo; className?: string }) {
+	if (repo.kind === "all") return <IconRows className={cn("size-4", className)} aria-hidden />;
 	let name = repo.org || repo.name;
 	let source = repo.avatar || (repo.org ? format.avatar(repo.org) : undefined);
 	return (
@@ -249,6 +260,7 @@ export function ProjectPicker(
 ) {
 	let selected = repos.find((repo) => repo.id === selectedRepoId) ?? repos[0];
 	let orgGroups = useMemo(() => byOrg(repos), [repos]);
+	let all = repos.find((repo) => repo.kind === "all");
 
 	if (!selected) {
 		return <div className="truncate text-sm font-medium">{projectName ?? "Projects"}</div>;
@@ -282,6 +294,12 @@ export function ProjectPicker(
 				sideOffset={6}
 				className="max-h-[400px] inline-[186px] select-none"
 			>
+				{all && (
+					<>
+						<RepoRow repo={all} selected={all.id === selected.id} onRepoChange={onRepoChange} />
+						<DropdownMenuSeparator className="my-0.5" />
+					</>
+				)}
 				{onAddRepo && (
 					<>
 						<DropdownMenuItem className="mt-0 mb-1" onClick={onAddRepo}>
@@ -462,10 +480,10 @@ function Group({
 	let archived = group.id === "archived";
 	let rows = useMemo(
 		() =>
-			pinned || group.rows.some(row => row.depth !== undefined)
+			pinned || group.sort === "none" || group.rows.some(row => row.depth !== undefined)
 				? group.rows
 				: [...group.rows].sort(byCreation),
-		[group.rows, pinned],
+		[group.rows, group.sort, pinned],
 	);
 	let onPinRow = archived ? undefined : onPin;
 	let collapsed = showHeader && Boolean(group.collapsed);
