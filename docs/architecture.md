@@ -34,6 +34,15 @@ The shared project picker also offers All Projects, which opens Channels with co
 named for each project and its ten most recently active, non-archived channels. Opening a channel
 keeps that grouped view; channel creation and GitHub pages retain a concrete project selection.
 
+The app identifies a project with a GitHub remote by its repository, compared case-insensitively,
+so checkouts of it on any host are one project; a folder without one is its host and main checkout.
+A project keeps every known checkout. Creating channels and archiving inactive ones use this host's
+checkout, so a project checked out only on teammates' hosts lists their channels but cannot start
+one here until a checkout is opened. Its Channels sidebar shows the person's own channels, then one
+section per teammate across all of their hosts, with that teammate's archived channels in a folded
+section of their own. Saved host-and-checkout selections from earlier versions resolve to the
+merged project. This is client navigation only; channel records and listings are unchanged.
+
 A channel's details sidebar shows the root chat's changes and branch, the newest pull request from
 that branch with its checks, subagents and links from the transcript, and the channel's usage.
 The pull request is read through the same GitHub CLI account while the sidebar is open, again when
@@ -125,7 +134,7 @@ the opened-project list; teammates see the project information already present i
 A channel's project path is the checkout it works in: its agents' working directory and the base
 of its lanes. That checkout may be a Git worktree, such as a lane or another tool's worktree. The
 host groups every worktree under its repository's main checkout and labels it with the GitHub
-remote, so the picker shows one project per repository on a host without rewriting channel
+remote, so the app shows one project per repository across hosts without rewriting channel
 records. Opening a worktree adds its main checkout.
 
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
@@ -396,5 +405,5 @@ or kills.
 ## Not yet built
 
 Terminals and previews, attachments, lobby cells, and external harnesses (Claude Code, Codex).
-Hosted channels cannot message other channels yet. Projects are still keyed by a host's main
-checkout, so a teammate's checkout of the same repository shows as a separate project.
+Hosted channels cannot message other channels yet. Projects without a GitHub remote are still keyed
+by a host's main checkout, so a teammate's copy of the same folder shows as a separate project.
