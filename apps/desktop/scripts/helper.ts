@@ -160,6 +160,7 @@ const patches = [
 	"peekaboo-launch.patch",
 	"peekaboo-clipboard-files.patch",
 	"peekaboo-point-focus.patch",
+	"peekaboo-clipboard-image-write.patch",
 	"peekaboo-open.patch",
 ]
 	.map((name) => join(native, "patches", name));
