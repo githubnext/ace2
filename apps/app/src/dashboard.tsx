@@ -11,7 +11,7 @@ import {
 import { IconChevronDown, IconHash, IconPlus } from "@ace/ui/icons";
 import type { Listing } from "@ace/host/protocol";
 
-import type { AppProject } from "./projects";
+import { type AppProject, checkoutId } from "./projects";
 
 const MODES = [{ id: "ace", name: "Ace", placeholder: "Start a new channel" }];
 
@@ -74,14 +74,17 @@ export function Dashboard(
 				<p className="max-w-[34rem] text-pretty text-sm leading-[1.55] text-foreground/65">
 					{local
 						? `What would you like to work on in ${project.name}?`
-						: `Catch up on ${project.name}’s channels on ${project.host}.`}
+						: `Catch up on ${project.name}’s channels on ${
+							[...project.hosts].join(", ")
+						}. Open a checkout on this host to start channels here.`}
 				</p>
 			</section>
 			{local && (
 				<div className="mx-auto mt-9 max-w-[39rem]">
 					<ChatComposer
 						ref={composer}
-						scope={`/projects/${project.id}/dashboard`}
+						// Drafts saved before repository projects are scoped to this checkout.
+						scope={`/projects/${checkoutId(project.host, project.path)}/dashboard`}
 						modes={MODES}
 						mode="ace"
 						mic={false}

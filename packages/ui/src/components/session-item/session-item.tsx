@@ -194,7 +194,9 @@ type RowActions = Pick<
 function actions(data: SidebarRow, props: RowActions): RowActions {
 	if (data.kind === "lobby") return { onRebuild: props.onRebuild };
 	let pins = { onPin: props.onPin, onUnpin: props.onUnpin };
-	if (data.lifecycle === "archived") return { ...pins, onDelete: props.onDelete };
+	if (data.lifecycle === "archived") {
+		return { ...pins, onDelete: data.capabilities?.delete === false ? undefined : props.onDelete };
+	}
 	return {
 		...pins,
 		onFork: props.onFork,

@@ -21,7 +21,7 @@ import {
 	useMedia,
 } from "@ace/ui";
 import { IconHash, IconPlus } from "@ace/ui/icons";
-import type { Hello, HostRequest, Listing, Project } from "@ace/host/protocol";
+import type { Hello, HostRequest, Listing, People, Project } from "@ace/host/protocol";
 
 import { chosen, deployed, remember } from "./address";
 import { Channel, ChannelDetails, type ChannelDraft } from "./channel";
@@ -33,7 +33,7 @@ import { host } from "./host";
 import { Rename } from "./layout/rename";
 import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
-import { projectId, projects, root } from "./projects";
+import { type AppProject, channelProject, label, projectId, projects } from "./projects";
 import { Settings } from "./settings";
 import { UpdateNotice } from "./updates";
 
@@ -113,6 +113,7 @@ function row(channel: Listing, user: string, host: string): SidebarRow {
 		capabilities: {
 			rename: channel.owner === user && channel.state !== "offline",
 			archive: channel.host === host,
+			delete: channel.host === host,
 		},
 		connection: channel.state === "running"
 			? "connected"
@@ -125,6 +126,64 @@ function row(channel: Listing, user: string, host: string): SidebarRow {
 		lastActivityAt: Math.floor((channel.active || channel.created) / 1000),
 		online: [],
 	};
+}
+
+/** Teammates' archived channels stay folded until someone opens them. */
+const folded = (
+	collapsed: Partial<Record<SessionSidebarGroupId, boolean>>,
+	id: SessionSidebarGroupId,
+) => collapsed[id] ?? id.endsWith(":archived");
+
+/**
+ * A teammate is one participant on every host, so their machines share one section. Their idle
+ * and archived channels stay under their name; only they can archive or delete them.
+ */
+function projectGroups(
+	channels: Listing[],
+	hello: Hello,
+	people: People,
+	now: number,
+	collapsed: Partial<Record<SessionSidebarGroupId, boolean>>,
+): SessionSidebarGroup[] {
+	const mine: SidebarRow[] = [];
+	const inactive: SidebarRow[] = [];
+	const archived: SidebarRow[] = [];
+	const team = new Map<string, { name: string; rows: SidebarRow[]; archived: SidebarRow[] }>();
+	for (const channel of channels) {
+		const next = row(channel, hello.user, hello.host);
+		const stored = channel.state === "archived";
+		if (channel.owner === hello.user) {
+			const idle = !channel.busy && now - (channel.active || channel.created) > INACTIVE_AFTER;
+			(stored ? archived : idle ? inactive : mine).push(next);
+			continue;
+		}
+		let owned = team.get(channel.owner);
+		if (!owned) {
+			owned = { name: people[channel.owner] || channel.owner, rows: [], archived: [] };
+			team.set(channel.owner, owned);
+		}
+		(stored ? owned.archived : owned.rows).push(next);
+	}
+	return [
+		{ id: "mine", label: "Channels", rows: mine, collapsed: collapsed.mine },
+		...[...team].sort(([, a], [, b]) => a.name.localeCompare(b.name)).flatMap((
+			[owner, { name, rows, archived }],
+		): SessionSidebarGroup[] => {
+			const id: SessionSidebarGroupId = `team:${owner}`;
+			const stored: SessionSidebarGroupId = `team:${owner}:archived`;
+			return [
+				{ id, label: name, rows, collapsed: folded(collapsed, id) },
+				{
+					id: stored,
+					label: `${name} · Archived`,
+					rows: archived,
+					collapsed: folded(collapsed, stored),
+				},
+			];
+		}),
+		{ id: "inactive", label: "Inactive", rows: inactive, collapsed: collapsed.inactive },
+		{ id: "archived", label: "Archived", rows: archived, collapsed: collapsed.archived },
+	];
 }
 
 export function App() {
@@ -185,15 +244,27 @@ export function App() {
 	const allProjects = all && page === "channels";
 	const listings = new Map(channels.map((channel) => [channel.id, channel]));
 	const allSelected = listings.get(selected[ALL_PROJECTS]);
-	const current = available.find((value) => value.id === project) || available[0];
-	const visible = channels.filter((channel) =>
-		channel.host === current?.host && root(channel) === current.path
+	const byId = useMemo(() => {
+		const values = new Map<string, AppProject>();
+		for (const value of available) {
+			// Earlier versions saved checkout IDs for project and channel selections.
+			for (const checkout of value.checkouts) values.set(checkout, value);
+			values.set(value.id, value);
+		}
+		return values;
+	}, [available]);
+	const current = (project && byId.get(project)) || available[0];
+	const visible = current
+		? channels.filter((channel) => channelProject(channel) === current.id)
+		: [];
+	// The saved checkout ID names the selection an earlier version made among merged checkouts.
+	const channel = allProjects ? allSelected : current && [
+		current.id,
+		project,
+		...current.checkouts,
+	].map((id) => id ? listings.get(selected[id]) : undefined).find((value) =>
+		value && channelProject(value) === current.id
 	);
-	const channel = allProjects
-		? allSelected
-		: current
-		? visible.find((value) => value.id === selected[current.id])
-		: undefined;
 	const connected = status === "open" && !!hello.host;
 	const local = current?.host === hello.host;
 	const repos: SessionSidebarRepo[] = [
@@ -205,38 +276,17 @@ export function App() {
 		},
 		...available.map((value) => ({
 			id: value.id,
-			name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
+			name: label(value, hello.host),
 			org: value.repo?.split("/")[0] || "",
 		})),
 	];
-	const sorted: Record<"mine" | "team" | "inactive" | "archived", SidebarRow[]> = {
-		mine: [],
-		team: [],
-		inactive: [],
-		archived: [],
-	};
-	for (const value of visible) {
-		const group = value.state === "archived"
-			? "archived"
-			: !value.busy && now - (value.active || value.created) > INACTIVE_AFTER
-			? "inactive"
-			: value.owner === hello.user
-			? "mine"
-			: "team";
-		sorted[group].push(row(value, hello.user, hello.host));
-	}
-	let groups: SessionSidebarGroup[] = [
-		{ id: "mine", label: "Channels", rows: sorted.mine, collapsed: collapsed.mine },
-		{ id: "team", label: "Team", rows: sorted.team, collapsed: collapsed.team },
-		{ id: "inactive", label: "Inactive", rows: sorted.inactive, collapsed: collapsed.inactive },
-		{ id: "archived", label: "Archived", rows: sorted.archived, collapsed: collapsed.archived },
-	];
+	let groups = projectGroups(visible, hello, people, now, collapsed);
 
 	if (allProjects) {
 		const byProject = new Map<string, Listing[]>();
 		for (const value of channels) {
 			if (value.state === "archived") continue;
-			const id = projectId(value.host, root(value));
+			const id = channelProject(value);
 			const rows = byProject.get(id);
 			if (rows) rows.push(value);
 			else byProject.set(id, [value]);
@@ -249,7 +299,7 @@ export function App() {
 			).slice(0, RECENT_CHANNELS).map((value) => row(value, hello.user, hello.host));
 			return {
 				id,
-				label: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
+				label: label(value, hello.host),
 				rows,
 				sort: "none",
 				collapsed: collapsed[id],
@@ -263,8 +313,8 @@ export function App() {
 		setProject(id);
 	}
 
-	function select(value: Pick<Listing, "id" | "host" | "project" | "root">) {
-		const id = projectId(value.host, root(value));
+	function select(value: Pick<Listing, "id" | "host" | "project" | "root" | "repo">) {
+		const id = channelProject(value);
 		setProject(id);
 		if (!allProjects) setAll(false);
 		setSelected((previous) => ({
@@ -277,7 +327,7 @@ export function App() {
 
 	async function open(path: string) {
 		const value = await host.request<Project>({ op: "project-open", path });
-		chooseProject(projectId(hello.host, value.path));
+		chooseProject(projectId(hello.host, value.path, value.repo));
 	}
 
 	async function choose() {
@@ -314,7 +364,7 @@ export function App() {
 				}
 			}
 			onCreated?.();
-			select({ ...value, host: hello.host });
+			select({ ...value, host: hello.host, root: current.path, repo: current.repo });
 		} catch (error) {
 			toast.error("Could not start channel", {
 				description: (error as Error).message,
@@ -410,7 +460,7 @@ export function App() {
 											? (item) => setRenaming({ id: item.uid, name: item.name })
 											: undefined}
 										onToggleGroup={(id) =>
-											setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
+											setCollapsed((value) => ({ ...value, [id]: !folded(value, id) }))}
 										onArchive={(allProjects || local) && connected
 											? (item) =>
 												void change({
@@ -523,6 +573,13 @@ export function App() {
 										>
 											<IconPlus aria-hidden />New channel
 										</Button>
+									)}
+									{!allProjects && !local && (
+										<p className="text-sm text-muted-foreground">
+											{current.name} is checked out on{" "}
+											{[...current.hosts].join(", ")}. Open a checkout on this host to start
+											channels here.
+										</p>
 									)}
 								</div>
 							)}
