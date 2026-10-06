@@ -1,6 +1,7 @@
 /** The host gateway's wire contract: JSON messages over one WebSocket per client. */
 import type {
 	ChannelInfo,
+	Delivery,
 	Event,
 	GithubFilter,
 	GithubKind,
@@ -19,6 +20,18 @@ export type HostInfo = {
 };
 
 export type WorkerInfo = { id: string; pid: number };
+
+/** A channel worker's request to its host, over the owner-only socket in the host's home. */
+export type AgentRequest =
+	| { op: "channels" }
+	/** `from` is the sending channel, which must run on this host. */
+	| ({ op: "deliver"; from: string } & Delivery);
+/** The host's owner token authenticates a worker, as it does the owner's other local clients. */
+export type AgentEnvelope = { token: string } & AgentRequest;
+/** `home` lets a worker refuse a host serving another data directory. */
+export type AgentFrame =
+	| { ok: true; home: string; value: unknown }
+	| { ok: false; home: string; error: string };
 export type WorkerRequest = { op: "worker" };
 
 export type Diagnostics = {
@@ -181,6 +194,11 @@ export type HostRequest =
 	| { op: "terminal-input"; terminal: string; data: string }
 	| { op: "terminal-resize"; terminal: string; cols: number; rows: number }
 	| { op: "terminal-close"; terminal: string }
+	/**
+	 * A peer host relays its channel's agent message to a channel this host runs; never forwarded
+	 * further. This host authors it from `from` and the peer's verified login.
+	 */
+	| ({ op: "deliver"; from: string } & Delivery)
 	/** Drop this client's connection to a channel, ending its watches. */
 	| { op: "release"; channel: string };
 

@@ -225,11 +225,13 @@ export type Frame =
 /** `trace` ties a request's log lines together across the processes that relay it. */
 export type Envelope = { id: number; trace?: string } & Request;
 
-/** A message one channel's agent sends to another channel. */
+/**
+ * A message one channel's agent sends to another channel. The destination's host authors it, so
+ * the sender cannot choose who it appears to be.
+ */
 export type Delivery = {
 	channel: string;
 	chat?: ChatId;
-	author: string;
 	text: string;
 	invoke: boolean;
 	requestId: string;

@@ -93,13 +93,18 @@ export function people(): People {
 	return people;
 }
 
-/** The peer that runs a channel, if it is reachable. */
-export function find(channel: string): Machine | undefined {
-	for (const { machine, client } of hosts.values()) {
+/** The reachable peer that runs a channel, with its open listing connection. */
+export function host(channel: string): Peer | undefined {
+	for (const peer of hosts.values()) {
+		const { client } = peer;
 		if (client.status === "open" && client.channels.some((value) => value.id === channel)) {
-			return machine;
+			return peer;
 		}
 	}
+}
+
+export function find(channel: string): Machine | undefined {
+	return host(channel)?.machine;
 }
 
 export function machine(name: string): Machine | undefined {
