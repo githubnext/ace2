@@ -13,15 +13,45 @@ const read = (env: ExecutionEnv, cwd: string, args: string, context: Context, ok
 	git(env, `${args} 2>/dev/null`, context, { cwd, ...(ok ? { ok } : {}) });
 
 /**
- * The base a chat's work is measured against: where its lane branched from the project's HEAD, so
- * commits the project made since don't show as the lane's. The checkout itself compares to HEAD.
+ * Lanes from before version 2 of `LanesDoc` recorded no base. They compare against origin's
+ * default branch as last fetched, since a Diff refresh must not fetch, or against the project's
+ * HEAD in a repository without origin.
  */
-async function base(env: ExecutionEnv, cwd: string, project: string, context: Context) {
+async function legacy(env: ExecutionEnv, cwd: string, project: string, context: Context) {
+	const remotes = (await read(env, cwd, "remote", context)).split("\n");
+	if (!remotes.includes("origin")) {
+		return (await read(env, project, "rev-parse HEAD", context)).trim();
+	}
+	const ref = (await read(env, cwd, "symbolic-ref -q refs/remotes/origin/HEAD", context, [0, 1]))
+		.trim();
+	const commit = ref
+		&& await read(env, cwd, `rev-parse -q --verify ${quote(`${ref}^{commit}`)}`, context, [0, 1]);
+	if (commit) return ref;
+	throw new Error(
+		"origin's default branch is unknown locally. Run `git fetch origin` and `git remote set-head origin --auto` in the project, or switch to the lane with a base.",
+	);
+}
+
+/**
+ * The base a chat's work is measured against: where its lane forked from the lane's base, as a
+ * pull request into that base would show it. The checkout itself compares to HEAD.
+ */
+async function base(
+	env: ExecutionEnv,
+	cwd: string,
+	project: string,
+	target: string | undefined,
+	context: Context,
+) {
 	const head = (await read(env, cwd, "rev-parse HEAD", context)).trim();
 	if (cwd === project) return { base: head, head };
-	const main = (await read(env, project, "rev-parse HEAD", context)).trim();
-	const fork = (await read(env, cwd, `merge-base HEAD ${main}`, context)).trim();
-	return { base: fork, head };
+	const against = target || await legacy(env, cwd, project, context);
+	const fork = await read(env, cwd, `merge-base HEAD ${quote(against)}`, context).catch(() => {
+		throw new Error(
+			`Could not find where the lane forked from ${against}. Switch to the lane with another base.`,
+		);
+	});
+	return { base: fork.trim(), head };
 }
 
 /** `adds\tdels\tpath\0`, or `adds\tdels\t\0from\0to\0` for a rename; binary files count `-`. */
@@ -63,10 +93,10 @@ export async function changes(
 	env: ExecutionEnv,
 	cwd: string,
 	project: string,
-	lane: string | undefined,
+	lane: { name: string; base?: string } | undefined,
 	context: Context,
 ): Promise<Changes> {
-	const range = await base(env, cwd, project, context);
+	const range = await base(env, cwd, project, lane?.base, context);
 	const branch = (await read(env, cwd, "rev-parse --abbrev-ref HEAD", context)).trim();
 	const tracked = numstat(await read(env, cwd, `diff -M --numstat -z ${range.base}`, context));
 	const files = await Promise.all(
@@ -80,7 +110,7 @@ export async function changes(
 		}),
 	);
 	return {
-		...(lane ? { lane } : {}),
+		...(lane ? { lane: lane.name } : {}),
 		...(branch && branch !== "HEAD" ? { branch } : {}),
 		cwd,
 		...range,
@@ -93,13 +123,14 @@ export async function patch(
 	env: ExecutionEnv,
 	cwd: string,
 	project: string,
+	target: string | undefined,
 	file: string,
 	context: Context,
 ): Promise<string> {
 	if (!file || file.startsWith("/") || file.split("/").includes("..") || file.includes("\0")) {
 		throw new Error(`Invalid path ${file}`);
 	}
-	const { base: from } = await base(env, cwd, project, context);
+	const { base: from } = await base(env, cwd, project, target, context);
 	const known = await read(env, cwd, `ls-files -- ${quote(file)}`, context);
 	const historic = await read(
 		env,
