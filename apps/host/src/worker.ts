@@ -1,4 +1,4 @@
-import { closeSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
+import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type Socket } from "node:net";
 
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
@@ -24,38 +24,19 @@ seal();
 
 const id = process.argv[2];
 open(`channel-${id}`, { channel: id });
-const record = catalog.read(id);
 const paths = catalog.paths(id);
 
-function isRunning(pid: number): boolean {
-	try {
-		process.kill(pid, 0);
-		return true;
-	} catch {
-		return false;
-	}
-}
-
-/** One worker owns a channel's storage. A live owner's pid file turns this process away. */
-function lock(): boolean {
-	try {
-		const fd = openSync(paths.pid, "wx");
-		writeSync(fd, String(process.pid));
-		closeSync(fd);
-		return true;
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-		const owner = Number(readFileSync(paths.pid, "utf8"));
-		if (isRunning(owner)) return false;
-		rmSync(paths.pid, { force: true });
-		return lock();
-	}
-}
-
-if (!lock()) {
+if (!catalog.lock(id)) {
 	log("info", "worker.redundant", { owner: Number(readFileSync(paths.pid, "utf8")) });
 	process.exit(0);
 }
+// A delete removes the record while it holds the lock, so read it only once this worker does.
+if (!existsSync(paths.record)) {
+	rmSync(paths.pid, { force: true });
+	log("info", "worker.deleted");
+	process.exit(0);
+}
+const record = catalog.read(id);
 log("info", "worker.start", { bun: Bun.version });
 rmSync(paths.socket, { force: true });
 catalog.busy(id, false);

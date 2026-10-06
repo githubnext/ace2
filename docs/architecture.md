@@ -121,6 +121,9 @@ or peer gateway closed; relays then drop it and never re-watch on their own. The
 end of a watch it released, restarts others with a fresh replay and channel info, which wakes a
 killed channel's worker as reopening it would, and stops after three quick ends with an error.
 A rejected watch retries only when asked, or once when an offline channel's host becomes reachable.
+Deleting a channel kills its worker and keeps the worker lock, then removes the record before its
+directory. Workers read the record only after taking the lock, so a watch recovering during the
+delete cannot start a worker over storage being removed.
 
 Workers clear the busy projection on startup and normal exit. Listings suppress it for archived
 or dormant channels, and check the worker PID as well as the socket path. A five-second host

@@ -198,6 +198,35 @@ export function find(ref: string): Listing {
 	return record;
 }
 
+function isAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * One process owns a channel's storage: its worker, or a delete removing it. A live owner's pid
+ * file turns others away.
+ */
+export function lock(id: string): boolean {
+	const { pid } = paths(id);
+	try {
+		writeFileSync(pid, String(process.pid), { flag: "wx" });
+		return true;
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+		if (isAlive(Number(readFileSync(pid, "utf8")))) return false;
+		rmSync(pid, { force: true });
+		return lock(id);
+	}
+}
+
+/** The caller holds the worker lock; a worker that takes it as the directory goes finds no record. */
 export function remove(id: string): void {
-	rmSync(dir(id), { recursive: true, force: true });
+	rmSync(paths(id).record, { force: true });
+	// A late worker's lock file can reappear until it sees the missing record and exits.
+	rmSync(dir(id), { recursive: true, force: true, maxRetries: 5 });
 }

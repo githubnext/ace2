@@ -64,6 +64,8 @@ let updating = false;
 let update = 0;
 let suspending: Promise<unknown> | undefined;
 const pending = new Set<Promise<unknown>>();
+/** Deleting kills the worker first; the watches that ends must not start it again. */
+const deleting = new Set<string>();
 
 function local(): Listing[] {
 	return catalog.list().map((record) => {
@@ -194,6 +196,7 @@ function settingsChanged(): void {
 }
 
 function connection(client: Client, channel: string, hosted?: string): Promise<Connection> {
+	if (deleting.has(channel)) return Promise.reject(new Error("The channel is being deleted"));
 	let open = client.channels.get(channel);
 	if (!open) {
 		open = hosted ? Connection.hosted(hosted, channel) : Connection.open(channel);
@@ -396,7 +399,12 @@ async function handle(
 		}
 		case "delete":
 			terminals.closeChannel(request.channel);
-			await remove(request.channel);
+			deleting.add(request.channel);
+			try {
+				await remove(request.channel);
+			} finally {
+				deleting.delete(request.channel);
+			}
 			return broadcast();
 		case "terminal": {
 			if (!catalog.owns(request.channel)) throw new Error("Terminals open on the channel's host");
