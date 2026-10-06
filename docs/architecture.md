@@ -62,7 +62,10 @@ is one pi conversation in that Session.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
   the parent kills the child. Agents in different channels only exchange messages.
 - **Lanes are Git worktrees** created by the chat's agent for each unit of work. A chat's working
-  directory is its current lane.
+  directory is its current lane. A new lane starts from origin's advertised default branch, fetched
+  first, or from an explicit base, without changing the project checkout. Each lane records that
+  base as a ref or commit, and its Diff shows what a pull request into that base would. An explicit
+  base for an existing lane changes only that comparison.
 - **Kill is durable.** Killing records pi's abort marks before the worker exits, so reopening the
   channel does not resume the killed work.
 - **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
