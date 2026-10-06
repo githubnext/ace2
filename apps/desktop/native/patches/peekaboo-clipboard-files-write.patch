@@ -241,7 +241,7 @@ index 664dc3b..62a7070 100644
 +        case .clipboardTextWrite, .clipboardImageWrite, .clipboardFilesWrite, .literalInsert, .agentExecutionTrace:
              return [.dispatchedUnverified]
          case .requestPostEventPermission, .browserExecute, .swipe, .drag, .moveMouse,
-              .clickMenuItem, .clickMenuItemByName, .clickMenuExtra,
+              .menuCommand, .clickMenuItem, .clickMenuItemByName, .clickMenuExtra,
 diff --git a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift b/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift
 index 312bdbe..1b6daa5 100644
 --- a/Core/PeekabooCore/Sources/PeekabooBridge/PeekabooBridgeRequest+DesktopMutation.swift

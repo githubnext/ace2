@@ -10,7 +10,8 @@ import {
 	toast,
 	useMedia,
 } from "@ace/ui";
-import type { Listing, ModelRef } from "@ace/host/protocol";
+import type { Effort, ModelOption, ModelRef } from "@ace/channel/protocol";
+import type { Listing } from "@ace/host/protocol";
 
 import { host } from "./host";
 import { images } from "./images";
@@ -20,6 +21,15 @@ const MODES = [
 	{ id: "ace", name: "Ace", placeholder: "Ask the agent", mention: "ace" },
 ];
 const MENTIONS = [{ name: "ace", avatar: aceAvatar }];
+const EFFORTS: Record<Effort, string> = {
+	off: "Off",
+	minimal: "Minimal",
+	low: "Low",
+	medium: "Medium",
+	high: "High",
+	xhigh: "Extra high",
+	max: "Max",
+};
 const ACE = /(^|\s)@ace\b/i;
 // Channel views remount on navigation; a deliberate mode choice outlives them for this session.
 const chosen = new Map<string, string>();
@@ -31,6 +41,7 @@ type Props = {
 	chat: number;
 	user: string;
 	current?: ModelRef;
+	currentEffort?: Effort;
 	busy: boolean;
 	ready: boolean;
 	draft?: string;
@@ -41,15 +52,26 @@ type Props = {
 
 /** A failed admission keeps the draft and attachments available for retry. */
 export function Composer(
-	{ channel, chat: id, user, current, busy, ready, draft, onDraftLoaded, onSettings, accessory }:
-		Props,
+	{
+		channel,
+		chat: id,
+		user,
+		current,
+		currentEffort,
+		busy,
+		ready,
+		draft,
+		onDraftLoaded,
+		onSettings,
+		accessory,
+	}: Props,
 ) {
 	const composer = useRef<ChatComposerHandle>(null);
 	const sending = useRef(false);
 	const [pending, setPending] = useState(false);
 	const [attached, setAttached] = useState<Attachment[]>([]);
 	const [mode, setMode] = useState(chosen.get(channel.id) || "ace");
-	const [models, setModels] = useState<ModelRef[]>();
+	const [models, setModels] = useState<ModelOption[]>();
 	const [modelError, setModelError] = useState<string>();
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
 	const settingsVersion = useSyncExternalStore(host.subscribe, () => host.settingsVersion);
@@ -62,7 +84,7 @@ export function Composer(
 		if (status !== "open" || mode !== "ace") return;
 		let active = true;
 		// Ask the channel itself: a hosted channel uses the service's credentials, not its workspace's.
-		host.channel<ModelRef[]>(channel.id, { op: "models" }).then(
+		host.channel<ModelOption[]>(channel.id, { op: "models" }).then(
 			(models) => {
 				if (!active) return;
 				setModels(models);
@@ -80,6 +102,19 @@ export function Composer(
 	}, [channel.id, mode, status, settingsVersion]);
 	const [picked, setPicked] = useState<string>();
 	const model = picked || (current ? key(current) : "auto");
+	const [pickedEffort, setPickedEffort] = useState<Effort>();
+	const levels = models?.find((value) => key(value) === model)?.efforts;
+	const requestedEffort = pickedEffort
+		|| (current && key(current) === model ? currentEffort : undefined) || "off";
+	const effort = requestedEffort === "off" || levels?.includes(requestedEffort)
+		? requestedEffort
+		: "off";
+	const efforts = levels && levels.some((level) => level !== "off")
+		? (levels.includes("off") ? levels : ["off" as const, ...levels]).map((id) => ({
+			id,
+			name: id === "off" && !levels.includes("off") ? "Default" : EFFORTS[id],
+		}))
+		: undefined;
 	const choices = (models || []).map((value) => ({
 		id: key(value),
 		name: value.modelId,
@@ -106,6 +141,7 @@ export function Composer(
 				const [provider, ...rest] = model.split("/");
 				await host.channel(channel.id, {
 					op: "ask",
+					...(levels ? { effort } : {}),
 					chat: id,
 					author: user,
 					text: body,
@@ -164,7 +200,13 @@ export function Composer(
 				mentions={MENTIONS}
 				models={choices}
 				model={model}
-				onModelChange={(value) => setPicked(value === "auto" ? undefined : value)}
+				onModelChange={(value) => {
+					setPicked(value === "auto" ? undefined : value);
+					setPickedEffort(undefined);
+				}}
+				efforts={efforts}
+				effort={effort}
+				onEffortChange={(value) => setPickedEffort(value as Effort)}
 				attachments={attached}
 				onAttachmentsChange={setAttached}
 				busy={busy}

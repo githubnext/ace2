@@ -1,4 +1,4 @@
-import type { Models } from "@earendil-works/pi-ai";
+import { getSupportedThinkingLevels, type Models } from "@earendil-works/pi-ai";
 import { BACKGROUND_CONTEXT as context } from "@earendil-works/chord/context";
 import {
 	AgentDoc,
@@ -36,6 +36,7 @@ import type {
 	ChannelInfo,
 	Chat,
 	ChatId,
+	Effort,
 	Event,
 	Metadata,
 	ModelRef,
@@ -88,6 +89,7 @@ export class Channel {
 	#log: Log;
 	#metadata: Metadata;
 	#active = 0;
+	#admissions = new Map<ChatId, Promise<unknown>>();
 	#listeners = new Set<{ chat: ChatId; send: Send }>();
 
 	private constructor(options: Options, harness: Harness, log: Log, value: Metadata) {
@@ -237,6 +239,7 @@ export class Channel {
 			if (window && used) chat.context = { used, window };
 			if (record.owner) chat.parent = record.owner.conversationId;
 			if (agent?.model) chat.model = agent.model;
+			chat.effort = agent?.thinkingLevel || "off";
 			if (lane) chat.lane = lane;
 			return chat;
 		}));
@@ -318,6 +321,19 @@ export class Channel {
 	}
 
 	async #ask(request: Extract<Request, { op: "ask" }>) {
+		const chat = request.chat || ROOT_CONVERSATION_ID;
+		const previous = this.#admissions.get(chat) || Promise.resolve();
+		// Selection and submission must stay together across concurrent clients.
+		const pending = previous.catch(() => {}).then(() => this.#admit(request));
+		this.#admissions.set(chat, pending);
+		try {
+			return await pending;
+		} finally {
+			if (this.#admissions.get(chat) === pending) this.#admissions.delete(chat);
+		}
+	}
+
+	async #admit(request: Extract<Request, { op: "ask" }>) {
 		this.#author(request.author);
 		room.checkImages(request.images);
 		const settings = await this.#harness.snapshot(SettingsDoc, context);
@@ -326,7 +342,7 @@ export class Channel {
 			throw new Error("Only the owner can invoke agents here");
 		}
 		const conversation = await this.#conversation(request.chat);
-		await this.#select(conversation, request.model);
+		await this.#select(conversation, request.model, request.effort);
 		const submission = await conversation.submit({
 			type: "input",
 			content: room.content(request.author, request.text, request.images),
@@ -336,19 +352,33 @@ export class Channel {
 		return { submission: submission.id };
 	}
 
-	/** A model applies to a whole run, so it cannot change while one is active. */
-	async #select(conversation: Conversation, requested: ModelRef | undefined) {
-		const current = (await conversation.agent(context)).model;
+	/** Model and effort apply to a whole run, never just its later turns. */
+	async #select(conversation: Conversation, requested: ModelRef | undefined, effort?: Effort) {
+		const agent = await conversation.agent(context);
+		const current = agent.model;
 		const model = requested || current || await (
 			this.#options.defaultModel?.() || choose(this.#options.models)
 		);
-		if (!this.#options.models.getModel(model.provider, model.modelId)) {
+		const selected = this.#options.models.getModel(model.provider, model.modelId);
+		if (!selected) {
 			throw new Error(`Unknown model ${model.provider}/${model.modelId}`);
 		}
-		const same = current?.provider === model.provider && current.modelId === model.modelId;
+		const levels = getSupportedThinkingLevels(selected);
+		if (effort !== undefined && effort !== "off" && !levels.includes(effort)) {
+			throw new Error(
+				`Unsupported reasoning effort ${effort} for ${model.provider}/${model.modelId}`,
+			);
+		}
+		// Pi's "off" means omit reasoning, allowing provider defaults on always-thinking models.
+		const thinkingLevel = effort
+			|| (levels.includes(agent.thinkingLevel) ? agent.thinkingLevel : "off");
+		const sameModel = current?.provider === model.provider && current.modelId === model.modelId;
+		const same = sameModel && thinkingLevel === agent.thinkingLevel;
 		const live = await this.#harness.snapshot(LiveDoc, conversation.id, context);
 		if (!same && live?.run) {
-			throw new Error("The chat is busy; stop it or wait before changing its model");
+			throw new Error(
+				"The chat is busy; stop it or wait before changing its model or reasoning effort",
+			);
 		}
 		const available = await this.#options.models.getAvailable(model.provider);
 		if (!available.some((value) => value.id === model.modelId)) {
@@ -357,7 +387,7 @@ export class Channel {
 			);
 		}
 		if (same) return;
-		await conversation.configure({ model }, context);
+		await conversation.configure({ model, thinkingLevel }, context);
 	}
 
 	async #chat(request: Extract<Request, { op: "chat" }>) {

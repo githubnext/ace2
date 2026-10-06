@@ -25,14 +25,21 @@ export type DesktopManagement =
 	| { op: "focus" | "minimize" | "restore" | "close"; target: DesktopWindowTarget }
 	| { op: "move"; target: DesktopWindowTarget; position: { x: number; y: number } }
 	| { op: "resize"; target: DesktopWindowTarget; size: { width: number; height: number } };
+export type DesktopApplication = { path: string } | { bundle_id: string };
 export type DesktopLaunch = {
 	op: "launch";
-	application: { path: string } | { bundle_id: string };
+	application: DesktopApplication;
+};
+export type DesktopOpen = {
+	op: "open";
+	item: { path: string } | { url: string };
+	application?: DesktopApplication;
 };
 
 export type DesktopRequest =
 	| DesktopManagement
 	| DesktopLaunch
+	| DesktopOpen
 	| { op: "clipboard-read"; format?: "text" | "image" | "files" }
 	| { op: "clipboard-write"; text: string }
 	| { op: "clipboard-write"; format: "image"; path: string }
@@ -40,6 +47,7 @@ export type DesktopRequest =
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "menus"; target: DesktopAppTarget; path?: string[] }
+	| { op: "menu"; target: DesktopAppTarget; path: string[] }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
 		op: "click";
@@ -167,6 +175,7 @@ export type DesktopAction = Extract<
 			| "drag"
 			| "activate"
 			| "launch"
+			| "open"
 			| "quit"
 			| "close"
 			| "focus"
@@ -174,7 +183,8 @@ export type DesktopAction = Extract<
 			| "restore"
 			| "move"
 			| "resize"
-			| "clipboard-write";
+			| "clipboard-write"
+			| "menu";
 	}
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
@@ -190,6 +200,7 @@ export function isDesktopAction(request: DesktopRequest): request is DesktopActi
 	return request.op === "click" || request.op === "type" || request.op === "key"
 		|| request.op === "insert" || request.op === "select" || request.op === "scroll"
 		|| request.op === "drag" || request.op === "clipboard-write" || request.op === "launch"
+		|| request.op === "open" || request.op === "menu"
 		|| isDesktopManagement(request);
 }
 
@@ -221,6 +232,14 @@ export function desktop(execute: Desktop): Extension {
 	};
 	const snapshot = Type.String({ minLength: 1, maxLength: 256 });
 	const element = Type.String({ minLength: 1, maxLength: 256 });
+	const application = Type.Union([
+		Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) }, {
+			additionalProperties: false,
+		}),
+		Type.Object({
+			bundle_id: Type.String({ maxLength: 256, pattern: "^[A-Za-z0-9.-]+$" }),
+		}, { additionalProperties: false }),
+	]);
 	const appTarget = {
 		pid: Type.Integer({ minimum: 1, maximum: 2_147_483_647 }),
 		process_start_identity_decimal: Type.String({ pattern: "^[1-9][0-9]{0,19}$" }),
@@ -352,22 +371,32 @@ export function desktop(execute: Desktop): Extension {
 				description:
 					"Launch or activate one application on this channel's execution host using an absolute .app path or exact bundle ID. This deliberately brings the app to the foreground and may switch Spaces. A bundle ID lets macOS choose the installation; use a path to select a particular copy. Returns the signed native process target and fresh inventory when available; a completed launch does not promise a visible or usable window. It does not open documents or URLs, create an extra instance, or relaunch. One native launch can include several counted activation attempts. Timeout or interruption is unknown: the app may still open later. Observe desktop_apps before any further action; never blindly repeat an interrupted launch.",
 				parameters: Type.Object({
-					application: Type.Union([
-						Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) }, {
-							additionalProperties: false,
-						}),
-						Type.Object({
-							bundle_id: Type.String({
-								maxLength: 256,
-								pattern: "^[A-Za-z0-9.-]+$",
-							}),
-						}, { additionalProperties: false }),
-					]),
+					application,
 				}, { additionalProperties: false }),
 				replay: "unsafe",
 				executionMode: "sequential",
 				execute: async ({ application }, api, context) =>
 					act({ op: "launch", application }, api, context),
+			}),
+			defineTool({
+				name: "desktop_open",
+				description:
+					"Open one item on this channel's execution host: an existing absolute path to a file, folder or app bundle, or a complete absolute URL with an explicit scheme. Item strings are limited to 4096 UTF-16 units and the complete request to 16 KiB. Paths preserve Unicode and spaces without shell expansion; URLs must already be correctly encoded and are never repaired. Optional application selects an absolute .app path or exact bundle ID, with the same meaning as desktop_launch; omitted application lets macOS choose the default handler. This deliberately brings the receiving app forward and may switch Spaces. Any URL scheme, including file and custom schemes, has its receiving app's normal effects. Completed means macOS accepted delivery, not that a document or page loaded. Returns the signed receiving process target and fresh inventory when available, without choosing a window. No extra instance, relaunch, batch, or automatic dialog handling. Observe the receiving app after delivery or uncertainty; never blindly repeat an interrupted open.",
+				parameters: Type.Object({
+					item: Type.Union([
+						Type.Object({ path: Type.String({ minLength: 1, maxLength: 4096 }) }, {
+							additionalProperties: false,
+						}),
+						Type.Object({ url: Type.String({ minLength: 1, maxLength: 4096 }) }, {
+							additionalProperties: false,
+						}),
+					]),
+					application: Type.Optional(application),
+				}, { additionalProperties: false }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ item, application }, api, context) =>
+					act({ op: "open", item, ...(application ? { application } : {}) }, api, context),
 			}),
 			defineTool({
 				name: "desktop_menus",
@@ -382,6 +411,22 @@ export function desktop(execute: Desktop): Extension {
 				replay: "safe",
 				execute: async ({ target, path }, _api, context) =>
 					result(await execute({ op: "menus", target, path }, context)),
+			}),
+			defineTool({
+				name: "desktop_menu",
+				description:
+					"Invoke one menu command in an exact external application target from desktop_apps. Commands targeting this native Ace process itself are unsupported and refused before input. Pass a literal title array discovered with desktop_menus, preserving punctuation, whitespace and Unicode. The native service resolves the path afresh, refuses missing/ambiguous/disabled or unavailable lazy paths, and presses only the final item once; it makes no separate activation request and does not open ancestor menus. The app or macOS may still bring the app forward in response. A completed result proves accepted AX delivery, not that the command finished. Modal commands can return unknown while a dialog remains open. Read desktop_windows or inspect the current state before deciding what to do next; never blindly repeat the command. Blocking AX reads and AXPress run off the GUI actor, with a finite native messaging timeout; cancellation retains native ownership until the actual call returns and cannot undo delivered input. No screenshot or input snapshot is returned.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+					path: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), {
+						minItems: 1,
+						maxItems: 8,
+					}),
+				}, { additionalProperties: false }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target, path }, api, context) =>
+					act({ op: "menu", target, path }, api, context),
 			}),
 			defineTool({
 				name: "desktop_activate",

@@ -135,6 +135,28 @@ promise, or new authority. Silent same-generation item readback can confirm publ
 unavailable verification retains the existing dispatched/unverified result. There is no fallback
 or restore after publication, and no claim about a receiver's later handling of the references.
 
+`peekaboo-open.patch` distinguishes accepted document/URL delivery from verified application launch
+for [native computer use](https://github.com/githubnext/ace2/issues/8). The existing launch service
+returns `dispatched_unverified` with `delivery_accepted` when its request contains items to open.
+The original native delivery, accepted unit count, global lane ownership and signed process target
+are retained. Readiness and activation do not prove that the app loaded the item. Launches without
+items and all refusal/uncertainty paths are unchanged; the existing bridge contract already permits
+this accepted outcome.
+
+`peekaboo-menu.patch` adds literal external-application menu commands for
+[native computer use](https://github.com/githubnext/ace2/issues/8). A distinct typed Bridge
+operation carries the exact process generation and title array, avoiding the existing String
+API's splitting, fuzzy normalization and intermediate presses. Fresh bounded raw AX traversal
+requires a unique path and supported enabled leaf before one AXPress; lazy missing paths refuse.
+The whole native operation runs off MainActor while retaining the existing process write lane
+until actual return, with cancellation checked before dispatch. Per-element AX messaging timeouts
+do not race or abandon native work. `cannotComplete` and other ambiguous delivery failures remain
+one attempted, unsafe unknown action; successful delivery does not establish command completion.
+Signed application receipts and canonical outcome validation remain mandatory. Commands targeting
+the native Ace process itself refuse before input; its menu inventory remains available. No
+intermediate presses, separate activation request, fallback, automatic screenshot, or command retry
+is added. The target app or macOS may still bring the app forward in response.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout
 with each complete ordered prefix, since later patches can change earlier patch contexts.

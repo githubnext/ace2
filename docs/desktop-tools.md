@@ -1,7 +1,7 @@
 # Native desktop tools
 
-Ace's pi harness can inspect applications and windows, launch, activate or quit apps, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
-field values, select and insert text, send keys or shortcuts, scroll, drag, read clipboard text, images or file references, and write clipboard text or images on the machine running the channel's tools. It uses
+Ace's pi harness can inspect applications and windows, launch, activate or quit apps, open documents and URLs, close, focus, minimize, restore, move or resize windows, click observed controls, replace editable
+field values, select and insert text, send keys or shortcuts, scroll, drag, read clipboard text, images or file references, and write clipboard text, images or file references on the machine running the channel's tools. It uses
 [Peekaboo](https://github.com/openclaw/Peekaboo) for macOS Accessibility, screen capture, and
 targeted input. The model receives the accessibility text, screenshot, and action outcome. The
 same result appears in the chat's expandable tool output, including after reopening the channel.
@@ -101,6 +101,22 @@ find the client alongside Ace Helper automatically.
   activation attempts. Timeout or interruption remains `unknown`: LaunchServices can open the app
   later, and the native operation retains its lane until it settles. Observe `desktop_apps`
   before choosing another action; do not blindly repeat the launch.
+- `desktop_open` takes one `item: { path: "/absolute/item" }` or
+  `item: { url: "https://example.com/path" }`, and an optional `application` selector with the same
+  path/bundle-ID meaning as `desktop_launch`. Without an app selector, macOS chooses the default
+  handler. Paths must already exist on the execution host and may identify files, directories or
+  app bundles; no shell expansion or file-content inspection occurs. URLs must be complete,
+  correctly encoded and absolute, with an explicit scheme; `file:` and custom schemes are accepted
+  with their receiving app's normal behavior. Ace never repairs malformed URLs. Item strings fit
+  4,096 UTF-16 units and the complete request fits 16 KiB, without truncation.
+  Opening deliberately brings the receiving app forward and may switch Spaces. Completion means
+  macOS accepted delivery, with signed `dispatched_unverified`/`delivery_accepted` evidence and
+  the receiving process target; it does not establish that a document loaded or a page navigated.
+  Later inventory adds context without selecting a window or verifying the item effect.
+  Failure after native submission remains unknown, including a rejected or unsupported item;
+  interruption can leave the open finishing later. Inspect the receiving app before further input
+  and never repeat an uncertain open blindly. This opens one item, with no extra-instance,
+  relaunch, batch, default-handler change or automatic dialog handling.
 - `desktop_menus` reads one application's menu structure using its exact `target` from
   `desktop_apps`. Signed native responses and before/after application inventories bind it to the
   same process generation. It sends no input or menu commands, activates nothing, and returns no
@@ -120,6 +136,22 @@ find the client alongside Ace Helper automatically.
   Menu paths are descriptive and cannot be used as action snapshots. Native AX reads are
   synchronous; traversal budgets are soft, so a blocked read can delay cancellation and GUI
   responsiveness. A host timeout does not establish that the native read has finished.
+- `desktop_menu` invokes one command using an exact application `target` and a literal `path`
+  array from `desktop_menus`, with the same path and request bounds. The native service resolves
+  the path afresh without the inventory cache, requires unique ancestors and an enabled leaf,
+  and submits one final `AXPress`. It makes no separate activation request, presses no intermediate menus,
+  uses no fuzzy title, and never retries. The app or macOS can bring the app forward in response.
+  Missing lazy paths and uncertain uniqueness are refused.
+  A completed result confirms accepted Accessibility delivery, not the command's application
+  effect. Modal processing can return `unknown` even while a dialog opens. Read current windows
+  or menus before deciding what to do next; do not blindly repeat the command. The result contains
+  its signed application receipt and native outcome, without an automatic screenshot or inventory.
+  Commands targeting the native Ace process itself are unsupported and refused before input;
+  inspecting its menus remains available. External AX reads and command delivery run off the GUI
+  actor with finite per-element messaging timeouts. Cancellation keeps the native process lane
+  until the actual C call returns; a timeout does not guarantee prompt native return or undo an
+  accepted command. While that lane is held, competing native work may wait. No menu or dialog
+  dismissal is automatic.
 - `desktop_activate` brings a running application to the foreground using its `target` from
   `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
 - `desktop_quit` requests normal quit of one running application using its exact `target` from
@@ -253,8 +285,8 @@ supported native chrome can refuse this preparation. The selected route never ch
 input begins. There is no fallback to global mouse or keyboard input. The target app can still respond by
 changing its own state or opening a window.
 Modifier-clicks and long presses need a separate foreground interaction contract; they are not
-emulated with held keys or mouse buttons across calls. Clipboard operations, foreground interaction,
-application launch, window close, menus, and dialogs remain later slices of
+emulated with held keys or mouse buttons across calls. Remaining clipboard writes, foreground
+interactions, commands in Ace’s own menus, and complete dialog workflows are later slices of
 [native computer use](https://github.com/githubnext/ace2/issues/8).
 
 Captures are resized and compressed before entering pi's existing channel history. Text and

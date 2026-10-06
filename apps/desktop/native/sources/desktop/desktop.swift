@@ -67,7 +67,7 @@ private final class Desktop {
 					allowlistedTeams: [identity.team],
 					allowlistedBundles: [client],
 					allowedOperations: [
-						.listApplications, .listWindows, .listMenus, .desktopObservation,
+						.listApplications, .listWindows, .listMenus, .menuCommand, .desktopObservation,
 						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
 						.selectText, .literalInsert, .clipboardTextRead, .clipboardImageRead, .clipboardFilesRead, .clipboardTextWrite, .clipboardImageWrite, .clipboardFilesWrite, .targetedScroll, .exactWindowDrag,

@@ -101,6 +101,7 @@ export function Conversation(
 					chat={id}
 					user={user}
 					current={model}
+					currentEffort={chat?.effort}
 					busy={transcript.busy}
 					ready={transcript.live && channel.state !== "archived"}
 					draft={draft}
