@@ -1,6 +1,11 @@
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+
 /** The wire contract between a channel and its clients: one JSON value per line. */
 
 export type ModelRef = { provider: string; modelId: string };
+/** "off" leaves always-thinking providers at their default; otherwise disables reasoning. */
+export type Effort = ModelThinkingLevel;
+export type ModelOption = ModelRef & { efforts: Effort[] };
 
 /** Cumulative usage for one chat, including compaction and usage reported by tools. */
 export type Usage = {
@@ -35,6 +40,7 @@ export type Chat = {
 	parent?: ChatId;
 	busy: boolean;
 	model?: ModelRef;
+	effort?: Effort;
 	lane?: string;
 	/** Older hosts may not report usage. */
 	usage?: Usage;
@@ -146,6 +152,7 @@ export type Request =
 		text: string;
 		images?: Image[];
 		model?: ModelRef;
+		effort?: Effort;
 		requestId?: string;
 	}
 	| { op: "chat"; author: string; model?: ModelRef }

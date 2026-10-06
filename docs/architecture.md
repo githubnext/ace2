@@ -60,8 +60,12 @@ is one pi conversation in that Session.
   its runtime's default on its first invocation: the local host's current preference, or an available
   model on the hosting service. Availability is checked before admitting the input, so a rejected
   invocation queues no work and leaves its draft editable.
-- **Model per run.** The chat's model is set when a run is admitted. Changing it while a run is
-  active is rejected rather than changing the active run's later turns.
+- **Model and effort per run.** The chat's model and reasoning effort are set when a run is
+  admitted, stored in pi's agent configuration. Changing either while a run is active is rejected
+  rather than changing its later turns. Admissions are serialized per chat. The composer lists
+  levels from the channel's model catalog; Default leaves reasoning to always-thinking providers,
+  while Off disables it where supported. Switching models resets the composer's effort to that
+  model's default until a level is chosen.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
   the parent kills the child. Agents in different channels only exchange messages.
 - **Lanes are Git worktrees** created by the chat's agent for each unit of work. A chat's working
