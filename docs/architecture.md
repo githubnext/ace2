@@ -30,6 +30,9 @@ three hours, keeping cached content visible while requests run or fail. GitHub c
 outside channel history. Issues and PRs share the Channels sidebar and project picker, with
 Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
 action creates a channel in the selected project and invokes its agent with the item's title and URL.
+The shared project picker also offers All Projects, which opens Channels with collapsible sections
+named for each project and its ten most recently active, non-archived channels. Opening a channel
+keeps that grouped view; channel creation and GitHub pages retain a concrete project selection.
 
 Avatars come from GitHub logins. Each host resolves its owner's login with `gh api user`, returns
 it from `hello` to peers, and publishes it to the directory. The app maps message authors'
