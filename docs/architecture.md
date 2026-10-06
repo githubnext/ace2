@@ -30,6 +30,9 @@ three hours, keeping cached content visible while requests run or fail. GitHub c
 outside channel history. Issues and PRs share the Channels sidebar and project picker, with
 Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
 action creates a channel in the selected project and invokes its agent with the item's title and URL.
+The shared project picker also offers All Projects, which opens Channels with collapsible sections
+named for each project and its ten most recently active, non-archived channels. Opening a channel
+keeps that grouped view; channel creation and GitHub pages retain a concrete project selection.
 
 A channel's details sidebar shows the root chat's changes and branch, the newest pull request from
 that branch with its checks, subagents and links from the transcript, and the channel's usage.
@@ -62,7 +65,10 @@ is one pi conversation in that Session.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
   the parent kills the child. Agents in different channels only exchange messages.
 - **Lanes are Git worktrees** created by the chat's agent for each unit of work. A chat's working
-  directory is its current lane.
+  directory is its current lane. A new lane starts from origin's advertised default branch, fetched
+  first, or from an explicit base, without changing the project checkout. Each lane records that
+  base as a ref or commit, and its Diff shows what a pull request into that base would. An explicit
+  base for an existing lane changes only that comparison.
 - **Kill is durable.** Killing records pi's abort marks before the worker exits, so reopening the
   channel does not resume the killed work.
 - **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
@@ -227,6 +233,12 @@ launch/readiness through the native global mutation lane. The signed response bi
 to the resulting process generation; later inventory failure preserves that result. Launch exposes
 no document/URL, extra-instance, or relaunch options. The app may still open after caller timeout
 or interruption, so uncertain launch is never replayed and native ownership lasts until it settles.
+Explicit item opening reuses that signed native launch route for one existing absolute path or
+complete URL, optionally selecting an app. Otherwise macOS chooses the default handler; no app
+is assumed before dispatch. The signed request includes the item URL and binds the returned
+process generation. Accepted delivery remains unverified item effect, including after successful
+readiness and activation. Later app/window inventory cannot prove document loading or navigation,
+and failures after native submission remain uncertain without retry or dialog handling.
 Minimize verifies native window state and returns fresh inventory without capturing the minimized
 window; restoring it remains an explicit action with a refreshed target.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed

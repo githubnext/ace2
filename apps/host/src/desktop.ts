@@ -14,9 +14,11 @@ import {
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
 	type DesktopAction,
+	type DesktopApplication,
 	type DesktopAppTarget,
 	type DesktopLaunch,
 	type DesktopManagement,
+	type DesktopOpen,
 	type DesktopOutcome,
 	type DesktopRequest,
 	type DesktopResult,
@@ -377,24 +379,55 @@ async function availability(
 	}
 }
 
+function validateApplication(application: DesktopApplication) {
+	if (!application || typeof application !== "object" || Object.keys(application).length !== 1) {
+		throw new Error("Use exactly one application path or bundle_id.");
+	}
+	if ("path" in application) {
+		const path = application.path;
+		if (
+			typeof path !== "string" || path.length > 4096 || !path.startsWith("/")
+			|| !path.toLowerCase().endsWith(".app") || path.includes("\0")
+		) throw new Error("Use an absolute .app path for launch.");
+	} else if (
+		!("bundle_id" in application) || typeof application.bundle_id !== "string"
+		|| application.bundle_id.length > 256
+		|| !/^[A-Za-z0-9.-]+$/.test(application.bundle_id)
+	) throw new Error("Use an exact application bundle ID for launch.");
+}
+
 function validateAction(request: DesktopAction) {
 	if (request.op === "launch") {
-		const application = request.application;
+		if (Object.keys(request).some((key) => !["op", "application"].includes(key))) {
+			throw new Error("Launch accepts exactly one application path or bundle_id.");
+		}
+		validateApplication(request.application);
+		return;
+	}
+	if (request.op === "open") {
+		const item = request.item;
 		if (
-			Object.keys(request).some((key) => !["op", "application"].includes(key))
-			|| !application || typeof application !== "object" || Object.keys(application).length !== 1
-		) throw new Error("Launch accepts exactly one application path or bundle_id.");
-		if ("path" in application) {
-			const path = application.path;
+			Object.keys(request).some((key) => !["op", "item", "application"].includes(key))
+			|| !item || typeof item !== "object" || Object.keys(item).length !== 1
+		) throw new Error("Open accepts exactly one item path or url and an optional application.");
+		if ("path" in item) {
 			if (
-				typeof path !== "string" || path.length > 4096 || !path.startsWith("/")
-				|| !path.toLowerCase().endsWith(".app") || path.includes("\0")
-			) throw new Error("Use an absolute .app path for launch.");
+				typeof item.path !== "string" || item.path.length > 4096
+				|| !item.path.startsWith("/") || item.path.includes("\0")
+			) throw new Error("Use an existing absolute item path.");
 		} else if (
-			!("bundle_id" in application) || typeof application.bundle_id !== "string"
-			|| application.bundle_id.length > 256
-			|| !/^[A-Za-z0-9.-]+$/.test(application.bundle_id)
-		) throw new Error("Use an exact application bundle ID for launch.");
+			!("url" in item) || typeof item.url !== "string" || item.url.length > 4096
+			|| !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(item.url)
+			|| /\p{Cc}/u.test(item.url)
+		) {
+			throw new Error(
+				"Use a complete absolute URL with an explicit scheme and no control characters.",
+			);
+		}
+		if (request.application !== undefined) validateApplication(request.application);
+		if (Buffer.byteLength(JSON.stringify(request)) > 16_384) {
+			throw new Error("The open request exceeds 16 KiB.");
+		}
 		return;
 	}
 	if (request.op === "menu") {
@@ -642,6 +675,8 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 			? "clipboard"
 			: request.op === "launch"
 			? "launch"
+			: request.op === "open"
+			? "open"
 			: isDesktopManagement(request)
 			? "management"
 			: "action";
@@ -661,6 +696,8 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 			reason: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
 			message: dispatched && request.op === "launch"
 				? "The launch may still finish and open the app later. Observe desktop_apps before any further action; do not blindly repeat the launch."
+				: dispatched && request.op === "open"
+				? "The item may still open later. Observe desktop_apps before any further action; do not blindly repeat the open."
 				: dispatched
 				? "The desktop action may have partially run. Inspect the current state before retrying. Stopping does not undo input already delivered."
 				: "The desktop action was not sent to the native desktop.",
@@ -694,7 +731,7 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 	if (outcome !== "completed" || request.op === "clipboard-write") {
 		return actionResult(data, outcome);
 	}
-	if (isDesktopManagement(request) || request.op === "launch") {
+	if (isDesktopManagement(request) || request.op === "launch" || request.op === "open") {
 		return await observeManagement(request, data, signal);
 	}
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
@@ -738,20 +775,21 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 }
 
 async function observeManagement(
-	request: DesktopManagement | DesktopLaunch,
+	request: DesktopManagement | DesktopLaunch | DesktopOpen,
 	action: Record<string, unknown>,
 	signal: AbortSignal,
 ): Promise<DesktopResult> {
 	const data: Record<string, unknown> = { action };
 	const outcome = action.outcome === "unknown" ? "unknown" : "completed";
 	const receipt = action.target_receipt as Reply["target_receipt"];
-	const target = request.op === "launch"
+	const target = request.op === "launch" || request.op === "open"
 		? (action.application as { target?: DesktopAppTarget } | undefined)?.target
 		: request.target;
 	if (
 		!receipt || !target || receipt.pid !== target.pid
 		|| receipt.process_start_identity_decimal !== target.process_start_identity_decimal
 		|| (request.op === "activate" || request.op === "quit" || request.op === "launch"
+				|| request.op === "open"
 			? receipt.window_id !== undefined
 			: receipt.window_id !== request.target.window_id)
 	) {
@@ -793,6 +831,7 @@ async function observeManagement(
 		}
 		if (
 			request.op === "activate" || request.op === "quit" || request.op === "launch"
+			|| request.op === "open"
 			|| request.op === "close"
 		) {
 			return managementResult(data, action, outcome);
@@ -877,6 +916,7 @@ export const desktop: Desktop = async (request, context) => {
 			"drag",
 			"activate",
 			"launch",
+			"open",
 			"quit",
 			"close",
 			"focus",

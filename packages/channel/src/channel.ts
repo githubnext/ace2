@@ -192,8 +192,9 @@ export class Channel {
 				return changes(this.#options.env(cwd), cwd, this.#options.project, lane, context);
 			}
 			case "patch": {
-				const { cwd } = await this.#place(request.chat);
-				return patch(this.#options.env(cwd), cwd, this.#options.project, request.file, context);
+				const { cwd, lane } = await this.#place(request.chat);
+				const { env, project } = this.#options;
+				return patch(env(cwd), cwd, project, lane?.base, request.file, context);
 			}
 			case "wait": {
 				const submission = await this.#harness.submission(
@@ -278,12 +279,16 @@ export class Channel {
 	}
 
 	/** Where a chat works: its current lane's worktree, or the project checkout before it has one. */
-	async #place(chat: ChatId | undefined): Promise<{ cwd: string; lane?: string }> {
+	async #place(
+		chat: ChatId | undefined,
+	): Promise<{ cwd: string; lane?: { name: string; base?: string } }> {
 		const { id } = await this.#conversation(chat);
 		const cwd = (await this.#harness.snapshot(AgentDoc, id, context))?.cwd || this.#options.project;
 		const lanes = (await this.#harness.snapshot(LanesDoc, context))?.lanes || {};
-		const lane = Object.entries(lanes).find(([, value]) => value.path === cwd)?.[0];
-		return lane ? { cwd, lane } : { cwd };
+		const found = Object.entries(lanes).find(([, value]) => value.path === cwd);
+		if (!found) return { cwd };
+		const [name, { base }] = found;
+		return { cwd, lane: base ? { name, base } : { name } };
 	}
 
 	async #conversation(chat: ChatId | undefined): Promise<Conversation> {

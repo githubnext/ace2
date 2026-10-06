@@ -57,8 +57,9 @@ export type Change = {
 };
 
 /**
- * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus
- * uncommitted and untracked files. A chat without a lane shows the checkout against HEAD.
+ * What a chat's work changed: its lane's commits since it forked from the lane's base, as a pull
+ * request into that base would show them, plus uncommitted and untracked files. A chat without a
+ * lane shows the checkout against HEAD.
  */
 export type Changes = {
 	lane?: string;
