@@ -1405,6 +1405,7 @@ function ComposerEffort({ state }: { state: ComposerState }) {
 			<DropdownMenuTrigger
 				render={
 					<Toolbar.Button
+						aria-label={`Reasoning effort: ${selected.name}`}
 						render={
 							<Button
 								variant="ghost"
