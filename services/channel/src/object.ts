@@ -83,6 +83,7 @@ export class HostedChannel extends DurableObject<Env> {
 				...config,
 				onMetadata: (metadata) => this.#project({ metadata }),
 				onActivity: (active) => this.#project({ active }),
+				onBusy: (busy) => this.#project({ busy }),
 				storage: await SqliteStorage.open(new DurableSqlite(this.ctx.storage)),
 				models: builtinModels({
 					authContext: {
@@ -150,8 +151,11 @@ export class HostedChannel extends DurableObject<Env> {
 			log("info", "workspace.connect", { channel: config.id, workspace: config.workspace });
 			this.ctx.acceptWebSocket(server, ["workspace"]);
 			this.#attach(server);
-			const { name, summary, revision } = await (await this.#open(config)).info();
+			const channel = await this.#open(config);
+			const { name, summary, revision } = await channel.info();
 			this.#project({ metadata: { name, summary, revision } });
+			// Reconnects need current state even if no run transition occurred while disconnected.
+			this.#project({ busy: channel.busy });
 		} else {
 			server.accept();
 			this.#serve(server, await this.#open(config));

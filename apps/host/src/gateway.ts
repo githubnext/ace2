@@ -14,7 +14,15 @@ import { GatewayClient } from "./gateway-client";
 import * as github from "./github";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
-import { archive, archiveInactive, isRunning, models, project, remove } from "./manage";
+import {
+	archive,
+	archiveInactive,
+	isRunning,
+	isWorkerAlive,
+	models,
+	project,
+	remove,
+} from "./manage";
 import * as peers from "./peers";
 import * as projects from "./projects";
 import {
@@ -70,6 +78,7 @@ function local(): Listing[] {
 			model,
 			created,
 			state,
+			busy: state === "running" && !!record.busy && (!hosted || workspace.isConnected(id)),
 		};
 		if (active) listing.active = active;
 		const { root, repo } = projects.checkout(project);
@@ -86,6 +95,8 @@ function listed(seen: Set<string>): Listing[] {
 		.map((value) =>
 			Object.assign({}, value, {
 				state: value.state === "archived" || value.hosted ? value.state : "offline" as const,
+				// The directory is a cache, not a live connection, even for hosted channels.
+				busy: false,
 			})
 		);
 }
@@ -633,6 +644,20 @@ export async function serve(port: number): Promise<never> {
 		}
 	});
 	cleanup.push(() => watcher.close());
+	// A crashed worker leaves its socket and projection behind without a filesystem event.
+	// Probe only process liveness: sidebar observation must never attach to or wake a worker.
+	let crashed = new Set<string>();
+	const liveness = setInterval(() => {
+		if (closing || updating) return;
+		const current = new Set<string>();
+		for (const record of catalog.list()) {
+			if (!record.hosted && record.busy && !isWorkerAlive(record.id)) current.add(record.id);
+		}
+		// Do not overwrite a replacement worker's projection after observing its predecessor die.
+		if (current.size !== crashed.size || [...current].some((id) => !crashed.has(id))) broadcast();
+		crashed = current;
+	}, 5000);
+	cleanup.push(() => clearInterval(liveness));
 	workspace.sync();
 	return new Promise(() => {});
 }

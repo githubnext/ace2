@@ -33,6 +33,8 @@ export type Listing = {
 	created: number;
 	/** When the transcript last grew; channels from older builds have none until they next do. */
 	active?: number;
+	/** Rebuildable live-run projection, not history; valid only while its source is connected. */
+	busy?: boolean;
 	archived?: boolean;
 	/** Base URL of the service hosting the channel; this host serves its workspace. */
 	hosted?: string;
@@ -168,6 +170,12 @@ export function metadata(id: string, value: Metadata): void {
 
 export function activity(id: string, active: number): void {
 	write({ ...read(id), active });
+}
+
+export function busy(id: string, busy: boolean): void {
+	const record = read(id);
+	if (record.busy === busy) return;
+	write({ ...record, busy });
 }
 
 export function list(): Listing[] {

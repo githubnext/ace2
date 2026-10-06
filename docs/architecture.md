@@ -67,6 +67,11 @@ is one pi conversation in that Session.
   deliberate names unless asked to rename. Metadata lives in a pi session document and is
   projected into host listings. Watch events update open clients; the details sidebar shows the
   full summary. Lane paths and branch prefixes keep the channel's original name.
+- **Busy is a live listing projection.** A channel is busy while any chat, including a child chat,
+  has a run in pi's `LiveDoc`. Opening takes an initial snapshot before scheduling resumes;
+  committed live-document changes maintain the aggregate and `onBusy` publishes only transitions.
+  Streaming transcript watches are not needed for sidebar rows. Pi remains authoritative: the
+  optional catalog and listing `busy` field is rebuildable, not a second run store or history format.
 
 `packages/channel` must stay runtime-neutral: no `node:*`, `bun:*`, or Workers imports. The host
 injects storage, models, and the execution environment. This keeps hosted channels (a channel
@@ -84,6 +89,13 @@ controlled by one switch for all available tools.
 directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clients start a
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
+
+Workers clear the busy projection on startup and normal exit. Listings suppress it for archived
+or dormant channels, and check the worker PID as well as the socket path. A five-second host
+liveness sweep broadcasts when a crashed worker's busy projection becomes stale, without writing
+back over a replacement worker's projection, connecting to channels, or waking them.
+Reachable peers forward the live listing; directory-only fallback listings clear busy rather than
+animating from a stale cache, even for hosted channels.
 
 Channel data survives app replacement and upgrades. `ace backup` takes a verified SQLite snapshot
 of a local channel while it runs, alongside its catalog record. Project files and lane worktrees
@@ -255,6 +267,12 @@ offline, and a call in flight when it drops is reported to the model as failed.
 - Hosts share the team's secret with the service (`ACE_SECRET` on hosts and Workers) and state each message's author. They verify their own users over the tailnet, so the
   service trusts hosts, not individual people.
 - Model keys are Worker secrets.
+- Busy transitions share the metadata/activity projection path over the workspace socket. Every
+  workspace reconnect gets a current busy snapshot, including when the object was already open.
+  The workspace host clears busy on disconnect and accepts it only while that link is connected;
+  this listing hint is intentionally suppressed when the workspace is unavailable, even if the
+  hosted channel can still run model-only work. It adds no client transcript subscriptions or
+  keepalive timers to dormant hosted objects.
 
 ## Shared services
 

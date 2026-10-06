@@ -117,7 +117,7 @@ function row(channel: Listing, user: string): SidebarRow {
 			: channel.state === "offline"
 			? "offline"
 			: "idle",
-		agent: "idle",
+		agent: channel.state === "running" && channel.busy ? "thinking" : "idle",
 		unreadCount: 0,
 		mentionCount: 0,
 		lastActivityAt: Math.floor((channel.active || channel.created) / 1000),
@@ -200,7 +200,7 @@ export function App() {
 	for (const value of visible) {
 		const group = value.state === "archived"
 			? "archived"
-			: now - (value.active || value.created) > INACTIVE_AFTER
+			: !value.busy && now - (value.active || value.created) > INACTIVE_AFTER
 			? "inactive"
 			: value.owner === hello.user
 			? "mine"
