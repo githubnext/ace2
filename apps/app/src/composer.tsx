@@ -16,10 +16,13 @@ import type { Listing } from "@ace/host/protocol";
 import { host } from "./host";
 import { images } from "./images";
 
+const ACE_MODE = { id: "ace", name: "Ace", placeholder: "Ask the agent", mention: "ace" };
 const MODES = [
 	{ id: "chat", name: "Chat", placeholder: "Mention @ace to ask the agent" },
-	{ id: "ace", name: "Ace", placeholder: "Ask the agent", mention: "ace" },
+	ACE_MODE,
 ];
+// Teammates keep the Ace mode and their drafts while the owner has turned invocation off.
+const BLOCKED_MODES = [{ id: "chat", name: "Chat", placeholder: "Message the channel" }, ACE_MODE];
 const MENTIONS = [{ name: "ace", avatar: aceAvatar }];
 const EFFORTS: Record<Effort, string> = {
 	off: "Off",
@@ -43,12 +46,53 @@ type Props = {
 	current?: ModelRef;
 	currentEffort?: Effort;
 	busy: boolean;
+	/** Whether teammates may invoke agents; absent while unknown. */
+	shared?: boolean;
 	ready: boolean;
 	draft?: string;
 	onDraftLoaded: () => void;
 	onSettings?: () => void;
 	accessory?: ReactNode;
 };
+
+/** The channel refuses these too; holding them here keeps the draft instead of failing a send. */
+function useInvocation(shared: boolean | undefined, owner: boolean, mode: string) {
+	const [mentioned, setMentioned] = useState(false);
+	const blocked = shared === false && !owner;
+	return {
+		blocked,
+		refused: blocked && (mode === "ace" || mentioned),
+		onText: (text: string) => setMentioned(ACE.test(text)),
+	};
+}
+
+function Notice({ children, action }: { children: ReactNode; action?: ReactNode }) {
+	return (
+		<div
+			className="mb-2 flex items-center justify-between gap-3 px-3 text-xs text-muted-foreground"
+			role="status"
+		>
+			<p>{children}</p>
+			{action}
+		</div>
+	);
+}
+
+/** Why a teammate's invoking draft is held while the owner has turned invocation off. */
+function Refusal({ mode, onChat }: { mode: string; onChat: () => void }) {
+	if (mode !== "ace") {
+		return (
+			<Notice>
+				The owner has turned off teammate agent invocation. Remove @ace to send this as a message.
+			</Notice>
+		);
+	}
+	return (
+		<Notice action={<Button size="sm" variant="ghost" onClick={onChat}>Switch to Chat</Button>}>
+			The owner has turned off teammate agent invocation. Switch to Chat to send this as a message.
+		</Notice>
+	);
+}
 
 /** A failed admission keeps the draft and attachments available for retry. */
 export function Composer(
@@ -59,6 +103,7 @@ export function Composer(
 		current,
 		currentEffort,
 		busy,
+		shared,
 		ready,
 		draft,
 		onDraftLoaded,
@@ -124,6 +169,11 @@ export function Composer(
 	else if (!choices.some((value) => value.id === model)) {
 		choices.unshift({ id: model, name: model.split("/").slice(1).join("/"), vendor: "" });
 	}
+	const { blocked, refused, onText } = useInvocation(shared, channel.owner === user, mode);
+	const changeMode = (value: string) => {
+		chosen.set(channel.id, value);
+		setMode(value);
+	};
 	// Formatting tools crowd a phone's composer; they stay one tap away.
 	const phone = useMedia("(width < 40rem)");
 
@@ -132,6 +182,11 @@ export function Composer(
 		const invoke = mode === "ace" || ACE.test(text);
 		const body = text.trim();
 		if (!body && !attached.length) return;
+		if (invoke && blocked) {
+			return void toast.error("Could not invoke agent", {
+				description: "The owner has turned off teammate agent invocation.",
+			});
+		}
 		const doc = composer.current?.get();
 		sending.current = true;
 		setPending(true);
@@ -173,30 +228,26 @@ export function Composer(
 
 	return (
 		<>
-			{mode === "ace" && models?.length === 0 && (
-				<div
-					className="mb-2 flex items-center justify-between gap-3 px-3 text-xs text-muted-foreground"
-					role="status"
-				>
-					<p>
+			{refused
+				? <Refusal mode={mode} onChat={() => changeMode("chat")} />
+				: mode === "ace" && models?.length === 0 && (
+					<Notice
+						action={onSettings && (
+							<Button size="sm" variant="ghost" onClick={onSettings}>Provider settings</Button>
+						)}
+					>
 						{modelError || "Add a provider to use Ace. You can still send messages in Chat mode."}
-					</p>
-					{onSettings && (
-						<Button size="sm" variant="ghost" onClick={onSettings}>Provider settings</Button>
-					)}
-				</div>
-			)}
+					</Notice>
+				)}
 			<ChatComposer
 				ref={composer}
 				accessory={accessory}
 				scope={`/channels/${channel.id}`}
 				tools={!phone}
-				modes={MODES}
+				modes={blocked ? BLOCKED_MODES : MODES}
 				mode={mode}
-				onModeChange={(value) => {
-					chosen.set(channel.id, value);
-					setMode(value);
-				}}
+				onModeChange={changeMode}
+				onTextChange={onText}
 				mentions={MENTIONS}
 				models={choices}
 				model={model}
@@ -213,7 +264,7 @@ export function Composer(
 				submitBusy={pending}
 				canStop={busy}
 				onStop={() => void host.channel(channel.id, { op: "stop", chat: id })}
-				canSend={ready && status === "open" && !pending}
+				canSend={ready && status === "open" && !pending && !refused}
 				clearOnSend={false}
 				onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 			/>

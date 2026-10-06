@@ -361,10 +361,14 @@ Its identities and access rules decide which people and machines can reach each 
 no separate accounts, invitations, roles, or team access controls. Every human author is a
 Tailscale login, so a person is the same participant on every host.
 
-The channel owner can turn collaborator agent invocation on or off with `ace share <channel> on|off`.
-This is one switch for all of the agent's available tools, including native desktop tools when
-supported. It prevents new collaborator invocations; active work continues until stopped or
-killed. There are no separate per-tool grants or approval policies within a channel.
+The channel owner can turn collaborator agent invocation on or off with `ace share <channel> on|off`
+or from the channel's details sidebar; channels start shared. This is one switch for all of the
+agent's available tools, including native desktop tools when supported. It prevents new
+collaborator invocations; active work continues until stopped or killed, and teammates keep reading
+and posting human messages. There are no separate per-tool grants or approval policies within a
+channel. The setting lives in a pi session document. Watch metadata events carry it on every watch
+and every committed change, so open clients follow the owner immediately; the teammate composer
+holds an invoking draft instead of sending it while the switch is off.
 
 Local owner tokens and browser-origin checks authenticate local connections. Team-deployed
 services use `ACE_SECRET` to authenticate hosts and trust the participant identities those hosts
