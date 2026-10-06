@@ -25,7 +25,7 @@ type Props = {
 export function Conversation(
 	{ channel, chat: id, user, draft, onDraftLoaded, onSettings, onWork }: Props,
 ) {
-	const transcript = useTranscript(channel.id, id);
+	const transcript = useTranscript(channel.id, id, channel.state === "offline");
 	const chat = transcript.info?.chats.find((value) => value.id === id);
 	const model = chat?.model || channel.model;
 	const people = useSyncExternalStore(host.subscribe, () => host.people);

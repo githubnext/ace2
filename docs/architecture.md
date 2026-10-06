@@ -106,6 +106,13 @@ directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clien
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
 
+The app owns its transcript watches. A gateway or peer host relaying a watch reports its end with a
+failure frame after the accepted reply, whether it was released or its worker, hosted connection,
+or peer gateway closed; relays then drop it and never re-watch on their own. The app ignores the
+end of a watch it released, restarts others with a fresh replay and channel info, which wakes a
+killed channel's worker as reopening it would, and stops after three quick ends with an error.
+A rejected watch retries only when asked, or once when an offline channel's host becomes reachable.
+
 Workers clear the busy projection on startup and normal exit. Listings suppress it for archived
 or dormant channels, and check the worker PID as well as the socket path. A five-second host
 liveness sweep broadcasts when a crashed worker's busy projection becomes stale, without writing
