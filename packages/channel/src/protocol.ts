@@ -212,8 +212,11 @@ export type Event =
 		stopped?: boolean;
 	}
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
-	/** Channel-wide metadata, sent initially and whenever its name or summary changes. */
-	| ({ kind: "metadata"; chat: ChatId } & Metadata)
+	/**
+	 * Channel-wide metadata, sent initially and whenever its name, summary, or sharing changes.
+	 * `revision` covers only the name and summary. Older hosts omit `shared`.
+	 */
+	| ({ kind: "metadata"; chat: ChatId; shared?: boolean } & Metadata)
 	/** The replayed transcript has been sent; later events are live. */
 	| { kind: "live"; chat: ChatId };
 
