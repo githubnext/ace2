@@ -66,10 +66,11 @@ function useInvocation(shared: boolean | undefined, owner: boolean, mode: string
 	};
 }
 
+/** Below the composer: its attachment tray rises over the space above it and takes clicks there. */
 function Notice({ children, action }: { children: ReactNode; action?: ReactNode }) {
 	return (
 		<div
-			className="mb-2 flex items-center justify-between gap-3 px-3 text-xs text-muted-foreground"
+			className="mt-2 flex items-center justify-between gap-3 px-3 text-xs text-muted-foreground"
 			role="status"
 		>
 			<p>{children}</p>
@@ -228,17 +229,6 @@ export function Composer(
 
 	return (
 		<>
-			{refused
-				? <Refusal mode={mode} onChat={() => changeMode("chat")} />
-				: mode === "ace" && models?.length === 0 && (
-					<Notice
-						action={onSettings && (
-							<Button size="sm" variant="ghost" onClick={onSettings}>Provider settings</Button>
-						)}
-					>
-						{modelError || "Add a provider to use Ace. You can still send messages in Chat mode."}
-					</Notice>
-				)}
 			<ChatComposer
 				ref={composer}
 				accessory={accessory}
@@ -268,6 +258,17 @@ export function Composer(
 				clearOnSend={false}
 				onSend={({ doc, mode, attachments }) => void send(serialize(doc), mode, attachments)}
 			/>
+			{refused
+				? <Refusal mode={mode} onChat={() => changeMode("chat")} />
+				: mode === "ace" && models?.length === 0 && (
+					<Notice
+						action={onSettings && (
+							<Button size="sm" variant="ghost" onClick={onSettings}>Provider settings</Button>
+						)}
+					>
+						{modelError || "Add a provider to use Ace. You can still send messages in Chat mode."}
+					</Notice>
+				)}
 		</>
 	);
 }
