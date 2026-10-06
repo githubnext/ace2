@@ -65,7 +65,7 @@ export function browser(execute: Browser): Extension {
 			defineTool({
 				name: "browser_navigate",
 				description:
-					"Navigate one exact tab from browser_tabs to an absolute http or https URL. The browser identity and target are verified before dispatch; a replaced browser or closed tab is refused without trying another tab. completed means Chrome answered the navigation: status started (new document), same_document (for example a fragment change, without a loader ID), download, or failed with Chrome's error text. None of these mean the page finished loading; use browser_inspect afterwards. A navigation sent without a usable answer, including an interrupted one, is unknown and may still happen; inspect before deciding whether to navigate again.",
+					"Navigate one exact tab from browser_tabs to an absolute http or https URL. The browser identity and target are verified before dispatch; a replaced browser or closed tab is refused without trying another tab. completed means Chrome answered the navigation: status started (new document), same_document (for example a fragment change, without a loader ID), download, or failed with Chrome's error text. None of these mean the page finished loading; use browser_inspect afterwards. unknown means Ace cannot tell whether the navigation reached Chrome or what Chrome answered, for example after an interruption; it may or may not have happened, and may still happen. Inspect before deciding whether to navigate again.",
 				parameters: Type.Object({
 					target,
 					url: Type.String({ minLength: 1, maxLength: 4096 }),

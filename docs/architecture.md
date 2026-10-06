@@ -303,7 +303,7 @@ reconnects and refuses a replaced browser or closed tab instead of choosing anot
 title, or position. Inspection returns the main document's bounded accessibility tree and a viewport
 JPEG with loader IDs before and after, keeping partial evidence when one part fails. Navigation is
 unsafe and sequential: it reports Chrome's answer (started, same document, download, or failed)
-without claiming readiness, and an interrupted dispatch stays unknown. Hosted channels forward the
+without claiming readiness, and a navigation whose dispatch or answer is uncertain stays unknown. Hosted channels forward the
 capability to their workspace, and pi stores the result like any other tool output. See
 [browser tools](browser-tools.md) for setup, limits, and outcomes.
 
