@@ -122,12 +122,12 @@ find the client alongside Ace Helper automatically.
   effect. Modal processing can return `unknown` even while a dialog opens. Read current windows
   or menus before deciding what to do next; do not blindly repeat the command. The result contains
   its signed application receipt and native outcome, without an automatic screenshot or inventory.
-  External AX reads and all command delivery run off the GUI actor with finite per-element messaging
-  timeouts. Reading Ace's own menu requires its main thread; the same complete path/leaf validation
-  runs there, then only its retained leaf and original deadline pass to detached command delivery. Cancellation
-  keeps the native process lane until the actual C call returns; a timeout does not guarantee
-  prompt native return or undo an accepted command. While that lane is held, competing native
-  work may wait. No menu or dialog dismissal is automatic.
+  Commands targeting the native Ace process itself are unsupported and refused before input;
+  inspecting its menus remains available. External AX reads and command delivery run off the GUI
+  actor with finite per-element messaging timeouts. Cancellation keeps the native process lane
+  until the actual C call returns; a timeout does not guarantee prompt native return or undo an
+  accepted command. While that lane is held, competing native work may wait. No menu or dialog
+  dismissal is automatic.
 - `desktop_activate` brings a running application to the foreground using its `target` from
   `desktop_apps`. It can change the visible Space; it does not launch an app or select a window.
 - `desktop_quit` requests normal quit of one running application using its exact `target` from

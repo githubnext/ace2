@@ -207,9 +207,9 @@ synchronous and can delay GUI responsiveness or cancellation. Menu commands use 
 literal-array native operation: fresh bounded AX reads select one enabled leaf, followed by one
 press without opening ancestors or making a separate activation request; the app or macOS may
 bring it forward in response. The signed result binds the original
-application generation. Self-menu reads use the main thread required by AppKit, with identical
-complete validation; the retained leaf and original deadline pass to detached delivery. External
-reads stay detached. The existing process mutation lane remains held until the
+application generation. Commands targeting the native Ace process itself are unsupported and
+refused before input; its menu inventory remains available. Detached AX work retains the existing
+process mutation lane until the
 actual call returns, including after cancellation; ambiguous native timeout remains unsafe to
 repeat. Command delivery is distinct from its application effect, and no automatic follow-up
 observation changes that outcome.
