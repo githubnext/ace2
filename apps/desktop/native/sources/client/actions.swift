@@ -209,14 +209,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 			throw ActionError("This observation no longer belongs to the running desktop. Inspect the window again.")
 		}
 		let detection = try await client.getDetectionResult(snapshotId: request.snapshot)
-		guard let context = detection.metadata.windowContext,
-			let identity = context.windowMutationIdentity,
-			let bounds = context.windowBounds,
-			context.windowID == identity.windowID,
-			context.applicationProcessId == identity.ownerProcessIdentifier
-		else {
-			throw ActionError("This observation has no exact-window action target. Inspect the window again.")
-		}
+		let (context, identity, bounds) = try snapshotWindow(detection)
 		receipt = Receipt(
 			pid: identity.ownerProcessIdentifier,
 			window_id: identity.windowID,
@@ -264,12 +257,7 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		var drag: ExactWindowDragRequest?
 		if request.point != nil || request.op == .drag {
 			// Normalized coordinates survive host image resizing; authority stays in the bridge's capture.
-			let authority = try SnapshotTargetReceiptPlanner.assemble(
-				snapshotID: request.snapshot, detectionResult: detection
-			).receipt.requireCoordinateAuthority()
-			guard authority.target == window, let captured = authority.context.logicalBounds,
-				window.bounds.contains(captured), !detection.screenshotPath.isEmpty
-			else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
+			let authority = try coordinateAuthority(request.snapshot, detection, window: window)
 			point = try request.point?.mapped(in: authority)
 			if request.op == .drag {
 				// Drag validates the full capture receipt; coordinate authority intentionally omits focus.
@@ -383,6 +371,32 @@ func nativeAction(_ client: PeekabooBridgeClient) async throws -> Data {
 		// Unknown completion leaves the host's pending lease in place, including client death or response loss.
 	}
 	return try JSONEncoder().encode(ActionReply(data: result, target_receipt: receipt))
+}
+
+func snapshotWindow(
+	_ detection: ElementDetectionResult
+) throws -> (WindowContext, WindowMutationIdentity, CGRect) {
+	guard let context = detection.metadata.windowContext,
+		let identity = context.windowMutationIdentity,
+		let bounds = context.windowBounds,
+		context.windowID == identity.windowID,
+		context.applicationProcessId == identity.ownerProcessIdentifier
+	else {
+		throw ActionError("This observation has no exact-window action target. Inspect the window again.")
+	}
+	return (context, identity, bounds)
+}
+
+func coordinateAuthority(
+	_ snapshot: String, _ detection: ElementDetectionResult, window: UIAutomationTarget.ExactWindow
+) throws -> SnapshotTargetReceipt.CoordinateAuthority {
+	let authority = try SnapshotTargetReceiptPlanner.assemble(
+		snapshotID: snapshot, detectionResult: detection
+	).receipt.requireCoordinateAuthority()
+	guard authority.target == window, let captured = authority.context.logicalBounds,
+		window.bounds.contains(captured), !detection.screenshotPath.isEmpty
+	else { throw ActionError("This observation has no pixel-backed coordinate authority for its exact window.") }
+	return authority
 }
 
 private func readAction() throws -> ActionRequest {

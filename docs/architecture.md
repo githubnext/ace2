@@ -286,7 +286,8 @@ Explicitly read content enters ordinary tool history as observed data; no permis
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
-exact-target capture checks without publishing action authority; failed observations retain their
+exact-target capture checks and publishes a screenshot-only snapshot whose stored capture authorizes
+only coordinate input in that exact window; failed observations retain their
 error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
