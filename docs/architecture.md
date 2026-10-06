@@ -395,6 +395,21 @@ channels and proxies their requests; the peer that runs a channel stamps every a
 channel's host creates it; only the host's owner, from any of their machines, archives, deletes,
 or kills.
 
+Agents in one channel message another through their host. Each host serves an owner-only
+`host.sock` in its data directory, authenticated with the owner token: workers share their host's
+home but not its port, which `ace serve --port` and desktop profiles choose. A worker lists what the
+owner's app lists (this host's channels, reachable peers', and offline ones the directory names)
+with each channel's id, host, owner, state, and project. Messages go to a channel this host runs or
+are relayed once to the peer that runs it; a peer never forwards further. The destination host
+authors the message `agent.<source channel id>@<login>`, with its own owner's login or the one
+Tailscale verified for the relaying peer, so senders cannot choose who they appear to be and the
+source id is the reply address. A relaying peer asserts its source channel; only its login is
+authenticated, and its request ids are scoped to that login so one peer cannot claim another's. Such an author is never a channel's owner: a channel with sharing
+off accepts agent messages but not agent invocations. Requests are admitted and drained like other
+gateway requests. With no host serving the home, as in CLI-only use, workers reach only their own
+machine's channels and say so. A hosted channel is reached through its workspace host, so it is
+unreachable while that host is; hosted channels cannot send messages yet.
+
 ## Not yet built
 
 Terminals and previews, attachments, lobby cells, and external harnesses (Claude Code, Codex).

@@ -4,6 +4,9 @@ import { join } from "node:path";
 
 import type { Server, ServerWebSocket } from "bun";
 
+import type { Delivery } from "@ace/channel/protocol";
+
+import * as agents from "./agents";
 import * as auth from "./auth";
 import * as catalog from "./catalog";
 import { Connection } from "./client";
@@ -101,10 +104,54 @@ function listed(seen: Set<string>): Listing[] {
 		);
 }
 
-function listings(client: Client): Listing[] {
-	if (client.peer) return local();
+/** Every channel the owner can see: this host's, reachable peers', and offline ones the directory lists. */
+function visible(): Listing[] {
 	const reachable = [...local(), ...peers.listings()];
 	return [...reachable, ...listed(new Set(reachable.map((value) => value.id)))];
+}
+
+function listings(client: Client): Listing[] {
+	return client.peer ? local() : visible();
+}
+
+/** A local agent's message: to a channel this host runs, or relayed once to the peer that runs it. */
+async function route(from: string, delivery: Delivery): Promise<unknown> {
+	if (!catalog.owns(from)) throw new Error("Only this host's channels can send through it");
+	if (catalog.owns(delivery.channel)) {
+		return agents.receive({ login: catalog.user, relayed: false }, from, delivery);
+	}
+	const peer = peers.host(delivery.channel);
+	if (peer) {
+		const value = await peer.client.request({ op: "deliver", from, ...delivery });
+		// Hosts that predate agent delivery answer its unknown operation with nothing.
+		if (value === null) {
+			throw new Error(`${peer.machine.name} runs an Ace that cannot receive agent messages`);
+		}
+		agents.submitted(value);
+		return value;
+	}
+	const known = directory.read().channels.find((value) => value.id === delivery.channel);
+	if (known?.hosted) {
+		throw new Error(`${known.name} is hosted, and its workspace host ${known.host} is offline`);
+	}
+	if (known) throw new Error(`${known.name} is on ${known.host}, which is offline`);
+	throw new Error(`No reachable channel ${delivery.channel}`);
+}
+
+/**
+ * Local agents' requests share the gateway's admission: none while closing or pausing for an
+ * update, and those admitted drain before workers stop.
+ */
+function admit<T>(work: () => Promise<T>): Promise<T> {
+	if (closing) return Promise.reject(new Error("Ace Helper is shutting down"));
+	if (updating) {
+		return Promise.reject(new Error("Ace is pausing this machine's channels to install an update"));
+	}
+	const running = work();
+	const done = () => void pending.delete(running);
+	pending.add(running);
+	running.then(done, done);
+	return running;
 }
 
 const sockets = new Set<ServerWebSocket<Client>>();
@@ -414,6 +461,9 @@ async function handle(
 			const target = await remote(client, machine.name);
 			return target.channel(request.channel, request.request, watch, trace);
 		}
+		case "deliver":
+			if (!client.peer) throw new Error("Only peer hosts relay agent messages");
+			return agents.receive({ login: client.user, relayed: true }, request.from, request);
 		case "release": {
 			const open = client.channels.get(request.channel);
 			client.channels.delete(request.channel);
@@ -450,6 +500,7 @@ function websocket(): Bun.WebSocketHandler<Client> {
 				op: request.op,
 				...("channel" in request ? { channel: request.channel } : {}),
 				...(request.op === "channel" ? { request: request.request.op } : {}),
+				...(request.op === "deliver" ? { from: request.from, invoke: request.invoke } : {}),
 			};
 			// Listing and watching repeat constantly; everything else is a deliberate action.
 			const quiet = request.op === "channels" || request.op === "projects"
@@ -606,6 +657,11 @@ export async function serve(port: number): Promise<never> {
 	log("info", "host.start", { port: server.port, user: catalog.user, bun: Bun.version });
 	const servers = [server];
 	const cleanup: (() => void)[] = [];
+	// Bound until workers stop: a missing socket would send workers to their CLI-only fallback.
+	const unlisten = await agents.listen({
+		channels: () => admit(async () => visible()),
+		deliver: (from, delivery) => admit(() => route(from, delivery)),
+	});
 	async function stop() {
 		if (closing) return;
 		closing = true;
@@ -619,6 +675,7 @@ export async function serve(port: number): Promise<never> {
 				log("error", "host.shutdown.failed", failure(result.reason));
 			}
 		}
+		unlisten();
 		process.exit(results.some((result) => result.status === "rejected") ? 1 : 0);
 	}
 	process.on("SIGTERM", () => void stop());
