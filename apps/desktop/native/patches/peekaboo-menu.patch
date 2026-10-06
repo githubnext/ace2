@@ -170,7 +170,7 @@ index 000000000..ee69c742b
 +    }
 +}
 +
-+/// Worker-local raw AX state; no AXorcist or GUI-actor state crosses this boundary.
++/// Operation-local raw AX state; mutable readers never cross threads.
 +private final class MenuCommandRead {
 +    let request: MenuCommandRequest
 +    let cancelled: OSAllocatedUnfairLock<Bool>
