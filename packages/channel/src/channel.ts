@@ -45,11 +45,14 @@ import type {
 } from "./protocol";
 import * as room from "./room";
 
-const SettingsDoc = defineDoc<{ shared: boolean }>({
+type Settings = { shared: boolean; desktop: boolean };
+
+const SettingsDoc = defineDoc<Settings>({
 	kind: "ace.settings",
-	version: 1,
+	version: 2,
 	scope: "session",
-	initial: () => ({ shared: true }),
+	initial: () => ({ shared: true, desktop: true }),
+	migrate: (value) => ({ shared: value.shared as boolean, desktop: true }),
 });
 
 /** Inactivity is measured in hours, so activity is published at most this often. */
@@ -90,8 +93,8 @@ export class Channel {
 	#harness: Harness;
 	#log: Log;
 	#metadata: Metadata;
-	/** Committed `SettingsDoc.shared`, maintained from pi's commit stream. */
-	#shared: boolean;
+	/** Committed settings, maintained from pi's commit stream before native dispatch. */
+	#settings: Settings;
 	#active = 0;
 	#runs = new Set<ConversationId>();
 	#publishedBusy?: boolean;
@@ -104,13 +107,13 @@ export class Channel {
 		harness: Harness,
 		log: Log,
 		value: Metadata,
-		shared: boolean,
+		settings: Settings,
 	) {
 		this.#options = options;
 		this.#harness = harness;
 		this.#log = log;
 		this.#metadata = value;
-		this.#shared = shared;
+		this.#settings = settings;
 	}
 
 	static async open(options: Options): Promise<Channel> {
@@ -119,7 +122,21 @@ export class Channel {
 		const registry = createRegistry();
 		registry.install(logging(log));
 		registry.install(CodingTools);
-		if (options.desktop) registry.install(desktop(options.desktop));
+		const execute = options.desktop;
+		if (execute) {
+			registry.install(desktop(async (request, context) => {
+				// Check every dispatch, including child chats and calls from already-active runs.
+				if (!channel.#settings.desktop) {
+					return {
+						text:
+							"Native desktop tools are disabled for this channel by its owner. No desktop operation was dispatched.",
+						isError: true,
+						outcome: "refused",
+					};
+				}
+				return execute(request, context);
+			}));
+		}
 		registry.install(lanes({ ...options, name: options.prefix || options.name }));
 		registry.install(Subagent);
 		registry.install(metadata((value) => channel.#changed(value)));
@@ -144,7 +161,13 @@ export class Channel {
 			return { name: doc.name, summary: doc.summary, revision: doc.revision };
 		}, context);
 		const settings = await harness.snapshot(SettingsDoc, context);
-		channel = new Channel(options, harness, log, value, settings?.shared ?? true);
+		channel = new Channel(
+			options,
+			harness,
+			log,
+			value,
+			settings || SettingsDoc.definition.initial(),
+		);
 		channel.#changed(value);
 		// Scheduling has not resumed and no caller has this channel yet, so the initial snapshot
 		// and subscription cannot miss a run transition. LiveDoc forks start empty in pi.
@@ -154,7 +177,7 @@ export class Channel {
 				if (change.type !== "document") continue;
 				// Commit order, not request completion order, decides the state clients see.
 				if (change.record.kind === SettingsDoc.definition.kind) {
-					channel.#shared = (change.value as { shared: boolean }).shared;
+					channel.#settings = change.value as Settings;
 					channel.#broadcast();
 					continue;
 				}
@@ -219,6 +242,8 @@ export class Channel {
 				return this.kill();
 			case "share":
 				return this.#share(request);
+			case "desktop":
+				return this.#desktop(request);
 			case "rename":
 				return this.#rename(request);
 			case "watch":
@@ -276,7 +301,7 @@ export class Channel {
 			if (lane) chat.lane = lane;
 			return chat;
 		}));
-		return { id, name, summary, revision, project, owner, shared: this.#shared, chats };
+		return { id, name, summary, revision, project, owner, ...this.#settings, chats };
 	}
 
 	/** The newest response's own token count; providers report what that request carried. */
@@ -478,6 +503,16 @@ export class Channel {
 		}, context);
 	}
 
+	async #desktop(request: Extract<Request, { op: "desktop" }>) {
+		if (request.author !== this.#options.owner) {
+			throw new Error("Only the owner can change desktop tools access");
+		}
+		if (typeof request.enabled !== "boolean") throw new Error("enabled must be a boolean");
+		await this.#harness.commit(async (tx) => {
+			(await tx.doc(SettingsDoc)).desktop = request.enabled;
+		}, context);
+	}
+
 	async #rename(request: Extract<Request, { op: "rename" }>): Promise<Metadata> {
 		if (request.author !== this.#options.owner) {
 			throw new Error("Only the owner can rename the channel");
@@ -517,7 +552,7 @@ export class Channel {
 	}
 
 	#event(chat: ChatId): Event {
-		return { kind: "metadata", chat, ...this.#metadata, shared: this.#shared };
+		return { kind: "metadata", chat, ...this.#metadata, ...this.#settings };
 	}
 
 	#activity(): void {

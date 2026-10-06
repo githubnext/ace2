@@ -50,14 +50,6 @@ export type SessionDetailsViewProps = {
 	subagents?: DetailsSubagent[];
 	links?: DetailsLink[];
 	facts?: DetailsFact[];
-	/** Whether teammates may invoke the channel's agents; absent while unknown. */
-	shared?: boolean;
-	/** Given only to the owner, who alone can change `shared`. */
-	onSharedChange?: (shared: boolean) => void;
-	/** A sharing change is in flight. */
-	sharing?: boolean;
-	/** Replaces the explanation under a read-only sharing state. */
-	sharedNote?: string;
 	onDiff?: () => void;
 	onClose: () => void;
 };
@@ -149,44 +141,6 @@ function Changes(
 	);
 }
 
-function Sharing(
-	{ shared, onChange, pending, note }: {
-		shared: boolean;
-		onChange?: (shared: boolean) => void;
-		pending?: boolean;
-		note?: string;
-	},
-) {
-	return (
-		<Section title="Agents">
-			{onChange
-				? (
-					<label className="flex min-w-0 items-center gap-2 py-1 text-sm">
-						<input
-							type="checkbox"
-							checked={shared}
-							disabled={pending}
-							onChange={(event) => onChange(event.target.checked)}
-						/>
-						Allow teammates to invoke agents
-					</label>
-				)
-				: (
-					<p className="py-1 text-sm">
-						{shared ? "Teammates can invoke agents" : "Only the owner can invoke agents"}
-					</p>
-				)}
-			<p className="text-xs leading-snug text-muted-foreground">
-				{note || (onChange
-					? "Turning this off blocks new teammate invocations. Teammates still see the channel and can chat, and active work continues until stopped."
-					: shared
-					? "Invoked agents can use all of their tools."
-					: "You can still read and chat here. Active work continues until stopped.")}
-			</p>
-		</Section>
-	);
-}
-
 function checkSummary(checks: DetailsCheck[]): [Icon, string, string] | undefined {
 	const counted = checks.filter((check) => check.state !== "skipped");
 	if (!counted.length) return;
@@ -254,10 +208,6 @@ export function SessionDetailsView(
 		subagents,
 		links,
 		facts,
-		shared,
-		onSharedChange,
-		sharing,
-		sharedNote,
 		onDiff,
 		onClose,
 	}: SessionDetailsViewProps,
@@ -353,10 +303,6 @@ export function SessionDetailsView(
 						</button>
 					)}
 				</Section>
-			)}
-
-			{shared !== undefined && (
-				<Sharing shared={shared} onChange={onSharedChange} pending={sharing} note={sharedNote} />
 			)}
 
 			{facts && facts.length > 0 && (

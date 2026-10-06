@@ -41,6 +41,7 @@ export type Transcript = {
 	live: boolean;
 	/** Whether teammates may invoke agents, from the newest metadata event that reported it. */
 	shared?: boolean;
+	desktop?: boolean;
 };
 
 const EMPTY: Transcript = { items: [], draft: "", busy: false, live: false };
@@ -121,10 +122,13 @@ export function apply(state: Transcript, event: Event): Transcript {
 			return { ...state, busy: event.state === "start", draft: "" };
 		case "live":
 			return { ...state, live: true };
-		case "metadata":
-			return event.shared === undefined || event.shared === state.shared
+		case "metadata": {
+			const shared = event.shared ?? state.shared;
+			const desktop = event.desktop ?? state.desktop;
+			return shared === state.shared && desktop === state.desktop
 				? state
-				: { ...state, shared: event.shared };
+				: { ...state, shared, desktop };
+		}
 	}
 }
 
@@ -177,6 +181,8 @@ export function useTranscript(channel: string | undefined, chat?: number) {
 		...state,
 		shared,
 		sharedLive,
+		desktop: state.desktop ?? info?.desktop,
+		desktopLive: state.desktop !== undefined,
 		info,
 		error,
 		retry: () => setAttempt((value) => value + 1),

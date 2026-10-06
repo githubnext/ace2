@@ -61,9 +61,17 @@ export function Conversation(
 	// Replay delivers one event at a time; the sidebar reads the transcript once it is complete.
 	const items = transcript.live ? transcript.items : undefined;
 	useEffect(() => {
-		const { info, shared, sharedLive } = transcript;
-		publish(channel.id, { info, items, shared, sharedLive });
-	}, [channel.id, transcript.info, items, transcript.shared, transcript.sharedLive]);
+		const { info, shared, sharedLive, desktop, desktopLive } = transcript;
+		publish(channel.id, { info, items, shared, sharedLive, desktop, desktopLive });
+	}, [
+		channel.id,
+		transcript.info,
+		items,
+		transcript.shared,
+		transcript.sharedLive,
+		transcript.desktop,
+		transcript.desktopLive,
+	]);
 
 	useEffect(() => {
 		if (transcript.live) onWork?.();

@@ -63,6 +63,7 @@ import {
 	MessageCircle,
 	MessageSquareShare,
 	Mic,
+	Monitor,
 	Music,
 	PaintBucket,
 	PanelLeft,
@@ -165,6 +166,7 @@ export const IconLock = outline(Lock);
 export const IconMerge = outline(GitMerge);
 export const IconMessage = outline(MessageCircle);
 export const IconMessageForward = outline(MessageSquareShare);
+export const IconMonitor = outline(Monitor);
 export const IconMusic = outline(Music);
 export const IconPaintBucket = outline(PaintBucket);
 export const IconPencil = outline(Pencil);

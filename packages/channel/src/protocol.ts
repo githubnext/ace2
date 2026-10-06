@@ -31,6 +31,8 @@ export type ChannelInfo = Metadata & {
 	owner: string;
 	/** Whether participants other than the owner may invoke agents. */
 	shared: boolean;
+	/** Channel-wide native desktop tools gate, including the owner's agents and child chats. */
+	desktop: boolean;
 	chats: Chat[];
 };
 
@@ -159,6 +161,7 @@ export type Request =
 	| { op: "stop"; chat?: ChatId }
 	| { op: "kill" }
 	| { op: "share"; author: string; shared: boolean }
+	| { op: "desktop"; author: string; enabled: boolean }
 	| { op: "rename"; author: string; name: string }
 	/** Resolve once the answer to a submission is placed: "done", or "unanswered" when stopped or killed. */
 	| { op: "wait"; submission: number }
@@ -213,10 +216,11 @@ export type Event =
 	}
 	| { kind: "run"; chat: ChatId; state: "start" | "end" }
 	/**
-	 * Channel-wide metadata, sent initially and whenever its name, summary, or sharing changes.
-	 * `revision` covers only the name and summary. Older hosts omit `shared`.
+	 * Channel-wide metadata, sent initially and whenever its name, summary, or settings change.
+	 * `revision` covers only the name and summary. Older hosts omit `shared` and `desktop`;
+	 * missing settings do not establish support for changing them.
 	 */
-	| ({ kind: "metadata"; chat: ChatId; shared?: boolean } & Metadata)
+	| ({ kind: "metadata"; chat: ChatId; shared?: boolean; desktop?: boolean } & Metadata)
 	/** The replayed transcript has been sent; later events are live. */
 	| { kind: "live"; chat: ChatId };
 

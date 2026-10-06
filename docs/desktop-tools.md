@@ -350,10 +350,22 @@ or uncertain result, inspect the target before deciding whether another action i
 
 ## Team and execution
 
-The [tailnet is the team](architecture.md#the-team). The existing collaborator-agent switch
-controls access to all available agent tools together, including desktop actions. Desktop tools
-have no separate participant roles, allowlists, or per-call approval flow in Ace.
-macOS permissions authorize Ace on the machine.
+The [tailnet is the team](architecture.md#the-team). The collaborator-agent switch controls new
+collaborator invocations, not the owner's invocations or already-active work. A separate
+owner-controlled desktop-tools setting gates every native desktop dispatch in this channel,
+including reads, clipboard operations, owner runs, other chats, and subagents. Both settings
+start enabled; existing channels retain their sharing choice and gain enabled desktop tools.
+
+Turning desktop tools off refuses subsequent calls before the injected desktop capability runs;
+it does not cancel or undo an operation already dispatched. Non-desktop tools remain available.
+This is not a shell security sandbox: agents run as the host's user, and shell commands can still
+access that user's environment. Desktop tools have no separate participant roles, allowlists,
+or per-call approval flow in Ace. macOS permissions authorize Ace on the machine.
+
+Clients change this setting with owner-only `{ op: "desktop", author, enabled: boolean }`.
+`info` and every metadata watch event expose `desktop: boolean`, independent of `shared`;
+older hosts omit it, which clients treat as enabled. A refused call reports an error with
+`outcome: "refused"` and does not reach the local native client or hosted workspace forwarding.
 
 A local channel operates its host's desktop. A hosted channel sends desktop calls to its workspace
 host through the existing workspace connection. Opening the chat on another device does not

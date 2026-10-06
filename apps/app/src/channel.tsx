@@ -8,10 +8,10 @@ import {
 	type DetailsSubagent,
 	SessionDetailsView,
 	Sidebar,
-	toast,
 	useLayoutRight,
 } from "@ace/ui";
 
+import { ChannelAccess } from "./channel-access";
 import { Conversation } from "./conversation";
 import { forget, publish, useDetails } from "./details";
 import { host } from "./host";
@@ -140,19 +140,10 @@ function usePull(
 	return pull && pull.key === key ? pull.value : undefined;
 }
 
-export function ChannelDetails({ channel, user }: { channel: Listing; user: string }) {
+export function ChannelDetails({ channel }: { channel: Listing }) {
 	const right = useLayoutRight();
 	const details = useDetails(channel.id);
-	const { changes, info, items, shared, sharedLive } = details;
-	const [sharing, setSharing] = useState(false);
-	// The channel's watch reports the committed value; the checkbox follows that, not the request.
-	const share = (value: boolean) => {
-		setSharing(true);
-		host.channel(channel.id, { op: "share", author: user, shared: value }).catch(
-			(error: Error) =>
-				toast.error("Could not change agent access", { description: error.message }),
-		).finally(() => setSharing(false));
-	};
+	const { changes, info, items } = details;
 	const busy = !!info?.chats.find((value) => value.id === chat)?.busy;
 	const pull = usePull(channel.repo, changes?.branch, changes?.head, right.open);
 	const totals = useMemo(() => {
@@ -183,12 +174,6 @@ export function ChannelDetails({ channel, user }: { channel: Listing; user: stri
 				subagents={agents}
 				links={mentioned?.filter((link) => link.url !== pull?.url)}
 				facts={facts(channel, info)}
-				shared={shared}
-				onSharedChange={channel.owner === user && sharedLive ? share : undefined}
-				sharedNote={channel.owner === user && !sharedLive
-					? `Update Ace on ${channel.host} to change this here.`
-					: undefined}
-				sharing={sharing}
 				onDiff={details.diff}
 				onClose={() => right.setOpen(false)}
 			/>
@@ -236,6 +221,7 @@ export function Channel({ channel, user, remote, draft, onDraftLoaded, onSetting
 			chat={chat}
 			changed={changed}
 			opener={opener}
+			actions={<ChannelAccess channel={channel} user={user} />}
 			render={(data, uid, active, update) => {
 				if (uid === CHAT) {
 					return (

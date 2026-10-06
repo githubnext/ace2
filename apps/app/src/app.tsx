@@ -527,7 +527,7 @@ export function App() {
 								</div>
 							)}
 					</Main>
-					{page === "channels" && channel && <ChannelDetails channel={channel} user={hello.user} />}
+					{page === "channels" && channel && <ChannelDetails channel={channel} />}
 				</Layout>
 				{adding && <OpenProject onOpen={open} onClose={() => setAdding(false)} />}
 				{renaming && (
