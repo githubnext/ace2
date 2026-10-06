@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { constants, existsSync } from "node:fs";
+import { lstat, mkdtemp, open, readFile, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { promisify } from "node:util";
@@ -14,7 +14,11 @@ import {
 	DESKTOP_MODIFIERS,
 	DESKTOP_SELECTIONS,
 	type DesktopAction,
+	type DesktopApplication,
+	type DesktopAppTarget,
+	type DesktopLaunch,
 	type DesktopManagement,
+	type DesktopOpen,
 	type DesktopOutcome,
 	type DesktopRequest,
 	type DesktopResult,
@@ -28,6 +32,7 @@ const exec = promisify(execFile);
 const MAX_TEXT = 32_000;
 const MAX_IMAGE = 900_000;
 const MAX_OUTPUT = 2_000_000;
+const MAX_CLIPBOARD_IMAGE = 10 * 1024 * 1024;
 
 type Reply = {
 	success: boolean;
@@ -111,7 +116,9 @@ async function native(
 		const error = value.error;
 		const reason = error ? `${error.code}: ${error.message}` : "Native desktop operation failed";
 		const permission = error?.code.toLowerCase().includes("permission")
-			? " Check Ace's Accessibility and Screen Recording access in Ace Settings."
+			? args[0] === "clipboard"
+				? " Check Ace's clipboard read status in This Mac and its clipboard access in macOS Settings."
+				: " Check Ace's Accessibility and Screen Recording access in Ace Settings."
 			: "";
 		throw new NativeError(error?.code || "DESKTOP_ERROR", `${reason}.${permission}`);
 	}
@@ -199,6 +206,63 @@ async function screenshot(input: string, output: string, signal: AbortSignal) {
 		return { image: { mimeType: "image/jpeg", data: bytes.toString("base64") }, width, height };
 	}
 	throw new Error("The screenshot could not be resized within the result limit.");
+}
+
+function clipboardFiles(data: Record<string, unknown>): DesktopResult {
+	const files = data.files;
+	if (
+		typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
+		|| (data.present
+			? !Array.isArray(files) || !files.length || files.length > 32
+				|| files.some((file) =>
+					!file || typeof file.url !== "string" || typeof file.path !== "string"
+					|| !file.path.startsWith("/")
+				)
+			: files !== undefined)
+	) throw new Error("The native clipboard file read returned an unsupported response.");
+	const text = JSON.stringify(data);
+	if (Buffer.byteLength(text) > 24_000) {
+		throw new Error("Clipboard file references exceed the complete 24 KB result limit.");
+	}
+	return { text };
+}
+
+function clipboardImage(data: Record<string, unknown>): DesktopResult {
+	if (typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)) {
+		throw new Error("The native clipboard image read returned an unsupported response.");
+	}
+	if (!data.present) {
+		if (data.image !== undefined || data.source !== undefined) {
+			throw new Error("An absent clipboard image returned unexpected image data.");
+		}
+		return { text: JSON.stringify(data) };
+	}
+	const preview = data.image as Record<string, unknown> | undefined;
+	const source = data.source as Record<string, unknown> | undefined;
+	if (
+		!preview || !source || typeof preview.data !== "string"
+		|| !["image/png", "image/jpeg"].includes(String(preview.mimeType))
+		|| ![preview.width, preview.height].every((value) =>
+			typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= 1600
+		)
+		|| preview.data.length > Math.ceil(MAX_IMAGE / 3) * 4
+	) throw new Error("The native clipboard image preview is missing or exceeds its limits.");
+	const bytes = Buffer.from(preview.data, "base64");
+	if (
+		!bytes.length || bytes.length > MAX_IMAGE || bytes.length !== preview.bytes
+		|| bytes.toString("base64") !== preview.data
+	) throw new Error("The native clipboard image preview is not a complete bounded image.");
+	const { data: encoded, ...metadata } = preview;
+	const text = JSON.stringify({
+		present: true,
+		change_count: data.change_count,
+		source,
+		preview: metadata,
+	});
+	if (Buffer.byteLength(text) > MAX_TEXT) {
+		throw new Error("The clipboard image metadata exceeds the result limit.");
+	}
+	return { text, image: { mimeType: preview.mimeType as string, data: encoded as string } };
 }
 
 async function inspect(
@@ -315,8 +379,95 @@ async function availability(
 	}
 }
 
+function validateApplication(application: DesktopApplication) {
+	if (!application || typeof application !== "object" || Object.keys(application).length !== 1) {
+		throw new Error("Use exactly one application path or bundle_id.");
+	}
+	if ("path" in application) {
+		const path = application.path;
+		if (
+			typeof path !== "string" || path.length > 4096 || !path.startsWith("/")
+			|| !path.toLowerCase().endsWith(".app") || path.includes("\0")
+		) throw new Error("Use an absolute .app path for launch.");
+	} else if (
+		!("bundle_id" in application) || typeof application.bundle_id !== "string"
+		|| application.bundle_id.length > 256
+		|| !/^[A-Za-z0-9.-]+$/.test(application.bundle_id)
+	) throw new Error("Use an exact application bundle ID for launch.");
+}
+
 function validateAction(request: DesktopAction) {
+	if (request.op === "launch") {
+		if (Object.keys(request).some((key) => !["op", "application"].includes(key))) {
+			throw new Error("Launch accepts exactly one application path or bundle_id.");
+		}
+		validateApplication(request.application);
+		return;
+	}
+	if (request.op === "open") {
+		const item = request.item;
+		if (
+			Object.keys(request).some((key) => !["op", "item", "application"].includes(key))
+			|| !item || typeof item !== "object" || Object.keys(item).length !== 1
+		) throw new Error("Open accepts exactly one item path or url and an optional application.");
+		if ("path" in item) {
+			if (
+				typeof item.path !== "string" || item.path.length > 4096
+				|| !item.path.startsWith("/") || item.path.includes("\0")
+			) throw new Error("Use an existing absolute item path.");
+		} else if (
+			!("url" in item) || typeof item.url !== "string" || item.url.length > 4096
+			|| !/^[A-Za-z][A-Za-z0-9+.-]*:/.test(item.url)
+			|| /\p{Cc}/u.test(item.url)
+		) {
+			throw new Error(
+				"Use a complete absolute URL with an explicit scheme and no control characters.",
+			);
+		}
+		if (request.application !== undefined) validateApplication(request.application);
+		if (Buffer.byteLength(JSON.stringify(request)) > 16_384) {
+			throw new Error("The open request exceeds 16 KiB.");
+		}
+		return;
+	}
+	if (request.op === "menu") {
+		validateAppOnly(request.target);
+		validateMenuPath(request.path);
+		if (Buffer.byteLength(JSON.stringify(request)) > 4096) {
+			throw new Error("Menu request exceeds the 4096-byte limit.");
+		}
+		return;
+	}
 	if (isDesktopManagement(request)) return validateManagement(request);
+	if (request.op === "clipboard-write") {
+		if ("format" in request) {
+			if (request.format === "files") {
+				if (
+					"text" in request || "path" in request || !Array.isArray(request.paths)
+					|| !request.paths.length || request.paths.length > 32
+					|| request.paths.some((path) =>
+						typeof path !== "string" || !path.startsWith("/") || path.length > 4096
+						|| path.includes("\0")
+					)
+				) throw new Error("Use format files with 1–32 absolute paths and no text or image path.");
+				return;
+			}
+			if (
+				request.format !== "image" || "text" in request || "paths" in request
+				|| typeof request.path !== "string"
+				|| !request.path.startsWith("/") || request.path.length > 4096
+				|| request.path.includes("\0")
+			) throw new Error("Use format image with one absolute image path and no text.");
+			return;
+		}
+		if (
+			"path" in request || "paths" in request || typeof request.text !== "string"
+			|| request.text.length > 8192
+		) {
+			throw new Error("Clipboard text must contain at most 8192 UTF-16 code units.");
+		}
+		return;
+	}
 	if (typeof request.snapshot !== "string" || !request.snapshot || request.snapshot.length > 256) {
 		throw new Error("Use the snapshot_id from a fresh desktop_inspect result.");
 	}
@@ -401,8 +552,18 @@ function validateAction(request: DesktopAction) {
 	}
 }
 
-function validateManagement(request: DesktopManagement) {
-	const target = request.target;
+function validateMenuPath(path: unknown) {
+	if (
+		!Array.isArray(path) || !path.length || path.length > 8
+		|| path.some((title) => typeof title !== "string" || !title.trim() || title.length > 512)
+	) {
+		throw new Error(
+			"Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.",
+		);
+	}
+}
+
+function validateAppTarget(target: DesktopAppTarget) {
 	if (
 		!target || typeof target !== "object" || !Number.isInteger(target.pid)
 		|| target.pid < 1 || target.pid > 2_147_483_647
@@ -410,14 +571,22 @@ function validateManagement(request: DesktopManagement) {
 		|| !/^[1-9][0-9]{0,19}$/.test(target.process_start_identity_decimal)
 		|| BigInt(target.process_start_identity_decimal) > 18_446_744_073_709_551_615n
 	) throw new Error("Pass the application's target object from fresh desktop inventory unchanged.");
-	if (request.op === "activate") {
-		if (
-			Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))
-		) {
-			throw new Error("Activation takes an application target from desktop_apps.");
-		}
+}
+
+function validateAppOnly(target: DesktopAppTarget) {
+	validateAppTarget(target);
+	if (Object.keys(target).some((key) => !["pid", "process_start_identity_decimal"].includes(key))) {
+		throw new Error("Pass only the application's target object from desktop_apps.");
+	}
+}
+
+function validateManagement(request: DesktopManagement) {
+	const target = request.target;
+	if (request.op === "activate" || request.op === "quit") {
+		validateAppOnly(target);
 		return;
 	}
+	validateAppTarget(target);
 	const window = request.target;
 	if (
 		!Number.isInteger(window.window_id) || window.window_id < 1 || window.window_id > 4_294_967_295
@@ -457,6 +626,7 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 			action: {
 				outcome,
 				target_receipt: data.target_receipt,
+				terminated: data.terminated,
 				clipboard_changed: data.clipboard_changed,
 				clipboard_cleanup: data.clipboard_cleanup,
 				clipboard_ownership: data.clipboard_ownership,
@@ -468,13 +638,78 @@ function actionResult(data: Record<string, unknown>, outcome: DesktopOutcome): D
 	return { text, outcome, isError: outcome !== "completed" };
 }
 
+async function clipboardImageInput(path: string, signal: AbortSignal): Promise<string> {
+	signal.throwIfAborted();
+	// Nonblocking open prevents a named pipe from waiting before its regular-file check.
+	const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
+	try {
+		signal.throwIfAborted();
+		const before = await file.stat({ bigint: true });
+		if (!before.isFile() || before.size <= 0n || before.size > BigInt(MAX_CLIPBOARD_IMAGE)) {
+			throw new Error("Clipboard images require a nonempty regular file of at most 10 MiB.");
+		}
+		const bytes = Buffer.alloc(Number(before.size) + 1);
+		let size = 0;
+		while (size < bytes.length) {
+			signal.throwIfAborted();
+			const read = await file.read(bytes, size, bytes.length - size, size);
+			if (!read.bytesRead) break;
+			size += read.bytesRead;
+		}
+		const after = await file.stat({ bigint: true });
+		signal.throwIfAborted();
+		if (
+			size !== Number(before.size) || after.size !== before.size
+			|| after.mtimeNs !== before.mtimeNs || after.ctimeNs !== before.ctimeNs
+		) {
+			throw new Error(
+				"The image file changed while being read; choose a stable file before writing.",
+			);
+		}
+		return bytes.subarray(0, size).toString("base64");
+	} finally {
+		await file.close();
+	}
+}
+
 async function act(request: DesktopAction, signal: AbortSignal): Promise<DesktopResult> {
 	let dispatched = false;
 	let data: Record<string, unknown>;
 	try {
 		validateAction(request);
-		data = await native([isDesktopManagement(request) ? "management" : "action"], signal, {
-			input: JSON.stringify(request),
+		if (request.op === "clipboard-write" && "format" in request && request.format === "files") {
+			for (const path of request.paths) {
+				signal.throwIfAborted();
+				const entry = await lstat(path);
+				if (!entry.isFile() && !entry.isDirectory() && !entry.isSymbolicLink()) {
+					throw new Error(
+						"Clipboard file references require existing files, directories, or symbolic links.",
+					);
+				}
+			}
+			signal.throwIfAborted();
+		}
+		const input =
+			request.op === "clipboard-write" && "format" in request && request.format === "image"
+				? {
+					op: request.op,
+					format: request.format,
+					image: await clipboardImageInput(request.path, signal),
+				}
+				: request;
+		const operation = request.op === "menu"
+			? "menu"
+			: request.op === "clipboard-write"
+			? "clipboard"
+			: request.op === "launch"
+			? "launch"
+			: request.op === "open"
+			? "open"
+			: isDesktopManagement(request)
+			? "management"
+			: "action";
+		data = await native([operation], signal, {
+			input: JSON.stringify(input),
 			onDispatch() {
 				dispatched = true;
 			},
@@ -487,14 +722,46 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		return actionResult({
 			outcome,
 			reason: (error instanceof Error ? error.message : String(error)).slice(0, 2000),
-			message: dispatched
+			message: dispatched && request.op === "launch"
+				? "The launch may still finish and open the app later. Observe desktop_apps before any further action; do not blindly repeat the launch."
+				: dispatched && request.op === "open"
+				? "The item may still open later. Observe desktop_apps before any further action; do not blindly repeat the open."
+				: dispatched
 				? "The desktop action may have partially run. Inspect the current state before retrying. Stopping does not undo input already delivered."
 				: "The desktop action was not sent to the native desktop.",
 		}, outcome);
 	}
 	const outcome = data.outcome as DesktopOutcome;
-	if (outcome !== "completed") return actionResult(data, outcome);
-	if (isDesktopManagement(request)) return await observeManagement(request, data, signal);
+	if (request.op === "menu") {
+		const receipt = data.target_receipt as Reply["target_receipt"];
+		if (
+			(outcome === "completed" || receipt) && (!receipt || receipt.window_id !== undefined
+				|| receipt.pid !== request.target.pid
+				|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal)
+		) {
+			return actionResult({
+				...data,
+				outcome: "unknown",
+				receipt_error:
+					"The menu command returned a different application receipt. Observe the intended app before any further action.",
+			}, "unknown");
+		}
+		return actionResult(data, outcome);
+	}
+
+	if (
+		outcome === "unknown"
+		&& ((request.op === "quit" && data.terminated === false)
+			|| (request.op === "close" && data.target_receipt))
+	) {
+		return await observeManagement(request, data, signal);
+	}
+	if (outcome !== "completed" || request.op === "clipboard-write") {
+		return actionResult(data, outcome);
+	}
+	if (isDesktopManagement(request) || request.op === "launch" || request.op === "open") {
+		return await observeManagement(request, data, signal);
+	}
 	// Observation is separate from delivery: its failure must not turn completed input into a retry.
 	try {
 		const receipt = data.target_receipt as Reply["target_receipt"];
@@ -536,16 +803,21 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 }
 
 async function observeManagement(
-	request: DesktopManagement,
+	request: DesktopManagement | DesktopLaunch | DesktopOpen,
 	action: Record<string, unknown>,
 	signal: AbortSignal,
 ): Promise<DesktopResult> {
 	const data: Record<string, unknown> = { action };
+	const outcome = action.outcome === "unknown" ? "unknown" : "completed";
 	const receipt = action.target_receipt as Reply["target_receipt"];
+	const target = request.op === "launch" || request.op === "open"
+		? (action.application as { target?: DesktopAppTarget } | undefined)?.target
+		: request.target;
 	if (
-		!receipt || receipt.pid !== request.target.pid
-		|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal
-		|| (request.op === "activate"
+		!receipt || !target || receipt.pid !== target.pid
+		|| receipt.process_start_identity_decimal !== target.process_start_identity_decimal
+		|| (request.op === "activate" || request.op === "quit" || request.op === "launch"
+				|| request.op === "open"
 			? receipt.window_id !== undefined
 			: receipt.window_id !== request.target.window_id)
 	) {
@@ -563,6 +835,10 @@ async function observeManagement(
 		data.application_inventory_warnings = apps.inventory_warnings;
 		const app = apps.apps.find((app) => app.pid === receipt.pid);
 		data.application = app || null;
+		// The native receipt owns close/quit evidence; later inventory cannot undo or establish it.
+		if (!app && (request.op === "quit" || request.op === "close")) {
+			return managementResult(data, action, outcome);
+		}
 		if (!app) throw new Error("The target application was not returned by the later inventory.");
 		if (app.process_start_identity_decimal !== receipt.process_start_identity_decimal) {
 			throw new Error("The application changed process generation after the action.");
@@ -581,12 +857,18 @@ async function observeManagement(
 				"Later window inventory could not be bound to the original application generation.",
 			);
 		}
-		if (request.op === "activate") {
-			return managementResult(data, action);
+		if (
+			request.op === "activate" || request.op === "quit" || request.op === "launch"
+			|| request.op === "open"
+			|| request.op === "close"
+		) {
+			return managementResult(data, action, outcome);
 		}
 		if (!windows.windows.some((window) => window.window_id === receipt.window_id)) {
 			throw new Error("The exact window was not returned by the later inventory.");
 		}
+		// Minimization intentionally removes the visible capture target; refreshed inventory owns its state.
+		if (request.op === "minimize") return managementResult(data, action);
 		const observation = await inspect({
 			op: "inspect",
 			pid: receipt.pid,
@@ -614,29 +896,31 @@ async function observeManagement(
 			0,
 			2000,
 		);
-		data.message =
-			"The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly.";
-		return managementResult(data, action);
+		data.message = outcome === "completed"
+			? "The native action completed. Later inventory or inspection was unavailable; refresh the target before any further action, without repeating the completed action blindly."
+			: "Native completion was not confirmed and later inventory was unavailable. Refresh the target before choosing any further action; do not blindly repeat the request.";
+		return managementResult(data, action, outcome);
 	}
 }
 
 function managementResult(
 	data: Record<string, unknown>,
 	action: Record<string, unknown>,
+	outcome: "completed" | "unknown" = "completed",
 ): DesktopResult {
 	try {
 		const text = Array.isArray(data.windows) ? bounded(data, "windows") : JSON.stringify(data);
 		if (Buffer.byteLength(text) > MAX_TEXT) {
 			throw new Error("The later inventory exceeds the result limit.");
 		}
-		return { text, outcome: "completed", isError: false };
+		return { text, outcome, isError: outcome !== "completed" };
 	} catch {
 		return actionResult({
 			...action,
 			observation_error: data.observation_error || "The later inventory exceeds the result limit.",
 			message:
-				"The native action completed. Later inventory was omitted to fit the result limit; refresh the target without blindly repeating the action.",
-		}, "completed");
+				"The native action outcome is preserved. Later inventory was omitted to fit the result limit; refresh the target without blindly repeating the action.",
+		}, outcome);
 	}
 }
 
@@ -644,8 +928,12 @@ export const desktop: Desktop = async (request, context) => {
 	if (
 		!request
 		|| ![
+			"clipboard-read",
+			"clipboard-write",
 			"apps",
 			"windows",
+			"menus",
+			"menu",
 			"inspect",
 			"click",
 			"type",
@@ -655,7 +943,12 @@ export const desktop: Desktop = async (request, context) => {
 			"scroll",
 			"drag",
 			"activate",
+			"launch",
+			"open",
+			"quit",
+			"close",
 			"focus",
+			"minimize",
 			"restore",
 			"move",
 			"resize",
@@ -681,6 +974,54 @@ export const desktop: Desktop = async (request, context) => {
 	try {
 		if (isDesktopAction(request)) return await act(request, signal);
 		if (request.op === "inspect") return await inspect(request, signal);
+		if (request.op === "menus") {
+			validateAppOnly(request.target);
+			if (request.path !== undefined) validateMenuPath(request.path);
+			const input = JSON.stringify(request);
+			if (Buffer.byteLength(input) > 4096) {
+				throw new Error("Menu request exceeds the 4096-byte limit.");
+			}
+			const data = await native(["menus"], signal, { input });
+			const target = data.target as DesktopAppTarget | undefined;
+			if (
+				target?.pid !== request.target.pid
+				|| target.process_start_identity_decimal !== request.target.process_start_identity_decimal
+			) throw new Error("Native menu inventory returned a different application generation.");
+			if (request.path !== undefined) {
+				// An older client must not turn a scoped read into full menu disclosure.
+				const path = request.path, filter = data.filter as { path?: unknown } | undefined;
+				if (
+					!Array.isArray(filter?.path) || filter.path.length !== path.length
+					|| filter.path.some((title, index) => title !== path[index])
+					|| !Array.isArray(data.menus) || data.menus.some((row) =>
+						!Array.isArray(row?.path) || path.some((title, index) =>
+							row.path[index] !== title
+						)
+					)
+				) throw new Error("Native menu inventory did not honor the requested literal path.");
+			}
+			return { text: bounded(data, "menus") };
+		}
+		if (request.op === "clipboard-read") {
+			if (
+				request.format !== undefined && request.format !== "text" && request.format !== "image"
+				&& request.format !== "files"
+			) {
+				throw new Error("Choose text, image, or files clipboard format.");
+			}
+			const data = await native(["clipboard"], signal, { input: JSON.stringify(request) });
+			if (request.format === "image") return clipboardImage(data);
+			if (request.format === "files") return clipboardFiles(data);
+			if (
+				typeof data.present !== "boolean" || !Number.isSafeInteger(data.change_count)
+				|| (data.present ? typeof data.text !== "string" : data.text !== undefined)
+			) throw new Error("The native clipboard read returned an unsupported response.");
+			const text = JSON.stringify(data);
+			if (Buffer.byteLength(text) > 24_000) {
+				throw new Error("Clipboard text exceeds the complete 24 KB result limit.");
+			}
+			return { text };
+		}
 		let query: string | undefined;
 		if (request.op === "apps" && request.query !== undefined) {
 			if (

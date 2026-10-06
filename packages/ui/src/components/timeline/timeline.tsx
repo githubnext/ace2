@@ -536,57 +536,40 @@ function RenderedBlocks({ blocks, width }: { blocks: Block[]; width: number }) {
 }
 
 function EventGlyph({ row }: { row: EventRow }) {
-	let { Icon, marginBlockStart } = eventGlyph(row);
+	let Icon = eventIcon(row);
 
 	return (
 		<div
 			className="grid shrink-0 place-items-center rounded-full border border-border"
-			style={{ inlineSize: AVATAR, blockSize: AVATAR, marginBlockStart }}
+			style={{ inlineSize: AVATAR, blockSize: AVATAR, marginBlockStart: AVATAR_NUDGE }}
 		>
 			<Icon className="size-4 text-muted-foreground" aria-hidden />
 		</div>
 	);
 }
 
-function eventGlyph(row: EventRow): { Icon: EventIcon; marginBlockStart: number } {
+function eventIcon(row: EventRow): EventIcon {
 	let chunk = row.chunks[0];
 
 	switch (chunk?.kind) {
 		case "exec":
-			return { Icon: IconTerminal, marginBlockStart: AVATAR_NUDGE };
+			return IconTerminal;
 		case "presence":
-			return {
-				Icon: chunk.action === "join" ? IconEnter : IconExit,
-				marginBlockStart: AVATAR_NUDGE,
-			};
+			return chunk.action === "join" ? IconEnter : IconExit;
 		case "pr-comment":
 		case "pr-review":
 		case "pr-review-comment":
 		case "issue-comment":
-			return {
-				Icon: IconMessage,
-				// Only offset for the bubble layout (when a markdown body follows).
-				marginBlockStart: row.chunks.length > 1 ? prCommentGlyphOffset() : AVATAR_NUDGE,
-			};
+			return IconMessage;
 		case "issue":
-			return {
-				Icon: IconRecord,
-				// Only offset for the bubble layout (when a markdown body follows).
-				marginBlockStart: row.chunks.length > 1 ? prCommentGlyphOffset() : AVATAR_NUDGE,
-			};
 		case "issue-update":
-			return { Icon: IconRecord, marginBlockStart: AVATAR_NUDGE };
+			return IconRecord;
 		case "pr":
 		case "pr-update":
-			return { Icon: IconPullRequest, marginBlockStart: AVATAR_NUDGE };
+			return IconPullRequest;
 		default:
-			return { Icon: IconCommit, marginBlockStart: AVATAR_NUDGE };
+			return IconCommit;
 	}
-}
-
-function prCommentGlyphOffset(): number {
-	let icon = 16;
-	return BYLINE_HEIGHT + PR_COMMENT_GAP - (AVATAR - icon) / 2;
 }
 
 /** Render a message group with sticky avatar and block-based content. */
@@ -740,12 +723,9 @@ function GroupView(props: GroupProps) {
 
 function GroupAvatar({ props, state }: GroupRender) {
 	let { group, loading } = props;
-	let { hasByline, src, label } = state;
+	let { src, label } = state;
 	return (
-		<div
-			className="shrink-0"
-			style={{ paddingBlockStart: hasByline ? BYLINE_HEIGHT + HEADER_GAP : 0 }}
-		>
+		<div className="shrink-0">
 			{group.role === "assistant"
 				? (
 					<div

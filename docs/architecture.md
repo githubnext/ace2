@@ -30,6 +30,15 @@ three hours, keeping cached content visible while requests run or fail. GitHub c
 outside channel history. Issues and PRs share the Channels sidebar and project picker, with
 Open, Closed, and All filters in the sidebar. Items open on GitHub; a row's "Open in a channel"
 action creates a channel in the selected project and invokes its agent with the item's title and URL.
+The shared project picker also offers All Projects, which opens Channels with collapsible sections
+named for each project and its ten most recently active, non-archived channels. Opening a channel
+keeps that grouped view; channel creation and GitHub pages retain a concrete project selection.
+
+A channel's details sidebar shows the root chat's changes and branch, the newest pull request from
+that branch with its checks, subagents and links from the transcript, and the channel's usage.
+The pull request is read through the same GitHub CLI account while the sidebar is open, again when
+the branch moves and every minute, and is not cached. A channel can work on many lanes and pull
+requests over time; the sidebar follows the chat's current lane.
 
 Avatars come from GitHub logins. Each host resolves its owner's login with `gh api user`, returns
 it from `hello` to peers, and publishes it to the directory. The app maps message authors'
@@ -51,12 +60,19 @@ is one pi conversation in that Session.
   its runtime's default on its first invocation: the local host's current preference, or an available
   model on the hosting service. Availability is checked before admitting the input, so a rejected
   invocation queues no work and leaves its draft editable.
-- **Model per run.** The chat's model is set when a run is admitted. Changing it while a run is
-  active is rejected rather than changing the active run's later turns.
+- **Model and effort per run.** The chat's model and reasoning effort are set when a run is
+  admitted, stored in pi's agent configuration. Changing either while a run is active is rejected
+  rather than changing its later turns. Admissions are serialized per chat. The composer lists
+  levels from the channel's model catalog; Default leaves reasoning to always-thinking providers,
+  while Off disables it where supported. Switching models resets the composer's effort to that
+  model's default until a level is chosen.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
   the parent kills the child. Agents in different channels only exchange messages.
 - **Lanes are Git worktrees** created by the chat's agent for each unit of work. A chat's working
-  directory is its current lane.
+  directory is its current lane. A new lane starts from origin's advertised default branch, fetched
+  first, or from an explicit base, without changing the project checkout. Each lane records that
+  base as a ref or commit, and its Diff shows what a pull request into that base would. An explicit
+  base for an existing lane changes only that comparison.
 - **Kill is durable.** Killing records pi's abort marks before the worker exits, so reopening the
   channel does not resume the killed work.
 - **Usage comes from pi's ledger.** A chat reports cumulative model and tool usage from
@@ -204,10 +220,43 @@ signing team. Tools expose application and window inventories, observation, elem
 clicks, scrolling, atomic drags, replacement of editable field values, text selection/insertion, and keys or shortcuts. Screenshot
 points are normalized and mapped through the snapshot's native capture geometry. Control input uses background delivery bound to a
 snapshot's exact process, window, and controls; every dispatched action requires a new observation.
-Separate activation, focus, restore, move, and resize tools accept generation-bound inventory targets, with exact
+Read-only menu inventory uses signed native responses and application inventories before and after
+the read to bind one observed process generation. Its possible native cache and unknown completeness
+remain explicit; an optional exact literal title path filters the returned subtree before channel
+history without granting input authority. The native traversal still reads the full menu and may
+trigger application population callbacks. Native menu traversal is currently
+synchronous and can delay GUI responsiveness or cancellation. Menu commands use a separate
+literal-array native operation: fresh bounded AX reads select one enabled leaf, followed by one
+press without opening ancestors or making a separate activation request; the app or macOS may
+bring it forward in response. The signed result binds the original
+application generation. Commands targeting the native Ace process itself are unsupported and
+refused before input; its menu inventory remains available. Detached AX work retains the existing
+process mutation lane until the
+actual call returns, including after cancellation; ambiguous native timeout remains unsafe to
+repeat. Command delivery is distinct from its application effect, and no automatic follow-up
+observation changes that outcome.
+Separate activation, quit, close, focus, minimize, restore, move, and resize tools accept generation-bound inventory targets, with exact
 window bounds where applicable. The native service revalidates those receipts before dispatch;
 activation and focus explicitly change the foreground desktop. Inspection never activates a target
 implicitly. App-only action receipts refresh inventories without inventing a selected window.
+Normal quit reports completion only after native termination confirmation; an accepted request that
+leaves the app running stays uncertain. It never retries, force-quits, or chooses a dialog response.
+Exact-window close selects one supported background Accessibility route before input and never
+falls through after dispatch. Confirmed disappearance survives later inventory failure; an accepted
+close that remains open is uncertain with unsafe retry and fresh inventory when available.
+Explicit launch accepts an absolute app path or bundle ID and deliberately requests foreground
+launch/readiness through the native global mutation lane. The signed response binds the selector
+to the resulting process generation; later inventory failure preserves that result. Launch exposes
+no document/URL, extra-instance, or relaunch options. The app may still open after caller timeout
+or interruption, so uncertain launch is never replayed and native ownership lasts until it settles.
+Explicit item opening reuses that signed native launch route for one existing absolute path or
+complete URL, optionally selecting an app. Otherwise macOS chooses the default handler; no app
+is assumed before dispatch. The signed request includes the item URL and binds the returned
+process generation. Accepted delivery remains unverified item effect, including after successful
+readiness and activation. Later app/window inventory cannot prove document loading or navigation,
+and failures after native submission remain uncertain without retry or dialog handling.
+Minimize verifies native window state and returns fresh inventory without capturing the minimized
+window; restoring it remains an explicit action with a refreshed target.
 Move and resize use native background Accessibility, verify resulting geometry, and return refreshed
 window targets; the original bounds remain part of the pre-mutation identity check.
 Literal insertion uses one GUI-owned temporary plain-text paste, with the existing native mutation
@@ -218,6 +267,22 @@ restore journal or automatic retry is created. Clipboard read policy is reported
 The same clipboard gate retains a content-free reservation while a dispatched paste is unresolved.
 Later automated writes require observed consumption or termination of the exact receiver process
 generation. The reservation survives GUI restart; clipboard contents and comparison state do not.
+Explicit clipboard tools read complete bounded plain text, an image preview, or advertised local
+file references, or persistently replace text, an image, or file references; they do not paste. Reads use the existing silent permission policy and require
+a stable generation, without entering or releasing the mutation gate. The GUI copies one bounded
+image representation, renders an oriented preview off its main actor, and verifies the generation
+again. Source and preview metadata stay distinct; the bounded preview uses the existing image
+result and durable history without clipboard files or a second store. File reads return exact
+advertised URLs and decoded paths without filesystem access; macOS may filter references before
+exposing them to Ace. Image writes take an execution-host path: the host alone reads a bounded
+regular file, and the GUI decodes its immutable copy before publishing the original representation.
+Only source metadata is returned. File-reference writes check path metadata on the host without
+reading contents or resolving links. The GUI prepares one file URL item per literal path, preserving
+order and duplicates, then publishes the complete bounded list with generation checks. Result metadata
+describes requested references and native publication, not a receiving application's eventual copy.
+Writes enter the same gate,
+including pending-paste admission, and expose content-free native outcomes without window inspection.
+Explicitly read content enters ordinary tool history as observed data; no permission layer is added.
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves

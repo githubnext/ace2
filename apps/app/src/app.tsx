@@ -96,8 +96,10 @@ function Disconnected() {
 
 /** Channels idle this long fold into the Inactive group until their transcript grows again. */
 const INACTIVE_AFTER = 6 * 60 * 60_000;
+const ALL_PROJECTS = "all";
+const RECENT_CHANNELS = 10;
 
-function row(channel: Listing, user: string): SidebarRow {
+function row(channel: Listing, user: string, host: string): SidebarRow {
 	return {
 		uid: channel.id,
 		kind: "session",
@@ -110,7 +112,7 @@ function row(channel: Listing, user: string): SidebarRow {
 		member: true,
 		capabilities: {
 			rename: channel.owner === user && channel.state !== "offline",
-			archive: true,
+			archive: channel.host === host,
 		},
 		connection: channel.state === "running"
 			? "connected"
@@ -133,6 +135,7 @@ export function App() {
 	const [hello, setHello] = useState<Hello>({ user: "", host: "" });
 	const [page, setPage] = useLocalStorage<Page>("ace:page", "dashboard");
 	const [project, setProject] = useLocalStorage<string | undefined>("ace:project-id", undefined);
+	const [all, setAll] = useLocalStorage("ace:all-projects", false);
 	const [selected, setSelected] = useLocalStorage<Record<string, string>>(
 		"ace:project-channels",
 		{},
@@ -179,19 +182,34 @@ export function App() {
 		hello.host,
 	]);
 	useGithubRefresh(available);
+	const allProjects = all && page === "channels";
+	const listings = new Map(channels.map((channel) => [channel.id, channel]));
+	const allSelected = listings.get(selected[ALL_PROJECTS]);
 	const current = available.find((value) => value.id === project) || available[0];
 	const visible = channels.filter((channel) =>
 		channel.host === current?.host && root(channel) === current.path
 	);
-	const channel = current ? visible.find((value) => value.id === selected[current.id]) : undefined;
+	const channel = allProjects
+		? allSelected
+		: current
+		? visible.find((value) => value.id === selected[current.id])
+		: undefined;
 	const connected = status === "open" && !!hello.host;
 	const local = current?.host === hello.host;
-	const repos: SessionSidebarRepo[] = available.map((value) => ({
-		id: value.id,
-		name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
-		org: value.repo?.split("/")[0] || "",
-	}));
-	const sorted: Record<Exclude<SessionSidebarGroupId, "pinned">, SidebarRow[]> = {
+	const repos: SessionSidebarRepo[] = [
+		{
+			id: ALL_PROJECTS,
+			name: "All Projects",
+			org: "",
+			kind: "all",
+		},
+		...available.map((value) => ({
+			id: value.id,
+			name: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
+			org: value.repo?.split("/")[0] || "",
+		})),
+	];
+	const sorted: Record<"mine" | "team" | "inactive" | "archived", SidebarRow[]> = {
 		mine: [],
 		team: [],
 		inactive: [],
@@ -205,25 +223,61 @@ export function App() {
 			: value.owner === hello.user
 			? "mine"
 			: "team";
-		sorted[group].push(row(value, hello.user));
+		sorted[group].push(row(value, hello.user, hello.host));
 	}
-	const groups: SessionSidebarGroup[] = [
+	let groups: SessionSidebarGroup[] = [
 		{ id: "mine", label: "Channels", rows: sorted.mine, collapsed: collapsed.mine },
 		{ id: "team", label: "Team", rows: sorted.team, collapsed: collapsed.team },
 		{ id: "inactive", label: "Inactive", rows: sorted.inactive, collapsed: collapsed.inactive },
 		{ id: "archived", label: "Archived", rows: sorted.archived, collapsed: collapsed.archived },
 	];
 
+	if (allProjects) {
+		const byProject = new Map<string, Listing[]>();
+		for (const value of channels) {
+			if (value.state === "archived") continue;
+			const id = projectId(value.host, root(value));
+			const rows = byProject.get(id);
+			if (rows) rows.push(value);
+			else byProject.set(id, [value]);
+		}
+		groups = available.map((value) => {
+			const id: SessionSidebarGroupId = `project:${value.id}`;
+			const rows = (byProject.get(value.id) || []).sort((a, b) =>
+				(b.active || b.created) - (a.active || a.created)
+				|| b.created - a.created || b.id.localeCompare(a.id)
+			).slice(0, RECENT_CHANNELS).map((value) => row(value, hello.user, hello.host));
+			return {
+				id,
+				label: value.host === hello.host ? value.name : `${value.name} · ${value.host}`,
+				rows,
+				sort: "none",
+				collapsed: collapsed[id],
+			};
+		});
+	}
+
+	function chooseProject(id: string) {
+		setAll(id === ALL_PROJECTS);
+		if (id === ALL_PROJECTS) return setPage("channels");
+		setProject(id);
+	}
+
 	function select(value: Pick<Listing, "id" | "host" | "project" | "root">) {
 		const id = projectId(value.host, root(value));
 		setProject(id);
-		setSelected((previous) => ({ ...previous, [id]: value.id }));
+		if (!allProjects) setAll(false);
+		setSelected((previous) => ({
+			...previous,
+			[id]: value.id,
+			...(allProjects ? { [ALL_PROJECTS]: value.id } : {}),
+		}));
 		setPage("channels");
 	}
 
 	async function open(path: string) {
 		const value = await host.request<Project>({ op: "project-open", path });
-		setProject(projectId(hello.host, value.path));
+		chooseProject(projectId(hello.host, value.path));
 	}
 
 	async function choose() {
@@ -337,25 +391,27 @@ export function App() {
 								? (
 									<ChannelsSidebar
 										className="min-h-0 w-full min-w-0 flex-1 bg-transparent"
-										projectName={current.name}
+										projectName={allProjects ? "All Projects" : current.name}
 										repos={repos}
-										selectedRepoId={current.id}
+										selectedRepoId={allProjects ? ALL_PROJECTS : current.id}
 										groups={groups}
 										selectedUid={channel?.id}
 										loading={status === "connecting" && !channels.length}
-										onRepoChange={(repo) => setProject(repo.id)}
+										onRepoChange={(repo) => chooseProject(repo.id)}
 										onAddRepo={connected ? () => void choose() : undefined}
 										onSelect={(item) => {
-											const value = visible.find((value) => value.id === item.uid);
+											const value = listings.get(item.uid);
 											if (value) select(value);
 										}}
-										onNewSession={local && connected ? () => void create() : undefined}
+										onNewSession={!allProjects && local && connected
+											? () => void create()
+											: undefined}
 										onRename={connected
 											? (item) => setRenaming({ id: item.uid, name: item.name })
 											: undefined}
 										onToggleGroup={(id) =>
 											setCollapsed((value) => ({ ...value, [id]: !value[id] }))}
-										onArchive={local && connected
+										onArchive={(allProjects || local) && connected
 											? (item) =>
 												void change({
 													op: "archive",
@@ -363,15 +419,17 @@ export function App() {
 													archived: item.lifecycle !== "archived",
 												})
 											: undefined}
-										onArchiveInactive={local && connected
+										onArchiveInactive={!allProjects && local && connected
 											? () => void archiveInactive(current.path)
 											: undefined}
-										onDelete={local && connected
+										onDelete={!allProjects && local && connected
 											? (item) => void change({ op: "delete", channel: item.uid })
 											: undefined}
 										empty={
 											<p className="px-4 py-6 text-xs text-muted-foreground">
-												No channels in this project yet.
+												{allProjects
+													? "No recent channels across your projects."
+													: "No channels in this project yet."}
 											</p>
 										}
 									/>
@@ -382,7 +440,7 @@ export function App() {
 										project={current}
 										repos={repos}
 										connected={connected}
-										onProject={setProject}
+										onProject={chooseProject}
 										onOpen={() => void choose()}
 									/>
 								)}
@@ -417,7 +475,7 @@ export function App() {
 									channels={visible}
 									local={local}
 									connected={connected}
-									onProject={setProject}
+									onProject={chooseProject}
 									onOpen={() => void choose()}
 									onChannel={select}
 									onCreate={create}
@@ -439,7 +497,7 @@ export function App() {
 									key={channel.id}
 									channel={channel}
 									user={hello.user}
-									remote={!local}
+									remote={channel.host !== hello.host}
 									draft={draft}
 									onDraftLoaded={() => setDraft(undefined)}
 									onSettings={() => setSettings(true)}
@@ -448,8 +506,17 @@ export function App() {
 							: (
 								<div className="flex min-h-full flex-col items-center justify-center gap-4 px-5 py-10 text-center">
 									<IconHash className="size-6 text-muted-foreground" aria-hidden />
-									<h1 className="text-base font-medium">Choose a channel in {current.name}</h1>
-									{local && (
+									<h1 className="text-base font-medium">
+										{allProjects
+											? "Choose a channel from any project"
+											: `Choose a channel in ${current.name}`}
+									</h1>
+									{allProjects && (
+										<p className="text-sm text-muted-foreground">
+											Select a project to start a new channel.
+										</p>
+									)}
+									{!allProjects && local && (
 										<Button
 											disabled={!connected}
 											onClick={() => void create()}

@@ -1,6 +1,11 @@
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
+
 /** The wire contract between a channel and its clients: one JSON value per line. */
 
 export type ModelRef = { provider: string; modelId: string };
+/** "off" leaves always-thinking providers at their default; otherwise disables reasoning. */
+export type Effort = ModelThinkingLevel;
+export type ModelOption = ModelRef & { efforts: Effort[] };
 
 /** Cumulative usage for one chat, including compaction and usage reported by tools. */
 export type Usage = {
@@ -35,6 +40,7 @@ export type Chat = {
 	parent?: ChatId;
 	busy: boolean;
 	model?: ModelRef;
+	effort?: Effort;
 	lane?: string;
 	/** Older hosts may not report usage. */
 	usage?: Usage;
@@ -57,10 +63,19 @@ export type Change = {
 };
 
 /**
- * What a chat's work changed: its lane's commits since it branched from the project's HEAD, plus
- * uncommitted and untracked files. A chat without a lane shows the checkout against HEAD.
+ * What a chat's work changed: its lane's commits since it forked from the lane's base, as a pull
+ * request into that base would show them, plus uncommitted and untracked files. A chat without a
+ * lane shows the checkout against HEAD.
  */
-export type Changes = { lane?: string; cwd: string; base: string; head: string; files: Change[] };
+export type Changes = {
+	lane?: string;
+	/** The checked-out branch; absent when HEAD is detached. */
+	branch?: string;
+	cwd: string;
+	base: string;
+	head: string;
+	files: Change[];
+};
 
 /** GitHub views are read through the host; they are not durable channel state. */
 export type GithubKind = "issues" | "prs";
@@ -77,6 +92,13 @@ export type GithubItem = {
 	labels: { name: string; color: string }[];
 };
 export type GithubList = { items: GithubItem[]; more: boolean };
+export type GithubCheck = {
+	name: string;
+	url?: string;
+	state: "pending" | "passed" | "failed" | "skipped";
+};
+/** The newest pull request from a branch, with its latest check results. */
+export type GithubPull = GithubItem & { checks: GithubCheck[] };
 export type GithubComment = {
 	id: string;
 	url: string;
@@ -130,6 +152,7 @@ export type Request =
 		text: string;
 		images?: Image[];
 		model?: ModelRef;
+		effort?: Effort;
 		requestId?: string;
 	}
 	| { op: "chat"; author: string; model?: ModelRef }

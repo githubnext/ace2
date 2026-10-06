@@ -88,6 +88,14 @@ chats. Catalog names, summaries, and revision numbers are rebuildable listing pr
 workers refresh them from committed metadata, and hosted channels send them to their workspace
 on changes and reconnection. Renaming never moves an existing lane or changes its branch prefix.
 
+Lanes live in pi's version 2 `ace.lanes` session document: each lane's chat, worktree path, and
+base. A base is a full ref name, such as `refs/remotes/origin/main`, `refs/heads/release`, or
+`refs/tags/v1`, or a commit when the requested base was an expression or a detached HEAD. pi
+migrates version 1 documents on read, keeping every lane's chat and path; the version 2 form is
+written on the next lane change. Version 1 lanes have no base, so their Diff compares against the
+locally known `origin/HEAD`, or the project's HEAD in a repository without origin, until a lane
+switch names a base.
+
 The October 3, 2026 credential-deferral check opened a backed-up version 0 channel with no keys:
 its pi entries and selected model were unchanged. Fresh channels accepted human messages before
 provider setup and retained their history through a worker restart. Adding a real Anthropic key
@@ -100,3 +108,8 @@ channel backup. All original pi entries remained byte-for-byte equivalent, both 
 with a real model, and renamed channels and rolling summaries survived worker restarts. The source
 backup's checksums remained unchanged. Fresh-channel checks also confirmed that renaming leaves
 existing lane branches intact and new lanes use the original branch prefix.
+
+The October 6, 2026 lanes check opened an isolated copy of an archived Canary channel backup with
+version 1 `ace.lanes` data. All three chats and their lanes resolved, and every original pi entry
+stayed byte-for-byte equivalent. A lane switch stored version 2 without a base, and after a worker
+restart the channel continued with a real model. The source backup's checksums remained unchanged.

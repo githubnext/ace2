@@ -58,7 +58,7 @@ struct ManagementTarget: Codable {
 
 private struct ManagementRequest: Decodable {
 	enum Operation: String, Decodable {
-		case activate, focus, restore, move, resize
+		case activate, quit, close, focus, minimize, restore, move, resize
 	}
 	struct Position: Decodable {
 		let x: Double
@@ -107,6 +107,8 @@ private struct ManagementResult: Encodable {
 	var outcome = "refused"
 	var action = "management"
 	var native_outcome: DesktopActionOutcome?
+	var terminated: Bool?
+	var message: String?
 	var requires_fresh_observation = false
 	var error: ManagementMessage?
 }
@@ -117,23 +119,30 @@ private struct ManagementReply: Encodable {
 	let target_receipt: Receipt?
 }
 
-func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
+func nativeManagement(_ client: PeekabooBridgeClient, handshake: PeekabooBridgeHandshakeResponse) async throws -> Data {
 	var result = ManagementResult()
 	var receipt: Receipt?
 	var invoked = false
+	var closing: WindowMutationIdentity?
 	do {
 		let request = try readManagement()
 		result.action = request.op.rawValue
 		try request.validate()
 		let process = try request.target.processIdentity()
 		let window: WindowMutationIdentity?
-		if request.op == .activate {
+		if request.op == .activate || request.op == .quit {
 			guard request.target.window_id == nil, request.target.bounds == nil, request.target.is_minimized == nil else {
-				throw ManagementError("Activation takes an application target from desktop_apps.")
+				throw ManagementError("Activation and quit take an application target from desktop_apps.")
 			}
 			window = nil
 		} else {
 			window = try request.target.windowIdentity()
+		}
+		if request.op == .quit {
+			guard handshake.negotiatedVersion >= PeekabooBridgeConstants.processGenerationPinnedApplicationQuitVersion,
+				handshake.supportedOperations.contains(.quitApplication),
+				(handshake.enabledOperations ?? handshake.supportedOperations).contains(.quitApplication)
+			else { throw ManagementError("The desktop runtime does not support process-generation-pinned quit. Update the runtime before acting.") }
 		}
 		// Match Peekaboo's capture preflight; absent session state does not establish a lock.
 		let session = CGSessionCopyCurrentDictionary() as NSDictionary?
@@ -156,6 +165,7 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 		try Task.checkCancellation()
 		let outcome: DesktopActionOutcome?
 		let operation: PeekabooBridgeOperation
+		var terminated: Bool?
 		invoked = true
 		switch request.op {
 		case .activate:
@@ -168,6 +178,19 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 				throw ManagementError("Activation returned no matching application-only receipt.")
 			}
 			outcome = action.outcome
+		case .quit:
+			operation = .quitApplication
+			let action = try await client.quitApplicationResult(request: .init(
+				identifier: "PID:\(process.processIdentifier)", force: false, expectedIdentity: process
+			), supportsPinnedQuit: true)
+			terminated = action.payload
+			outcome = action.outcome
+		case .close:
+			operation = .backgroundCloseWindow
+			closing = window
+			outcome = try await client.closeWindowResult(
+				target: .windowId(window!.windowID), expectedIdentity: window!, allowForegroundFallback: false
+			).outcome
 		case .focus:
 			operation = .focusWindow
 			let action = try await client.focusWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!)
@@ -176,6 +199,9 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 				throw ManagementError("Focus returned no matching exact-window receipt.")
 			}
 			outcome = action.outcome
+		case .minimize:
+			operation = .minimizeWindow
+			outcome = try await client.minimizeWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!).outcome
 		case .restore:
 			operation = .restoreWindow
 			outcome = try await client.restoreWindowResult(target: .windowId(window!.windowID), expectedIdentity: window!).outcome
@@ -195,7 +221,7 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 			).outcome
 		}
 		result.native_outcome = outcome
-		// Restore and geometry results omit targetIdentity; the client's accepted signed receipt retains it.
+		// State and geometry results omit targetIdentity; the client's accepted signed receipt retains it.
 		guard let signed = await client.lastOperationReceipt(), signed.payload.operation == operation,
 			let outcome, signed.payload.outcome?.outcome == outcome
 		else { throw ManagementError("The management action returned without its matching verified operation receipt and outcome.") }
@@ -208,17 +234,28 @@ func nativeManagement(_ client: PeekabooBridgeClient) async throws -> Data {
 			throw ManagementError("The management action's signed target did not match the original inventory target.")
 		}
 		result.requires_fresh_observation = outcome.dispatchState.mutationDispatched
+		result.terminated = terminated
+		if terminated == false {
+			result.message = "The normal quit request was accepted, but termination was not confirmed. Inspect remaining windows for unsaved work or other dialogs; do not blindly retry or force quit."
+		}
+		if request.op == .close, !outcome.isConfirmed {
+			result.message = "The close request was not confirmed complete. Inspect remaining windows for unsaved work or other dialogs; do not blindly retry close."
+		}
 		switch outcome.state {
 		case .refused:
 			result.outcome = "refused"
 		case .indeterminate, .partial:
 			result.outcome = "unknown"
 		default:
-			result.outcome = outcome.evidence == .operationStillRunning ? "unknown" : "completed"
+			result.outcome = outcome.evidence == .operationStillRunning || terminated == false || (request.op == .close && !outcome.isConfirmed) ? "unknown" : "completed"
 		}
 	} catch let failure as DesktopActionFailure {
 		result.outcome = failure.outcome.dispatchState.mutationDispatched ? "unknown" : "refused"
 		result.native_outcome = failure.outcome
+		// The bridge attributes failures only after verifying the signed request-bound target.
+		if let closing, failure.targetReceipt == closing.actionTargetReceipt {
+			receipt = Receipt(pid: closing.ownerProcessIdentifier, window_id: closing.windowID, process_start_identity_decimal: String(closing.ownerProcessStartIdentity))
+		}
 		result.requires_fresh_observation = failure.outcome.dispatchState.mutationDispatched || failure.outcome.escalation == .refreshTarget
 		result.error = ManagementMessage(code: failure.standardErrorCode?.rawValue ?? "DESKTOP_ACTION_FAILED", message: failure.message, hint: failure.hint)
 	} catch {
