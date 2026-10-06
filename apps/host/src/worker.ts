@@ -9,6 +9,7 @@ import { Channel, type Envelope, type Frame } from "@ace/channel";
 
 import * as catalog from "./catalog";
 import { request } from "./client";
+import { browser } from "./browser";
 import { desktop } from "./desktop";
 import { models, seal } from "./keys";
 import { defaultModel } from "./manage";
@@ -75,6 +76,7 @@ const channel = await Channel.open({
 	storage: await openNodeSqliteStorage(paths.storage),
 	models: models(),
 	desktop,
+	browser,
 	env(cwd) {
 		let env = envs.get(cwd);
 		if (!env) envs.set(cwd, env = new NodeExecutionEnv({ cwd }));

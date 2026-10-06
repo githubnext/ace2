@@ -210,7 +210,7 @@ export function isDesktopManagement(request: DesktopRequest): request is Desktop
 		|| request.op === "move" || request.op === "resize";
 }
 
-function result(value: DesktopResult): ToolExecutionResult {
+export function result(value: DesktopResult): ToolExecutionResult {
 	return {
 		content: [
 			{ type: "text", text: value.text },

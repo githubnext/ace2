@@ -294,6 +294,19 @@ coordinates concurrent native operations. The collaborator-agent
 switch applies to desktop tools with the rest of the agent's tools. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
+Agents list, navigate, and inspect web pages through an injected browser capability. The host talks
+to a dedicated development browser directly over the Chrome DevTools Protocol on loopback. It finds
+the browser only through `DevToolsActivePort` in the profile at `$ACE_HOME/browser`, so personal
+browsers and other debugging sessions are never reached; Ace does not launch or own that browser.
+A tab target is the browser ID from Chrome's endpoint path plus Chrome's target ID. Every call
+reconnects and refuses a replaced browser or closed tab instead of choosing another tab by URL,
+title, or position. Inspection returns the main document's bounded accessibility tree and a viewport
+JPEG with loader IDs before and after, keeping partial evidence when one part fails. Navigation is
+unsafe and sequential: it reports Chrome's answer (started, same document, download, or failed)
+without claiming readiness, and a navigation whose dispatch or answer is uncertain stays unknown. Hosted channels forward the
+capability to their workspace, and pi stores the result like any other tool output. See
+[browser tools](browser-tools.md) for setup, limits, and outcomes.
+
 The installed development app uses `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`,
 keeping it separate from stable and Canary. Its preferences live under `Ace-dev`, and its Keychain
 service is `ace-dev`. It is signed locally for `SMAppService`; distribution signing and
