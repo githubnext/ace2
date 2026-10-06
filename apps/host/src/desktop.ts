@@ -430,6 +430,14 @@ function validateAction(request: DesktopAction) {
 		}
 		return;
 	}
+	if (request.op === "menu") {
+		validateAppOnly(request.target);
+		validateMenuPath(request.path);
+		if (Buffer.byteLength(JSON.stringify(request)) > 4096) {
+			throw new Error("Menu request exceeds the 4096-byte limit.");
+		}
+		return;
+	}
 	if (isDesktopManagement(request)) return validateManagement(request);
 	if (request.op === "clipboard-write") {
 		if ("format" in request) {
@@ -526,6 +534,17 @@ function validateAction(request: DesktopAction) {
 		if (request.selection !== undefined && !DESKTOP_SELECTIONS.includes(request.selection)) {
 			throw new Error("Choose text, cursor_before, or cursor_after for selection.");
 		}
+	}
+}
+
+function validateMenuPath(path: unknown) {
+	if (
+		!Array.isArray(path) || !path.length || path.length > 8
+		|| path.some((title) => typeof title !== "string" || !title.trim() || title.length > 512)
+	) {
+		throw new Error(
+			"Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.",
+		);
 	}
 }
 
@@ -650,7 +669,9 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 				image: await clipboardImageInput(request.path, signal),
 			}
 			: request;
-		const operation = request.op === "clipboard-write"
+		const operation = request.op === "menu"
+			? "menu"
+			: request.op === "clipboard-write"
 			? "clipboard"
 			: request.op === "launch"
 			? "launch"
@@ -683,6 +704,23 @@ async function act(request: DesktopAction, signal: AbortSignal): Promise<Desktop
 		}, outcome);
 	}
 	const outcome = data.outcome as DesktopOutcome;
+	if (request.op === "menu") {
+		const receipt = data.target_receipt as Reply["target_receipt"];
+		if (
+			(outcome === "completed" || receipt) && (!receipt || receipt.window_id !== undefined
+				|| receipt.pid !== request.target.pid
+				|| receipt.process_start_identity_decimal !== request.target.process_start_identity_decimal)
+		) {
+			return actionResult({
+				...data,
+				outcome: "unknown",
+				receipt_error:
+					"The menu command returned a different application receipt. Observe the intended app before any further action.",
+			}, "unknown");
+		}
+		return actionResult(data, outcome);
+	}
+
 	if (
 		outcome === "unknown"
 		&& ((request.op === "quit" && data.terminated === false)
@@ -867,6 +905,7 @@ export const desktop: Desktop = async (request, context) => {
 			"apps",
 			"windows",
 			"menus",
+			"menu",
 			"inspect",
 			"click",
 			"type",
@@ -909,18 +948,7 @@ export const desktop: Desktop = async (request, context) => {
 		if (request.op === "inspect") return await inspect(request, signal);
 		if (request.op === "menus") {
 			validateAppOnly(request.target);
-			if (
-				request.path !== undefined && (
-					!Array.isArray(request.path) || !request.path.length || request.path.length > 8
-					|| request.path.some((title) =>
-						typeof title !== "string" || !title.trim() || title.length > 512
-					)
-				)
-			) {
-				throw new Error(
-					"Menu path requires 1 to 8 nonblank literal titles of at most 512 UTF-16 code units each.",
-				);
-			}
+			if (request.path !== undefined) validateMenuPath(request.path);
 			const input = JSON.stringify(request);
 			if (Buffer.byteLength(input) > 4096) {
 				throw new Error("Menu request exceeds the 4096-byte limit.");

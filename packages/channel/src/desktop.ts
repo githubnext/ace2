@@ -46,6 +46,7 @@ export type DesktopRequest =
 	| { op: "apps"; query?: string }
 	| { op: "windows"; pid: number }
 	| { op: "menus"; target: DesktopAppTarget; path?: string[] }
+	| { op: "menu"; target: DesktopAppTarget; path: string[] }
 	| { op: "inspect"; pid: number; window: number; mode?: "accessibility" | "pixels" }
 	| {
 		op: "click";
@@ -181,7 +182,8 @@ export type DesktopAction = Extract<
 			| "restore"
 			| "move"
 			| "resize"
-			| "clipboard-write";
+			| "clipboard-write"
+			| "menu";
 	}
 >;
 export type DesktopOutcome = "completed" | "refused" | "unknown";
@@ -197,7 +199,7 @@ export function isDesktopAction(request: DesktopRequest): request is DesktopActi
 	return request.op === "click" || request.op === "type" || request.op === "key"
 		|| request.op === "insert" || request.op === "select" || request.op === "scroll"
 		|| request.op === "drag" || request.op === "clipboard-write" || request.op === "launch"
-		|| request.op === "open"
+		|| request.op === "open" || request.op === "menu"
 		|| isDesktopManagement(request);
 }
 
@@ -384,6 +386,22 @@ export function desktop(execute: Desktop): Extension {
 				replay: "safe",
 				execute: async ({ target, path }, _api, context) =>
 					result(await execute({ op: "menus", target, path }, context)),
+			}),
+			defineTool({
+				name: "desktop_menu",
+				description:
+					"Invoke one menu command in an exact external application target from desktop_apps. Commands targeting this native Ace process itself are unsupported and refused before input. Pass a literal title array discovered with desktop_menus, preserving punctuation, whitespace and Unicode. The native service resolves the path afresh, refuses missing/ambiguous/disabled or unavailable lazy paths, and presses only the final item once; it makes no separate activation request and does not open ancestor menus. The app or macOS may still bring the app forward in response. A completed result proves accepted AX delivery, not that the command finished. Modal commands can return unknown while a dialog remains open. Read desktop_windows or inspect the current state before deciding what to do next; never blindly repeat the command. Blocking AX reads and AXPress run off the GUI actor, with a finite native messaging timeout; cancellation retains native ownership until the actual call returns and cannot undo delivered input. No screenshot or input snapshot is returned.",
+				parameters: Type.Object({
+					target: Type.Object(appTarget, { additionalProperties: false }),
+					path: Type.Array(Type.String({ minLength: 1, maxLength: 512 }), {
+						minItems: 1,
+						maxItems: 8,
+					}),
+				}, { additionalProperties: false }),
+				replay: "unsafe",
+				executionMode: "sequential",
+				execute: async ({ target, path }, api, context) =>
+					act({ op: "menu", target, path }, api, context),
 			}),
 			defineTool({
 				name: "desktop_activate",

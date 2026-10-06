@@ -213,7 +213,16 @@ the read to bind one observed process generation. Its possible native cache and 
 remain explicit; an optional exact literal title path filters the returned subtree before channel
 history without granting input authority. The native traversal still reads the full menu and may
 trigger application population callbacks. Native menu traversal is currently
-synchronous and can delay GUI responsiveness or cancellation. No menu mutation is exposed.
+synchronous and can delay GUI responsiveness or cancellation. Menu commands use a separate
+literal-array native operation: fresh bounded AX reads select one enabled leaf, followed by one
+press without opening ancestors or making a separate activation request; the app or macOS may
+bring it forward in response. The signed result binds the original
+application generation. Commands targeting the native Ace process itself are unsupported and
+refused before input; its menu inventory remains available. Detached AX work retains the existing
+process mutation lane until the
+actual call returns, including after cancellation; ambiguous native timeout remains unsafe to
+repeat. Command delivery is distinct from its application effect, and no automatic follow-up
+observation changes that outcome.
 Separate activation, quit, close, focus, minimize, restore, move, and resize tools accept generation-bound inventory targets, with exact
 window bounds where applicable. The native service revalidates those receipts before dispatch;
 activation and focus explicitly change the foreground desktop. Inspection never activates a target
