@@ -11,7 +11,7 @@ import {
 import { IconChevronDown, IconHash, IconPlus } from "@ace/ui/icons";
 import type { Listing } from "@ace/host/protocol";
 
-import type { AppProject } from "./projects";
+import { type AppProject, checkoutId } from "./projects";
 
 const MODES = [{ id: "ace", name: "Ace", placeholder: "Start a new channel" }];
 
@@ -83,7 +83,8 @@ export function Dashboard(
 				<div className="mx-auto mt-9 max-w-[39rem]">
 					<ChatComposer
 						ref={composer}
-						scope={`/projects/${project.id}/dashboard`}
+						// Drafts saved before repository projects are scoped to this checkout.
+						scope={`/projects/${checkoutId(project.host, project.path)}/dashboard`}
 						modes={MODES}
 						mode="ace"
 						mic={false}
