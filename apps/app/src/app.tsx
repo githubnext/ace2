@@ -303,6 +303,9 @@ export function App() {
 				rows,
 				sort: "none",
 				collapsed: collapsed[id],
+				onNewSession: connected && value.host === hello.host
+					? () => void create(undefined, undefined, value)
+					: undefined,
 			};
 		});
 	}
@@ -344,13 +347,17 @@ export function App() {
 		}
 	}
 
-	async function create(text?: string, onCreated?: () => void): Promise<void> {
-		if (!current || !local || !connected || creating.current) return;
+	async function create(
+		text?: string,
+		onCreated?: () => void,
+		target = current,
+	): Promise<void> {
+		if (!target || target.host !== hello.host || !connected || creating.current) return;
 		creating.current = true;
 		try {
 			const value = await host.request<Pick<Listing, "id" | "project">>({
 				op: "create",
-				project: current.path,
+				project: target.path,
 			});
 			if (text) {
 				try {
@@ -364,7 +371,7 @@ export function App() {
 				}
 			}
 			onCreated?.();
-			select({ ...value, host: hello.host, root: current.path, repo: current.repo });
+			select({ ...value, host: hello.host, root: target.path, repo: target.repo });
 		} catch (error) {
 			toast.error("Could not start channel", {
 				description: (error as Error).message,
@@ -563,7 +570,7 @@ export function App() {
 									</h1>
 									{allProjects && (
 										<p className="text-sm text-muted-foreground">
-											Select a project to start a new channel.
+											Use + beside a project to start a new channel.
 										</p>
 									)}
 									{!allProjects && local && (

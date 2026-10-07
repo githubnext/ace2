@@ -50,6 +50,7 @@ export type SessionSidebarGroup = {
 	/** Preserve caller ordering for ranked or hierarchical groups. */
 	sort?: "creation" | "none";
 	collapsed?: boolean;
+	onNewSession?: () => void;
 };
 
 export type SessionSidebarRepo = {
@@ -494,7 +495,10 @@ function Group({
 	let transition = reduced ? GROUP_TRANSITION_REDUCED : GROUP_TRANSITION;
 	let header = useRef<HTMLDivElement>(null);
 	let panel = useRef<HTMLDivElement>(null);
-	let action = group.id === "mine" ? onNewSession : undefined;
+	let action = group.onNewSession || (group.id === "mine" ? onNewSession : undefined);
+	let actionLabel = group.id.startsWith("project:")
+		? `New channel in ${group.label}`
+		: "New channel";
 	let archiveInactive = group.id === "mine" ? onArchiveInactive : undefined;
 	let create = useCallback(() => {
 		if (collapsed) onToggleGroup?.(group.id);
@@ -596,20 +600,22 @@ function Group({
 												size="icon-sm"
 												variant="ghost"
 												className={actionButtonClassName}
-												aria-label="New channel"
+												aria-label={actionLabel}
 												onClick={create}
 											>
 												<IconPlus className="size-3.5" />
 											</Button>
 										}
 									/>
-									<TooltipContent side="right">New channel</TooltipContent>
+									<TooltipContent side="right">{actionLabel}</TooltipContent>
 								</Tooltip>
-								<SessionOptions
-									className={actionButtonClassName}
-									onContinuePr={onContinuePr}
-									onStartIssue={onStartIssue}
-								/>
+								{group.id === "mine" && (
+									<SessionOptions
+										className={actionButtonClassName}
+										onContinuePr={onContinuePr}
+										onStartIssue={onStartIssue}
+									/>
+								)}
 							</div>
 						)}
 					</ContextMenuTrigger>
@@ -780,13 +786,16 @@ function partition(groups: SessionSidebarGroup[], create: boolean) {
 	let total = count(groups);
 	let archived = groups.find((group) => group.id === "archived" && group.rows.length > 0);
 	let visible = groups.filter((group) =>
-		group.id !== "archived" && (group.rows.length > 0 || (group.id === "mine" && create))
+		group.id !== "archived"
+		&& (group.rows.length > 0 || group.onNewSession || (group.id === "mine" && create))
 	);
-	let hasMineAction = visible.some((group) => group.id === "mine" && create);
+	let hasCreateAction = visible.some((group) =>
+		group.onNewSession || (group.id === "mine" && create)
+	);
 	let visibleKey = visible.map((group) =>
 		`${group.id}:${group.collapsed ? 1 : 0}:${group.rows.length}`
 	).join("|");
-	return { total, archived, visible, hasMineAction, visibleKey };
+	return { total, archived, visible, hasCreateAction, visibleKey };
 }
 
 type GroupActions = Omit<ComponentPropsWithRef<typeof Group>, "group">;
@@ -794,7 +803,7 @@ type GroupActions = Omit<ComponentPropsWithRef<typeof Group>, "group">;
 function SessionRows({
 	loading,
 	total,
-	hasMineAction,
+	hasCreateAction,
 	empty,
 	lobby,
 	onRebuildLobby,
@@ -803,7 +812,7 @@ function SessionRows({
 	actions,
 }: Pick<SessionSidebarProps, "loading" | "empty" | "lobby" | "onRebuildLobby"> & {
 	total: number;
-	hasMineAction: boolean;
+	hasCreateAction: boolean;
 	selectLobby: () => void;
 	visible: SessionSidebarGroup[];
 	actions: GroupActions;
@@ -811,7 +820,7 @@ function SessionRows({
 	let { onNewSession, selectedUid } = actions;
 	return (loading
 		? <LoadingRows />
-		: total === 0 && !hasMineAction
+		: total === 0 && !hasCreateAction
 		? (empty ?? <DefaultEmpty onNewSession={onNewSession} />)
 		: (
 			<>
@@ -864,7 +873,7 @@ export function SessionSidebar(
 		...props
 	}: SessionSidebarProps,
 ) {
-	let { total: rows, archived, visible, hasMineAction, visibleKey } = partition(
+	let { total: rows, archived, visible, hasCreateAction, visibleKey } = partition(
 		groups,
 		!!onNewSession,
 	);
@@ -965,7 +974,7 @@ export function SessionSidebar(
 								<SessionRows
 									loading={loading}
 									total={total}
-									hasMineAction={hasMineAction}
+									hasCreateAction={hasCreateAction}
 									empty={empty}
 									lobby={lobby}
 									onRebuildLobby={onRebuildLobby}
