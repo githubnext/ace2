@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import { closeSync, openSync } from "node:fs";
+import { closeSync, existsSync, openSync } from "node:fs";
 import { connect as dial, type Socket } from "node:net";
 
-import type { Event, Frame, Request } from "@ace/channel/protocol";
+import type { Frame, Request } from "@ace/channel/protocol";
 
 import * as catalog from "./catalog";
 import { config } from "./config";
+import type { Watch } from "./gateway-client";
 import { key, workerEnv } from "./keys";
 import { lines } from "./lines";
 import { failure, log } from "./log";
@@ -95,7 +96,8 @@ export class Connection {
 	#transport!: Transport;
 	#next = 1;
 	#pending = new Map<number, { resolve(value: unknown): void; reject(error: Error): void }>();
-	#watchers = new Map<number, (event: Event) => void>();
+	#watchers = new Map<number, Watch>();
+	#released = false;
 	closed!: Promise<void>;
 
 	private constructor() {}
@@ -105,9 +107,15 @@ export class Connection {
 		connection.#transport = await open((text) => connection.#receive(JSON.parse(text)));
 		connection.closed = connection.#transport.closed;
 		connection.closed.then(() => {
-			for (const { reject } of connection.#pending.values()) {
-				reject(new Error("The channel closed the connection"));
+			const error = "The channel closed the connection";
+			// Every accepted watch ends here, so relays can drop it; its owner decides whether to watch again.
+			for (const [id, watch] of connection.#watchers) {
+				if (connection.#pending.has(id)) continue;
+				watch.closed?.(connection.#released ? "The watch was released" : error);
 			}
+			connection.#watchers.clear();
+			for (const { reject } of connection.#pending.values()) reject(new Error(error));
+			connection.#pending.clear();
 		});
 		return connection;
 	}
@@ -138,6 +146,8 @@ export class Connection {
 				const connected = await attempt(socket);
 				return Connection.#connect(async (receive) => local(connected, receive));
 			} catch {
+				// A delete holds the worker lock until the record is gone; nothing is left to start.
+				if (!existsSync(catalog.paths(id).record)) throw new Error("The channel was deleted");
 				if (!started) start(id);
 				started = true;
 				await Bun.sleep(wait);
@@ -149,7 +159,7 @@ export class Connection {
 
 	request<T = unknown>(
 		request: Request | WorkerRequest,
-		watch?: (event: Event) => void,
+		watch?: Watch,
 		trace?: string,
 	): Promise<T> {
 		const id = this.#next++;
@@ -161,14 +171,16 @@ export class Connection {
 	}
 
 	close(): void {
+		this.#released = true;
 		this.#transport.end();
 	}
 
 	#receive(frame: Frame) {
-		if ("event" in frame) return this.#watchers.get(frame.id)?.(frame.event);
+		if ("event" in frame) return this.#watchers.get(frame.id)?.event(frame.event);
 		const pending = this.#pending.get(frame.id);
 		this.#pending.delete(frame.id);
 		if (frame.ok) return pending?.resolve(frame.value);
+		this.#watchers.delete(frame.id);
 		pending?.reject(new Error(frame.error));
 	}
 }

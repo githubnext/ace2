@@ -119,10 +119,12 @@ async function watch(id: string, until?: (event: Event) => boolean, replay = tru
 	const info = await connection.request<ChannelInfo>({ op: "info" });
 	let live = false;
 	const done = Promise.withResolvers<void>();
-	await connection.request({ op: "watch", chat: chat() }, (event) => {
-		if (event.kind === "live") return void (live = true);
-		if (live || replay) render(event, info);
-		if (live && until?.(event)) done.resolve();
+	await connection.request({ op: "watch", chat: chat() }, {
+		event(event) {
+			if (event.kind === "live") return void (live = true);
+			if (live || replay) render(event, info);
+			if (live && until?.(event)) done.resolve();
+		},
 	});
 	return { connection, done: done.promise };
 }

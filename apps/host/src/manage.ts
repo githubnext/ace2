@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, hostname } from "node:os";
 import { resolve } from "node:path";
 
@@ -145,11 +145,24 @@ export async function archiveInactive(root: string): Promise<string[]> {
 	return ids;
 }
 
+/**
+ * Kills the worker and keeps its lock, so a client still watching the channel cannot start another
+ * worker over storage being removed. A worker that started before the lock is killed in turn.
+ */
+async function hold(id: string): Promise<void> {
+	for (let wait = 50; wait < 5000; wait *= 2) {
+		await kill(id);
+		if (catalog.lock(id)) return;
+		await Bun.sleep(wait);
+	}
+	throw new Error("The channel's worker kept restarting; try deleting it again");
+}
+
 /** Removes the channel and its lane worktrees; lane branches stay in the project. */
 export async function remove(id: string): Promise<void> {
-	await kill(id);
 	const { project, hosted } = catalog.read(id);
 	if (hosted) {
+		await kill(id);
 		const response = await fetch(`${hosted}/channels/${id}`, {
 			method: "DELETE",
 			headers: await hostedAuth(),
@@ -157,10 +170,15 @@ export async function remove(id: string): Promise<void> {
 		if (!response.ok && response.status !== 404) {
 			throw new Error(`The hosting service did not delete the channel: ${response.status}`);
 		}
+	} else await hold(id);
+	const { lanes, pid } = catalog.paths(id);
+	try {
+		for (const lane of existsSync(lanes) ? readdirSync(lanes) : []) {
+			spawnSync("git", ["-C", project, "worktree", "remove", "--force", `${lanes}/${lane}`]);
+		}
+		catalog.remove(id);
+	} catch (error) {
+		if (!hosted) rmSync(pid, { force: true });
+		throw error;
 	}
-	const lanes = catalog.paths(id).lanes;
-	for (const lane of existsSync(lanes) ? readdirSync(lanes) : []) {
-		spawnSync("git", ["-C", project, "worktree", "remove", "--force", `${lanes}/${lane}`]);
-	}
-	catalog.remove(id);
 }

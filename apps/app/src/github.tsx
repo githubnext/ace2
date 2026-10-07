@@ -28,7 +28,7 @@ import {
 
 import { type Query, useGithub } from "./github-cache";
 import { host } from "./host";
-import type { AppProject } from "./projects";
+import { type AppProject, checkoutId } from "./projects";
 
 const NAMES = { issues: "Issues", prs: "Pull requests" };
 const DATE = new Intl.DateTimeFormat(undefined, {
@@ -66,7 +66,7 @@ const COLORS = {
 
 function useGithubFilter(kind: GithubKind, project: AppProject) {
 	return useLocalStorage<Filter>(
-		`ace:github-filter:${host.url}:${project.id}:${kind}`,
+		`ace:github-filter:${host.url}:${checkoutId(project.host, project.path)}:${kind}`,
 		DEFAULT_FILTER,
 	);
 }

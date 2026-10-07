@@ -161,7 +161,8 @@ export type HostRequest =
 	/**
 	 * Forward a request to a channel on this host or a peer, starting its worker if dormant. The
 	 * channel's host sets every author field to the participant it verified. A `watch` streams
-	 * events until `release`.
+	 * events until a failure frame for its id follows the accepted reply: after `release`, or when
+	 * the channel's worker or a relaying host closes. Clients that predate this frame drop it.
 	 */
 	| { op: "channel"; channel: string; request: Request }
 	/**

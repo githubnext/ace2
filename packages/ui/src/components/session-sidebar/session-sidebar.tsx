@@ -39,7 +39,9 @@ export type SessionSidebarGroupId =
 	| "team"
 	| "inactive"
 	| "archived"
-	| `project:${string}`;
+	| `project:${string}`
+	/** A teammate's channels by owner, with `:archived` for their archived ones. */
+	| `team:${string}`;
 
 export type SessionSidebarGroup = {
 	id: SessionSidebarGroupId;

@@ -68,7 +68,8 @@ private final class Desktop {
 					allowlistedBundles: [client],
 					allowedOperations: [
 						.listApplications, .listWindows, .listMenus, .menuCommand, .desktopObservation,
-						.ownsSnapshot, .getDetectionResult, .beginSnapshotMutation, .finishSnapshotMutation,
+						.createSnapshot, .cleanSnapshot, .ownsSnapshot, .getDetectionResult, .beginSnapshotMutation,
+						.finishSnapshotMutation,
 						.targetedClick, .exactWindowTargetedClick, .setValue, .exactWindowTargetedHotkey,
 						.selectText, .literalInsert, .clipboardTextRead, .clipboardImageRead, .clipboardFilesRead, .clipboardTextWrite, .clipboardImageWrite, .clipboardFilesWrite, .targetedScroll, .exactWindowDrag,
 						.launchApplicationWithOptions, .activateApplication, .quitApplication, .backgroundCloseWindow,

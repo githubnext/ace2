@@ -189,9 +189,12 @@ find the client alongside Ace Helper automatically.
   Read the outcome and actual refreshed bounds before continuing.
 - `desktop_inspect` reads one explicit process and window ID, returning accessibility text and
   a screenshot without activating the window or changing keyboard focus.
-  Set `mode` to `pixels` for an explicit read-only screenshot when Accessibility is unavailable.
-  Pixel inspection verifies the same exact target and image content but returns no reusable action
-  snapshot or element IDs. The default mode is `accessibility`.
+  Set `mode` to `pixels` for a screenshot-only observation when Accessibility is unavailable or
+  incomplete. Pixel inspection verifies the same exact target and image content, then publishes a
+  single-use snapshot only after the stored capture grants coordinate authority for that exact
+  process generation, window and bounds. It has no element IDs or focused control, so it authorizes
+  screenshot-point clicks, point scrolls and drags; element, value, selection, key and insertion
+  requests using it are refused. The default mode is `accessibility`.
 - `desktop_click` clicks one observed Accessibility element or screenshot point. `kind` defaults
   to `single`; `double`, `right`, `middle`, and `triple` are also supported.
   A single left click on a supported editable text field, by element or point, requests keyboard focus and reports
@@ -302,7 +305,10 @@ prove that the app or window closed. An inventory timeout does not replace the i
 
 Retry an incomplete Accessibility read once. For a changed capture receipt, Peekaboo already retries
 the passive capture once while preserving the exact target checks. If inspection still fails, use
-the inventories to reassess the target or explicitly request `pixels` for visual evidence. Pixel
+the inventories to reassess the target or explicitly request `pixels` for visual evidence and
+point-only actions. A pixel snapshot removes Ace's Accessibility observation requirement, not any
+Accessibility the native input route itself uses; the automatic observation after a completed
+action still uses accessibility mode, so request `pixels` again if it fails. Pixel
 inspection can also fail if the exact window is unavailable; it never substitutes another window
 or removes target validation. Neither inspection mode activates a window or changes focus. A failed
 observation after completed input preserves that completed action and its original outcome.

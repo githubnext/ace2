@@ -25,6 +25,7 @@ import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { CodingTools } from "@earendil-works/pi-durable/tools";
 
 import { type Directory, messaging, Subagent } from "./agents";
+import { type Browser, browser } from "./browser";
 import { instructions } from "./context";
 import { changes, patch } from "./changes";
 import { type Desktop, desktop } from "./desktop";
@@ -76,6 +77,7 @@ export type Options = {
 	models: Models;
 	env(cwd: string): ExecutionEnv;
 	desktop?: Desktop;
+	browser?: Browser;
 	directory: Directory;
 	/** Publish a projection of committed metadata to the runtime's channel catalog. */
 	onMetadata?(value: Metadata): void;
@@ -137,6 +139,7 @@ export class Channel {
 				return execute(request, context);
 			}));
 		}
+		if (options.browser) registry.install(browser(options.browser));
 		registry.install(lanes({ ...options, name: options.prefix || options.name }));
 		registry.install(Subagent);
 		registry.install(metadata((value) => channel.#changed(value)));

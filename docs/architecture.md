@@ -34,6 +34,15 @@ The shared project picker also offers All Projects, which opens Channels with co
 named for each project and its ten most recently active, non-archived channels. Opening a channel
 keeps that grouped view; channel creation and GitHub pages retain a concrete project selection.
 
+The app identifies a project with a GitHub remote by its repository, compared case-insensitively,
+so checkouts of it on any host are one project; a folder without one is its host and main checkout.
+A project keeps every known checkout. Creating channels and archiving inactive ones use this host's
+checkout, so a project checked out only on teammates' hosts lists their channels but cannot start
+one here until a checkout is opened. Its Channels sidebar shows the person's own channels, then one
+section per teammate across all of their hosts, with that teammate's archived channels in a folded
+section of their own. Saved host-and-checkout selections from earlier versions resolve to the
+merged project. This is client navigation only; channel records and listings are unchanged.
+
 A channel's details sidebar shows the root chat's changes and branch, the newest pull request from
 that branch with its checks, subagents and links from the transcript, and the channel's usage.
 The pull request is read through the same GitHub CLI account while the sidebar is open, again when
@@ -107,6 +116,16 @@ directory holds `channel.json`, `channel.sqlite`, and the channel's lanes. Clien
 channel's worker on demand and talk to it over `channel.sock` with newline-delimited JSON. A worker
 retires when it has no clients and no live work.
 
+The app owns its transcript watches. A gateway or peer host relaying a watch reports its end with a
+failure frame after the accepted reply, whether it was released or its worker, hosted connection,
+or peer gateway closed; relays then drop it and never re-watch on their own. The app ignores the
+end of a watch it released, restarts others with a fresh replay and channel info, which wakes a
+killed channel's worker as reopening it would, and stops after three quick ends with an error.
+A rejected watch retries only when asked, or once when an offline channel's host becomes reachable.
+Deleting a channel kills its worker and keeps the worker lock, then removes the record before its
+directory. Workers read the record only after taking the lock, so a watch recovering during the
+delete cannot start a worker over storage being removed.
+
 Workers clear the busy projection on startup and normal exit. Listings suppress it for archived
 or dormant channels, and check the worker PID as well as the socket path. A five-second host
 liveness sweep broadcasts when a crashed worker's busy projection becomes stale, without writing
@@ -126,7 +145,7 @@ the opened-project list; teammates see the project information already present i
 A channel's project path is the checkout it works in: its agents' working directory and the base
 of its lanes. That checkout may be a Git worktree, such as a lane or another tool's worktree. The
 host groups every worktree under its repository's main checkout and labels it with the GitHub
-remote, so the picker shows one project per repository on a host without rewriting channel
+remote, so the app shows one project per repository across hosts without rewriting channel
 records. Opening a worktree adds its main checkout.
 
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
@@ -287,13 +306,27 @@ Explicitly read content enters ordinary tool history as observed data; no permis
 Pi records their intent and never automatically replays an interrupted action. Results distinguish
 completed operations, refusals before dispatch, and uncertain delivery. The host bounds
 accessibility text and resizes screenshots before returning them. Explicit pixel inspection preserves
-exact-target capture checks without publishing action authority; failed observations retain their
+exact-target capture checks and publishes a screenshot-only snapshot whose stored capture authorizes
+only coordinate input in that exact window; failed observations retain their
 error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
 coordinates concurrent native operations. An independent owner-controlled channel setting gates
 native desktop tool dispatch for every chat, including the owner's agents and subagents. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
+
+Agents list, navigate, and inspect web pages through an injected browser capability. The host talks
+to a dedicated development browser directly over the Chrome DevTools Protocol on loopback. It finds
+the browser only through `DevToolsActivePort` in the profile at `$ACE_HOME/browser`, so personal
+browsers and other debugging sessions are never reached; Ace does not launch or own that browser.
+A tab target is the browser ID from Chrome's endpoint path plus Chrome's target ID. Every call
+reconnects and refuses a replaced browser or closed tab instead of choosing another tab by URL,
+title, or position. Inspection returns the main document's bounded accessibility tree and a viewport
+JPEG with loader IDs before and after, keeping partial evidence when one part fails. Navigation is
+unsafe and sequential: it reports Chrome's answer (started, same document, download, or failed)
+without claiming readiness, and a navigation whose dispatch or answer is uncertain stays unknown. Hosted channels forward the
+capability to their workspace, and pi stores the result like any other tool output. See
+[browser tools](browser-tools.md) for setup, limits, and outcomes.
 
 The installed development app uses `dev.ace.desktop.dev`, port 4141, and `~/.local/state/ace-dev`,
 keeping it separate from stable and Canary. Its preferences live under `Ace-dev`, and its Keychain
@@ -399,5 +432,5 @@ or kills.
 ## Not yet built
 
 Terminals and previews, attachments, lobby cells, and external harnesses (Claude Code, Codex).
-Hosted channels cannot message other channels yet. Projects are still keyed by a host's main
-checkout, so a teammate's checkout of the same repository shows as a separate project.
+Hosted channels cannot message other channels yet. Projects without a GitHub remote are still keyed
+by a host's main checkout, so a teammate's copy of the same folder shows as a separate project.

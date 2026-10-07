@@ -95,3 +95,4 @@ signature. Re-sign it once with `codesign --force -s - apps/desktop/node_modules
 - [Architecture](docs/architecture.md): how channels, hosts, and shared services fit together.
 - [Desktop plan](docs/desktop.md): packaging, settings, onboarding, and distribution.
 - [Native desktop inspection](docs/desktop-tools.md): inspect macOS windows with Peekaboo.
+- [Browser tools](docs/browser-tools.md): list, navigate, and inspect pages in a dedicated browser.

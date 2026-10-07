@@ -14,6 +14,7 @@ import {
 	type TextLineReader,
 } from "@earendil-works/pi-durable/env";
 
+import { type Browser, type BrowserRequest, type BrowserResult, isBrowserAction } from "./browser";
 import { type Desktop, type DesktopRequest, type DesktopResult, isDesktopAction } from "./desktop";
 import type { Metadata } from "./protocol";
 
@@ -25,7 +26,7 @@ type CallId = string | number;
 
 /** Channel to workspace. */
 export type Call =
-	| { call: CallId; method: Method | "desktop"; cwd: string; args: unknown[] }
+	| { call: CallId; method: Method | Tool; cwd: string; args: unknown[] }
 	| { cancel: CallId };
 
 /** Metadata and activity are projected by the workspace host even when no client watches the channel. */
@@ -67,6 +68,7 @@ const METHODS = [
 	"exec",
 ] as const;
 type Method = (typeof METHODS)[number];
+type Tool = "desktop" | "browser";
 
 /** JSON cannot carry bytes; file contents cross as tagged base64. */
 function encode(value: unknown): unknown {
@@ -101,18 +103,34 @@ function rebuild(f: Failure): Error {
 		: new ExecutionError(f.code as ExecutionError["code"], f.message);
 }
 
-function desktopFailure(outcome: "refused" | "unknown", reason: string): DesktopResult {
+const MESSAGES = {
+	desktop: {
+		action: "desktop action",
+		unknown:
+			"The desktop action may have partially run. Inspect the target's current state before retrying. Stopping does not undo input already delivered.",
+		refused: "The desktop action was not sent to the native desktop.",
+	},
+	browser: {
+		action: "navigation",
+		unknown:
+			"The navigation may still happen. Inspect the tab's current state before navigating again.",
+		refused: "The navigation was not sent to the browser.",
+	},
+};
+
+function actionFailure(tool: Tool, outcome: "refused" | "unknown", reason: string): DesktopResult {
 	return {
 		outcome,
 		isError: true,
-		text: JSON.stringify({
-			outcome,
-			reason,
-			message: outcome === "unknown"
-				? "The desktop action may have partially run. Inspect the target's current state before retrying. Stopping does not undo input already delivered."
-				: "The desktop action was not sent to the native desktop.",
-		}),
+		text: JSON.stringify({ outcome, reason, message: MESSAGES[tool][outcome] }),
 	};
+}
+
+type ToolCall = Extract<Call, { method: string }> & { method: Tool };
+
+function isAction(call: Extract<Call, { method: string }>): call is ToolCall {
+	if (call.method === "desktop") return isDesktopAction(call.args[0] as DesktopRequest);
+	return call.method === "browser" && isBrowserAction(call.args[0] as BrowserRequest);
 }
 
 /** The channel's side: one connection to the workspace, shared by every chat's environment. */
@@ -159,7 +177,7 @@ export class Link {
 	}
 
 	request(
-		method: Method | "desktop",
+		method: Method | Tool,
 		cwd: string,
 		args: unknown[],
 		context: Context,
@@ -167,7 +185,7 @@ export class Link {
 	): Promise<Result<unknown, Error>> {
 		const send = this.#send;
 		if (!send) {
-			const error = method === "exec" || method === "desktop"
+			const error = method === "exec" || method === "desktop" || method === "browser"
 				? new ExecutionError("unknown", "The workspace is offline")
 				: new FileError("unknown", "The workspace is offline");
 			return Promise.resolve(err(error));
@@ -209,14 +227,30 @@ export class Link {
 		});
 	}
 
-	async desktop(request: DesktopRequest, context: Context): Promise<DesktopResult> {
-		const action = isDesktopAction(request);
-		if (action && !this.#send) return desktopFailure("refused", "The workspace is offline");
+	desktop(request: DesktopRequest, context: Context): Promise<DesktopResult> {
+		return this.#tool("desktop", request, isDesktopAction(request), context);
+	}
+
+	browser(request: BrowserRequest, context: Context): Promise<BrowserResult> {
+		return this.#tool("browser", request, isBrowserAction(request), context);
+	}
+
+	async #tool(
+		tool: Tool,
+		request: unknown,
+		action: boolean,
+		context: Context,
+	): Promise<DesktopResult> {
+		if (action && !this.#send) return actionFailure(tool, "refused", "The workspace is offline");
 		if (action && context.abortSignal?.aborted) {
-			return desktopFailure("refused", "The desktop action was cancelled before dispatch");
+			return actionFailure(
+				tool,
+				"refused",
+				`The ${MESSAGES[tool].action} was cancelled before dispatch`,
+			);
 		}
-		const result = await this.request("desktop", "", [request], context);
-		if (!result.ok && action) return desktopFailure("unknown", result.error.message);
+		const result = await this.request(tool, "", [request], context);
+		if (!result.ok && action) return actionFailure(tool, "unknown", result.error.message);
 		if (!result.ok) throw result.error;
 		return result.value as DesktopResult;
 	}
@@ -267,17 +301,19 @@ export class Link {
 export function serve(
 	env: (cwd: string) => ExecutionEnv,
 	send: (reply: Reply) => void,
-	desktop?: Desktop,
+	tools: { desktop?: Desktop; browser?: Browser } = {},
 ) {
 	const running = new Map<CallId, { abort: AbortController; done: Promise<void> }>();
 	let closed = false;
 	const handle = async (call: Call) => {
 		if ("cancel" in call) return running.get(call.cancel)?.abort.abort();
 		if (closed) {
-			if (call.method === "desktop" && isDesktopAction(call.args[0] as DesktopRequest)) {
+			if (isAction(call)) {
 				return send({
 					call: call.call,
-					result: ok(desktopFailure("refused", "The workspace disconnected before dispatch")),
+					result: ok(
+						actionFailure(call.method, "refused", "The workspace disconnected before dispatch"),
+					),
 				});
 			}
 			return send({
@@ -285,7 +321,7 @@ export function serve(
 				result: err(failure(new Error("The workspace disconnected"))),
 			});
 		}
-		if (call.method !== "desktop" && !METHODS.includes(call.method)) {
+		if (call.method !== "desktop" && call.method !== "browser" && !METHODS.includes(call.method)) {
 			return send({
 				call: call.call,
 				result: err(failure(new Error(`Unknown method ${call.method}`))),
@@ -297,20 +333,25 @@ export function serve(
 		const context = withAbortSignal(abort.signal, BACKGROUND_CONTEXT);
 		try {
 			const args = call.args.map(decode);
-			if (call.method === "desktop") {
-				const request = args[0] as DesktopRequest;
-				if (!desktop) {
-					if (!isDesktopAction(request)) {
-						throw new Error("Native desktop inspection is unavailable on this workspace");
+			if (call.method === "desktop" || call.method === "browser") {
+				const tool = call.method;
+				const execute = tools[tool] as
+					| ((request: unknown, context: Context) => Promise<DesktopResult>)
+					| undefined;
+				if (!execute) {
+					if (!isAction(call)) {
+						throw new Error(
+							tool === "desktop"
+								? "Native desktop inspection is unavailable on this workspace"
+								: "Browser inspection is unavailable on this workspace",
+						);
 					}
-					return send({
-						call: call.call,
-						result: ok(
-							desktopFailure("refused", "Native desktop actions are unavailable on this workspace"),
-						),
-					});
+					const reason = tool === "desktop"
+						? "Native desktop actions are unavailable on this workspace"
+						: "Browser navigation is unavailable on this workspace";
+					return send({ call: call.call, result: ok(actionFailure(tool, "refused", reason)) });
 				}
-				const value = await desktop(request, context);
+				const value = await execute(args[0], context);
 				return send({ call: call.call, result: ok(value) });
 			}
 			const target = env(call.cwd);
