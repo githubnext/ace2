@@ -22,9 +22,9 @@ function adopt(project: AppProject): string {
 	const scope = `/projects/${project.id}/dashboard`;
 	for (const kind of ["draft", "history"]) {
 		const key = `ace:${kind}:${scope}`;
-		// useDraft still moves drafts that earlier versions kept in sessionStorage.
-		const stores = kind === "draft" ? [localStorage, sessionStorage] : [localStorage];
 		try {
+			// useDraft still moves drafts that earlier versions kept in sessionStorage.
+			const stores = kind === "draft" ? [localStorage, sessionStorage] : [localStorage];
 			if (stores.some((store) => store.getItem(key) !== null)) continue;
 			for (const checkout of project.checkouts) {
 				const legacy = `ace:${kind}:/projects/${checkout}/dashboard`;
