@@ -45,6 +45,17 @@ const log: Log = (level, event, fields) => {
 export class HostedChannel extends DurableObject<Env> {
 	#link = new Link(crypto.randomUUID());
 	#channel?: Promise<Channel>;
+	/**
+	 * Hibernation discards in-flight workspace calls while their processes keep running on the
+	 * workspace. A pending timer prevents hibernation, so it lives exactly while a chat is busy.
+	 */
+	#resident?: ReturnType<typeof setTimeout>;
+
+	/** Each hold is a fresh bounded timer, renewed until the busy-to-idle transition clears it. */
+	#reside(busy: boolean) {
+		clearTimeout(this.#resident);
+		this.#resident = busy ? setTimeout(() => this.#reside(true), KEEPALIVE) : undefined;
+	}
 
 	#config(): Config | undefined {
 		const config = this.ctx.storage.kv.get<
@@ -83,7 +94,10 @@ export class HostedChannel extends DurableObject<Env> {
 				...config,
 				onMetadata: (metadata) => this.#project({ metadata }),
 				onActivity: (active) => this.#project({ active }),
-				onBusy: (busy) => this.#project({ busy }),
+				onBusy: (busy) => {
+					this.#reside(busy);
+					this.#project({ busy });
+				},
 				storage: await SqliteStorage.open(new DurableSqlite(this.ctx.storage)),
 				models: builtinModels({
 					authContext: {
