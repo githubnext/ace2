@@ -3,13 +3,30 @@
 A collaborative coding environment where people and agents work together in channels that run on
 your own machines.
 
+## Security — read this first
+
+> [!WARNING]
+> Ace runs agents with the privileges of the user running the host. They can execute arbitrary
+> shell commands and read, change, or delete files beyond the project directory. Channels and
+> lanes are not security sandboxes.
+
 **Your tailnet is your team and the sole authority for team membership and collaboration access.**
-Ace has no separate accounts, invitations, or team access controls. The channel owner can turn
-collaborator agent invocation on or off for all of the agent's available tools together.
+Ace has no separate accounts, invitations, or team access controls. Only allow people and machines
+you trust with access to your host to reach Ace over your tailnet.
+
+Channels start with collaborator agent invocation enabled. Treat sharing a channel as granting
+teammates the ability to run commands on its host. `bun ace share <channel> off` blocks new
+collaborator invocations; active work continues, and teammates can still read channel history and
+post messages. Disabling native desktop tools does not restrict shell access.
+
+Keep the host's gateway on loopback or your private tailnet. **Do not expose it to the public
+internet** through Tailscale Funnel, port forwarding, or a public reverse proxy. Protect local
+owner tokens and the team's `ACE_SECRET` as credentials for the access they grant. Read
+[the trust model](docs/architecture.md#the-team) before running or sharing Ace.
 
 Ace is open source software for teams to clone, fork, and operate themselves. Any shared services
 are deployed by the team in its own infrastructure or cloud account. Ace will not operate a
-hosted service. See [the team](docs/architecture.md#the-team) for the trust model.
+hosted service.
 
 ## Run
 
