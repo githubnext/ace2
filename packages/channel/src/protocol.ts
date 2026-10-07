@@ -134,6 +134,15 @@ export type GithubFile = {
 /** An image as base64. Clients downscale before sending; see `MAX_IMAGES` in room.ts. */
 export type Image = { mimeType: string; data: string };
 
+/** A message admitted by pi but not yet placed in the chat's transcript. */
+export type QueuedMessage = {
+	submission: number;
+	author: string;
+	text: string;
+	images?: Image[];
+	invoked: boolean;
+};
+
 export type Request =
 	| { op: "info" }
 	| { op: "models" }
@@ -169,9 +178,16 @@ export type Request =
 	/** One file's unified diff, against the same base as `changes`. */
 	| { op: "patch"; chat?: ChatId; file: string }
 	/** Replay the chat's transcript, then stream its events until the connection closes. */
-	| { op: "watch"; chat?: ChatId };
+	| {
+		op: "watch";
+		chat?: ChatId;
+		/** Include queue events; older clients do not understand them. */
+		queue?: boolean;
+	};
 
 export type Event =
+	/** The complete current message queue, sent on attachment and every committed change. */
+	| { kind: "queue"; chat: ChatId; messages: QueuedMessage[] }
 	/** A human message; `invoked` when it asked the chat's agent to run. */
 	| {
 		kind: "message";

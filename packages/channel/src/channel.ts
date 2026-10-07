@@ -12,6 +12,7 @@ import {
 	defineExtension,
 	type EntryRecord,
 	Harness,
+	InboxDoc,
 	LiveDoc,
 	ROOT_CONVERSATION_ID,
 	type Storage,
@@ -44,6 +45,7 @@ import type {
 	Request,
 	Usage,
 } from "./protocol";
+import { queue } from "./queue";
 import * as room from "./room";
 
 type Settings = { shared: boolean; desktop: boolean };
@@ -250,7 +252,7 @@ export class Channel {
 			case "rename":
 				return this.#rename(request);
 			case "watch":
-				return this.#watch(request.chat, send);
+				return this.#watch(request.chat, send, request.queue);
 			case "changes": {
 				const { cwd, lane } = await this.#place(request.chat);
 				return changes(this.#options.env(cwd), cwd, this.#options.project, lane, context);
@@ -570,22 +572,45 @@ export class Channel {
 	}
 
 	/** Replays the chat's active transcript, then streams. Resolves when the stream ends. */
-	async #watch(chat: ChatId | undefined, send: Send) {
+	async #watch(chat: ChatId | undefined, send: Send, includeQueue = false) {
 		const conversation = await this.#conversation(chat);
 		const stream = await watchEvents(this.#harness, conversation.id, context);
+		// Agent events expose only inbox IDs. The shared conversation mount carries their content,
+		// including an atomic initial snapshot and updates when the inbox is first created.
+		const view = includeQueue
+			? await conversation.watch(context).catch(async (error) => {
+				await stream.stop();
+				throw error;
+			})
+			: undefined;
 		const listener = { chat: conversation.id, send };
 		this.#listeners.add(listener);
-		void stream.closed.then(() => this.#listeners.delete(listener));
+		void stream.closed.then(() => {
+			this.#listeners.delete(listener);
+			return view?.stop();
+		});
+		void view?.closed.then(() => stream.stop());
 		send(this.#event(conversation.id));
 		for (const entry of stream.snapshot.entries) for (const event of events(entry)) send(event);
 		if (stream.snapshot.run) send({ kind: "run", chat: conversation.id, state: "start" });
+		if (view) {
+			send({ kind: "queue", chat: conversation.id, messages: queue(view.value) });
+			let inbox = view.value.docs[InboxDoc.definition.kind];
+			view.start(async (value) => {
+				const next = value.docs[InboxDoc.definition.kind];
+				if (next === inbox) return;
+				inbox = next;
+				send({ kind: "queue", chat: conversation.id, messages: queue(value) });
+			});
+		}
 		send({ kind: "live", chat: conversation.id });
 		stream.start(async (batch) => {
 			for (const event of batch) for (const mapped of live(conversation.id, event)) send(mapped);
 		});
 		return {
-			stop: () => {
+			stop: async () => {
 				this.#listeners.delete(listener);
+				await view?.stop();
 				return stream.stop();
 			},
 		};

@@ -90,19 +90,31 @@ export type Human = {
 export function human(entry: EntryRecord): Human | undefined {
 	const user = entry.model?.[0];
 	if (user?.role !== "user") return;
-	const attached = images(user);
-	const extra = attached ? { images: attached } : {};
 	if (MessageEntry.is(entry)) {
-		return { ...entry.data, ...extra, at: user.timestamp, invoked: false };
+		const attached = images(user);
+		return {
+			...entry.data,
+			...(attached ? { images: attached } : {}),
+			at: user.timestamp,
+			invoked: false,
+		};
 	}
 	if (entry.kind !== "pi.user") return;
+	return { ...input(user.content), at: user.timestamp, invoked: true };
+}
+
+/** The author prefix is shared by queued inputs and their eventual transcript entries. */
+export function input(content: UserMessage["content"]): Omit<Human, "at" | "invoked"> {
+	const user: UserMessage = { role: "user", content, timestamp: 0 };
+	const attached = images(user);
+	const extra = attached ? { images: attached } : {};
 	const body = text(user);
 	const split = body.indexOf(": ");
 	const author = body.slice(0, split);
 	if (split < 1 || !isAuthor(author)) {
-		return { author: "unknown", text: body, ...extra, at: user.timestamp, invoked: true };
+		return { author: "unknown", text: body, ...extra };
 	}
-	return { author, text: body.slice(split + 2), ...extra, at: user.timestamp, invoked: true };
+	return { author, text: body.slice(split + 2), ...extra };
 }
 
 export type Room = { name: string; project: string };

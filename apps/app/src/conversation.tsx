@@ -6,6 +6,7 @@ import type { Listing } from "@ace/host/protocol";
 import { Composer } from "./composer";
 import { publish } from "./details";
 import { host } from "./host";
+import { MessageQueue } from "./message-queue";
 import { toEvents } from "./timeline";
 import { useTranscript } from "./transcript";
 import { Usage } from "./usage";
@@ -105,6 +106,7 @@ export function Conversation(
 					)}
 			</div>
 			<div className="utils:max-width relative z-20 shrink-0 px-3 pb-3">
+				{transcript.live && <MessageQueue messages={transcript.queue} />}
 				<Composer
 					channel={channel}
 					chat={id}

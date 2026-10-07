@@ -75,6 +75,11 @@ is one pi conversation in that Session.
   levels from the channel's model catalog; Default leaves reasoning to always-thinking providers,
   while Off disables it where supported. Switching models resets the composer's effort to that
   model's default until a level is chosen.
+- **Queued messages are pi's inbox.** Clients opt into queue events on the chat watch. The channel
+  projects the built-in conversation view's inbox into complete queue snapshots on attachment and
+  committed changes, including passive human writes but excluding internal writes. The app shows
+  these messages above the composer until pi consumes or withdraws them; reconnect reads pi again.
+  There is no additional queue store or change to admission and steering behavior.
 - **Subagents are child chats.** A subagent's chat is owned by the parent's tool task, so killing
   the parent kills the child. Agents in different channels only exchange messages.
 - **Lanes are Git worktrees** created by the chat's agent for each unit of work. A chat's working
