@@ -89,9 +89,16 @@ version. The initial pipeline uses complete disk images; delta generation is def
 
 ## Hosting and publishing
 
-Keep the source repository private. Only signed release artifacts go to a public Cloudflare R2
-bucket over HTTPS. The app contains no GitHub or Cloudflare credential. Publishing uses R2's
-bucket-scoped S3 credentials through Bun; it does not need an account-wide Cloudflare API token.
+The source repository is public. Each published desktop version has a GitHub release tagged
+`desktop-<channel>-v<version>` at its exact source revision, with the signed DMG attached. Canary
+releases are published prereleases, not drafts or GitHub's latest stable release. Build-only runs
+create workflow artifacts but no GitHub release.
+
+Signed release artifacts also go to a public Cloudflare R2 bucket over HTTPS for Sparkle updates.
+The app contains no GitHub or Cloudflare credential. Publishing uses R2's bucket-scoped S3
+credentials through Bun; it does not need an account-wide Cloudflare API token. GitHub publishing
+uses the GitHub CLI with repository contents-write permission; CI supplies its workflow token only
+to the publishing step.
 
 The initial canary uses the existing `luau-updates` bucket under its own `/ace` prefix, at
 `https://pub-5bdeb2efd19f42f09df9efad8b20c91e.r2.dev/ace`. Luau's feed and signing key are separate.
@@ -112,8 +119,17 @@ domain's cache rules to respect that header.
 
 The publisher verifies an existing feed's signature and refuses a version regression or changed
 bytes at an existing archive URL. It uploads and downloads the archive to verify its public bytes,
-then uploads and reads back the feed. The feed is the final commit point. Channel releases are
+then creates the GitHub release as a draft, uploads and checks the DMG's GitHub-reported SHA-256,
+and publishes the release before uploading and reading back the feed. The feed is the final commit
+point: a newly offered update already has its GitHub release and attachment. Channel releases are
 serialized by the workflow.
+
+Retries reuse the channel/version release and matching asset without replacing bytes. A conflicting
+source tag, DMG, or incomplete upload fails rather than clobbering a release. If publishing stops
+after GitHub succeeds, the GitHub release remains available; rerun `bun desktop publish` with the
+same prepared artifacts to finish the feed. Do not rebuild that version: signing changes the bytes.
+To backfill only GitHub from a verified existing CI artifact directory, without changing the feed,
+run `bun apps/desktop/scripts/github-release.ts <artifact-directory>`.
 
 ## Building from Ace
 
@@ -183,7 +199,9 @@ bun desktop release canary
 bun desktop publish
 ```
 
-`release` builds and verifies without publishing. `publish` uploads the prepared artifact.
+`release` builds and verifies without publishing. `publish` uploads the prepared artifact to R2,
+publishes its GitHub release, and updates the feed. Local publishing also requires `gh auth login`
+with repository contents-write permission.
 
 ## Validation
 

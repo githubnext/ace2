@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { S3Client } from "bun";
 
 import { root } from "./build";
+import { publishGithub } from "./github-release";
 import { type Release, required, signedTool } from "./release";
 import { sparkle } from "./sparkle";
 
@@ -91,6 +92,8 @@ if (!downloaded.ok || digest(await downloaded.arrayBuffer()) !== release.sha256)
 		"The public download does not match the signed archive. The feed has not been published.",
 	);
 }
+// A shipped feed must already have its versioned GitHub release and DMG.
+await publishGithub(output);
 // The feed is the commit point: all downloads must already exist and remain immutable.
 await upload("appcast.xml", "application/rss+xml", "no-store");
 const published = await fetch(`${release.url}appcast.xml?check=${crypto.randomUUID()}`, {
