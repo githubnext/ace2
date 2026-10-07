@@ -246,3 +246,49 @@ hr.stream-token {
 		animation: none;
 	}
 }
+
+/* Text blocks are measured in fixed pixels (parse.ts, constants.ts), so their sizes that affect
+   line width stay in px instead of following the root font size like the composer's. */
+.content.measured {
+	ul,
+	ol {
+		padding-inline-start: 20px; /* LIST_INDENT */
+	}
+
+	blockquote {
+		padding-inline-start: 8px; /* QUOTE_INDENT */
+	}
+
+	.mention {
+		gap: 3px; /* MENTION_GAP */
+		padding: 1px 6px 1px 1px; /* MENTION_PAD_START, MENTION_PAD_END */
+		font-size: 12px; /* MENTION_FONT */
+		translate: 0 -1px;
+	}
+
+	.mention-avatar {
+		inline-size: 14px; /* MENTION_AVATAR */
+		block-size: 14px;
+	}
+
+	.document-reference {
+		padding: 1px 6px; /* DOCUMENT_PAD_X */
+		font-size: 12px; /* DOCUMENT_FONT */
+		translate: 0 -1px;
+	}
+}
+
+/* A forced line break drawn as generated content, so copied text has no extra newline. */
+.line-wrap::before {
+	content: "\A";
+	white-space: pre;
+}
+
+/* An unbreakable token wider than its line stays clipped to the block's measured width, as before
+   lines followed Pretext's breaks. */
+.line-clip {
+	display: inline-block;
+	max-inline-size: 100%;
+	overflow: hidden;
+	vertical-align: top;
+}

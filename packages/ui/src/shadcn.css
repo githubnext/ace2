@@ -270,7 +270,8 @@
 	--r-toolbar: calc(var(--r-md) + 2px);
 	--r-popover: calc(var(--r-md) + 4px);
 	--r-toast: calc(var(--r-md) + 8px);
-	--main-content-max: 52rem;
+	/* The timeline lays out text in fixed pixels at this width (LANE in timeline/layout.ts). */
+	--main-content-max: 832px;
 
 	@supports (corner-shape: squircle) {
 		/* Concentric squircles need a smaller delta than R_inner + linear_gap,

@@ -703,8 +703,8 @@ function GroupView(props: GroupProps) {
 	return (
 		<div
 			data-hover-message-id={uid}
-			className={cn("flex gap-2 h-full", mine && "flex-row-reverse")}
-			style={{ paddingInline: PAD }}
+			className={cn("flex h-full", mine && "flex-row-reverse")}
+			style={{ gap: AVATAR_GAP, paddingInline: PAD }}
 			onMouseEnter={enter}
 			onMouseLeave={onRowLeave}
 		>
@@ -908,7 +908,8 @@ function GroupRows({ props, state, toolbar }: GroupRender & { toolbar: RowToolba
 		return {
 			b,
 			agent: row.agent,
-			fit: isBubble ? measureRow(b, inner).fit : inner,
+			// An unbreakable token wider than the lane must not widen the bubble past it.
+			fit: isBubble ? Math.min(measureRow(b, inner).fit, inner) : inner,
 			reactions: row.reactions,
 			uid: row.uid,
 		};

@@ -1,5 +1,10 @@
 import { type CSSProperties, Fragment, type ReactNode, useEffect, useRef, useState } from "react";
-import { measureRichInlineStats } from "@chenglou/pretext/rich-inline";
+import { type LayoutCursor, prepareWithSegments } from "@chenglou/pretext";
+import {
+	measureRichInlineStats,
+	type RichInlineItem,
+	walkRichInlineLineRanges,
+} from "@chenglou/pretext/rich-inline";
 
 import type { Block } from "../../lib/block";
 
@@ -151,6 +156,113 @@ function fresh(track: Track, text: string): boolean {
 	return index >= track.edge;
 }
 
+/**
+ * Source offsets, keyed by inline node index, where Pretext starts each wrapped line, and the
+ * unbreakable nodes wider than the line.
+ */
+type Wraps = { breaks: Map<number, number[]>; wide: Set<number> };
+
+/** An item's Pretext segments, where each starts, and the source offset of each laid-out char. */
+type Source = { segments: string[]; starts: number[]; offsets: number[] };
+
+const NO_WRAPS: Wraps = { breaks: new Map(), wide: new Set() };
+const COLLAPSIBLE = /[ \t\n\f\r]/;
+let wrapCache = new WeakMap<Line, { width: number; wraps: Wraps }>();
+let sourceCache = new WeakMap<RichInlineItem, Source>();
+let graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * Pretext lays out each item's whitespace-collapsed text, which `prepareWithSegments` reproduces
+ * segment for segment; map that text back onto the source once per item.
+ */
+function source(item: RichInlineItem): Source {
+	let hit = sourceCache.get(item);
+	if (hit) return hit;
+	let { segments } = prepareWithSegments(item.text, item.font);
+	let starts: number[] = [];
+	let length = 0;
+	for (let segment of segments) {
+		starts.push(length);
+		length += segment.length;
+	}
+	let text = item.text;
+	let offsets: number[] = [];
+	let at = 0;
+	while (at < text.length && COLLAPSIBLE.test(text[at]!)) at++;
+	for (let n = 0; n <= length; n++) {
+		offsets.push(at);
+		if (!COLLAPSIBLE.test(text[at] || "")) at++;
+		else while (at < text.length && COLLAPSIBLE.test(text[at]!)) at++;
+	}
+	let value = { segments, starts, offsets };
+	sourceCache.set(item, value);
+	return value;
+}
+
+function sourceOffset(item: RichInlineItem, cursor: LayoutCursor): number {
+	let { segments, starts, offsets } = source(item);
+	let target = starts[cursor.segmentIndex]!;
+	if (cursor.graphemeIndex > 0) {
+		let n = 0;
+		for (let { segment } of graphemes.segment(segments[cursor.segmentIndex]!)) {
+			if (n++ === cursor.graphemeIndex) break;
+			target += segment.length;
+		}
+	}
+	return offsets[target]!;
+}
+
+/**
+ * Where Pretext wraps `line` at `width`. The browser's own line breaker and text shaping disagree
+ * with Pretext at some boundaries (`body/meta`, link text, subpixel drift), and the block height is
+ * Pretext's, so rendering forces Pretext's breaks instead of letting the browser choose its own.
+ */
+function wrapsAt(line: Line, width: number): Wraps {
+	if (!line.prepared) return NO_WRAPS;
+	let hit = wrapCache.get(line);
+	if (hit?.width === width) return hit.wraps;
+
+	let wraps: Wraps = { breaks: new Map(), wide: new Set() };
+	let first = true;
+	walkRichInlineLineRanges(line.prepared, width, range => {
+		if (range.width > width) {
+			for (let fragment of range.fragments) {
+				if (fragment.occupiedWidth > width) wraps.wide.add(fragment.itemIndex);
+			}
+		}
+		if (first) {
+			first = false;
+			return;
+		}
+		let { itemIndex, start } = range.fragments[0]!;
+		let at = sourceOffset(line.items[itemIndex]!, start);
+		let list = wraps.breaks.get(itemIndex);
+		if (list) list.push(at);
+		else wraps.breaks.set(itemIndex, [at]);
+	});
+	wrapCache.set(line, { width, wraps });
+	return wraps;
+}
+
+/** Split `text` at wrap offsets, joining the pieces with forced line breaks. */
+function wrapText(text: string, offsets: number[] | undefined, key: string): ReactNode {
+	if (!offsets) return text;
+	let out: ReactNode[] = [];
+	let last = 0;
+	for (let at of offsets) {
+		if (at > last) out.push(text.slice(last, at));
+		out.push(<Wrap key={pathid(key, at)} />);
+		last = at;
+	}
+	if (last < text.length) out.push(text.slice(last));
+	return out;
+}
+
+/** A line break that is drawn but never copied, so selected text keeps its original spacing. */
+function Wrap() {
+	return <span className="line-wrap" aria-hidden />;
+}
+
 /** Measure height and widest line across `lines` in a single Pretext walk. */
 function measureLines(
 	lines: Line[],
@@ -250,18 +362,21 @@ function measureBlocks(
 	return { height: h, fit: Math.ceil(f) };
 }
 
-/** Render inline nodes for a single line. */
-function LineView({ line, fonts }: { line: Line; fonts: FontConfig }) {
+/** Render inline nodes for a single line, wrapped where Pretext wraps it at `width`. */
+function LineView({ line, fonts, width }: { line: Line; fonts: FontConfig; width?: number }) {
 	let es = emojiStyle(fonts);
 	let cs = codeStyle(fonts);
+	let wraps = width === undefined ? NO_WRAPS : wrapsAt(line, width);
 	return (
 		<>
 			{line.nodes.map((node, i) => {
 				let key = inline(node, i);
+				let at = wraps.breaks.get(i);
+				let el: ReactNode;
 				switch (node.kind) {
 					case "mention":
-						return (
-							<span key={key} className="mention">
+						el = (
+							<span className="mention">
 								<span className="mention-copy">@</span>
 								{node.avatar && (
 									<span className="mention-avatar" style={avatarStyle(node.avatar)} />
@@ -269,56 +384,70 @@ function LineView({ line, fonts }: { line: Line; fonts: FontConfig }) {
 								{node.name}
 							</span>
 						);
+						break;
 					case "emoji":
-						return node.src
-							? <img key={key} src={node.src} alt={node.name} style={es} />
-							: <span key={key}>:{node.name}:</span>;
+						el = node.src
+							? <img src={node.src} alt={node.name} style={es} />
+							: <span>:{node.name}:</span>;
+						break;
 					case "document":
-						return <LocalReference key={key} kind="document" uid={node.uid} name={node.name} />;
+						el = <LocalReference kind="document" uid={node.uid} name={node.name} />;
+						break;
 					case "plan":
-						return <LocalReference key={key} kind="plan" prefix={node.reference.startsWith("&")} />;
+						el = <LocalReference kind="plan" prefix={node.reference.startsWith("&")} />;
+						break;
 					case "code":
-						return <code key={key} style={cs}>{node.text}</code>;
+						el = <code style={cs}>{node.text}</code>;
+						break;
 					case "link":
 						return (
 							<a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
-								{node.text}
+								{wrapText(node.text, at, key)}
 							</a>
 						);
-					case "text": {
-						let el: ReactNode = node.text;
-						if (node.strike) {
-							el = <s>{el}</s>;
-						}
-						if (node.underline) {
-							el = <u>{el}</u>;
-						}
-						if (node.italic) {
-							el = <em>{el}</em>;
-						}
-						if (node.bold) {
-							el = <strong>{el}</strong>;
-						}
-						return <Fragment key={key}>{el}</Fragment>;
-					}
+					case "text":
+						return <Fragment key={key}>{adorn(wrapText(node.text, at, key), node)}</Fragment>;
 				}
+				return (
+					<Fragment key={key}>
+						{at && <Wrap />}
+						{wraps.wide.has(i) ? <span className="line-clip">{el}</span> : el}
+					</Fragment>
+				);
 			})}
 		</>
 	);
 }
 
 /** Render multiple lines within a block, joined by `<br>`. */
-function LinesView({ lines, fonts }: { lines: Line[]; fonts: FontConfig }) {
+function LinesView({ lines, fonts, width }: { lines: Line[]; fonts: FontConfig; width?: number }) {
 	return (
 		<>
 			{lines.map((line, i) => (
 				<Fragment key={lineid(line, i)}>
 					{i > 0 && <br />}
-					<LineView line={line} fonts={fonts} />
+					<LineView line={line} fonts={fonts} width={width} />
 				</Fragment>
 			))}
 		</>
 	);
+}
+
+function boxStyle(fonts: FontConfig, height: number): CSSProperties {
+	return {
+		blockSize: height,
+		boxSizing: "border-box",
+		display: "flex",
+		flexDirection: "column",
+		gap: BLOCK_GAP,
+		font: fonts.font,
+		lineHeight: `${fonts.lineHeight}px`,
+		// Lines break only at Pretext's wraps, so the browser can't add a line the height lacks.
+		// Subpixel shaping drift may paint into the bubble padding instead of being cut off.
+		whiteSpace: "nowrap",
+		overflowX: "visible",
+		overflowY: "clip",
+	};
 }
 
 function animate(node: ReactNode, key: string, active: boolean) {
@@ -339,22 +468,59 @@ function adorn(node: ReactNode, source: Line["nodes"][number]) {
 	return el;
 }
 
-function LineStream({ line, fonts, path, track }: {
+/** Stream tokens of `text`, with `null` where a wrap offset forces a line break. */
+function streamParts(text: string, offsets: number[] = []): (string | null)[] {
+	let out: (string | null)[] = [];
+	let at = 0;
+	let k = 0;
+	for (let part of pieces(text)) {
+		let end = at + part.length;
+		while (k < offsets.length && offsets[k]! < end) {
+			let cut = offsets[k++]! - at;
+			if (cut > 0) {
+				out.push(part.slice(0, cut));
+				part = part.slice(cut);
+				at += cut;
+			}
+			out.push(null);
+		}
+		out.push(part);
+		at = end;
+	}
+	return out;
+}
+
+function LineStream({ line, fonts, path, track, width }: {
 	line: Line;
 	fonts: FontConfig;
 	path: string;
 	track: Track;
+	width: number;
 }) {
 	let es = emojiStyle(fonts);
 	let cs = codeStyle(fonts);
+	let wraps = wrapsAt(line, width);
 
 	return (
 		<>
 			{line.nodes.map((node, i) => {
 				let key = pathid(path, i);
+				let at = wraps.breaks.get(i);
+				let parts = (adorned: boolean) =>
+					streamParts(node.kind === "link" || node.kind === "text" ? node.text : "", at).map(
+						(part, j) =>
+							part === null
+								? <Wrap key={pathid(key, j)} />
+								: animate(
+									adorned ? adorn(part, node) : part,
+									pathid(key, j),
+									fresh(track, part),
+								),
+					);
+				let el: ReactNode;
 				switch (node.kind) {
 					case "mention":
-						return animate(
+						el = animate(
 							<span className="mention">
 								<span className="mention-copy">@</span>
 								{node.avatar && (
@@ -365,68 +531,78 @@ function LineStream({ line, fonts, path, track }: {
 							key,
 							fresh(track, "@" + node.name),
 						);
+						break;
 					case "emoji":
-						return animate(
+						el = animate(
 							node.src
 								? <img src={node.src} alt={node.name} style={es} />
 								: <span>:{node.name}:</span>,
 							key,
 							fresh(track, ":" + node.name + ":"),
 						);
+						break;
 					case "document":
-						return animate(
+						el = animate(
 							<LocalReference kind="document" uid={node.uid} name={node.name} />,
 							key,
 							fresh(track, "&" + node.reference),
 						);
+						break;
 					case "plan":
-						return animate(
+						el = animate(
 							<LocalReference kind="plan" prefix={node.reference.startsWith("&")} />,
 							key,
 							fresh(track, node.reference),
 						);
+						break;
 					case "code":
-						return (
-							<code key={key} style={cs}>
+						el = (
+							<code style={cs}>
 								{pieces(node.text).map((part, j) =>
 									animate(part, pathid(key, j), fresh(track, part))
 								)}
 							</code>
 						);
+						break;
 					case "link":
 						return (
 							<a key={key} href={node.href} target="_blank" rel="noopener noreferrer">
-								{pieces(node.text).map((part, j) =>
-									animate(part, pathid(key, j), fresh(track, part))
-								)}
+								{parts(false)}
 							</a>
 						);
 					case "text":
-						return (
-							<Fragment key={key}>
-								{pieces(node.text).map((part, j) =>
-									animate(adorn(part, node), pathid(key, j), fresh(track, part))
-								)}
-							</Fragment>
-						);
+						return <Fragment key={key}>{parts(true)}</Fragment>;
 				}
+				return (
+					<Fragment key={key}>
+						{at && <Wrap />}
+						{wraps.wide.has(i) ? <span className="line-clip">{el}</span> : el}
+					</Fragment>
+				);
 			})}
 		</>
 	);
 }
 
-function LinesStream({ lines, fonts, path, track }: {
+function LinesStream({ lines, fonts, path, track, width }: {
 	lines: Line[];
 	fonts: FontConfig;
 	path: string;
 	track: Track;
+	width: number;
 }) {
 	return (
 		<>
 			{lines.map((line, i) => (
 				<Fragment key={pathid(path, i)}>
 					{i > 0 && <br />}
-					<LineStream line={line} fonts={fonts} path={pathid(path, i)} track={track} />
+					<LineStream
+						line={line}
+						fonts={fonts}
+						path={pathid(path, i)}
+						track={track}
+						width={width}
+					/>
 				</Fragment>
 			))}
 		</>
@@ -444,14 +620,26 @@ function NodeStream({ node, fonts, path, track, width }: {
 		case "paragraph":
 			return (
 				<p>
-					<LinesStream lines={node.lines} fonts={fonts} path={path} track={track} />
+					<LinesStream
+						lines={node.lines}
+						fonts={fonts}
+						path={path}
+						track={track}
+						width={width}
+					/>
 				</p>
 			);
 		case "heading":
 			return (
 				<p>
 					<strong>
-						<LinesStream lines={node.lines} fonts={fonts} path={path} track={track} />
+						<LinesStream
+							lines={node.lines}
+							fonts={fonts}
+							path={path}
+							track={track}
+							width={width}
+						/>
 					</strong>
 				</p>
 			);
@@ -509,7 +697,7 @@ function Stream({ blocks, fonts, compact, raw, active, height, width }: {
 }) {
 	let edge = useRef(raw.length);
 	let track = { raw, edge: edge.current, cursor: 0, active };
-	let cls = compact ? "content thinking streaming" : "content streaming";
+	let cls = compact ? "content measured thinking streaming" : "content measured streaming";
 	if (active) cls += " streaming-live";
 
 	useEffect(() => {
@@ -519,16 +707,7 @@ function Stream({ blocks, fonts, compact, raw, active, height, width }: {
 	return (
 		<div
 			className={cls}
-			style={{
-				blockSize: height,
-				boxSizing: "border-box",
-				display: "flex",
-				flexDirection: "column",
-				gap: BLOCK_GAP,
-				font: fonts.font,
-				lineHeight: `${fonts.lineHeight}px`,
-				overflow: "hidden",
-			}}
+			style={boxStyle(fonts, height)}
 		>
 			{blocks.map((node, i) => (
 				<NodeStream
@@ -582,17 +761,8 @@ function TextView({ blocks, fonts, compact, raw, streaming, height, width }: {
 
 	return (
 		<div
-			className={compact ? "content thinking" : "content"}
-			style={{
-				blockSize: height,
-				boxSizing: "border-box",
-				display: "flex",
-				flexDirection: "column",
-				gap: BLOCK_GAP,
-				font: fonts.font,
-				lineHeight: `${fonts.lineHeight}px`,
-				overflow: "hidden",
-			}}
+			className={compact ? "content measured thinking" : "content measured"}
+			style={boxStyle(fonts, height)}
 		>
 			{blocks.map((node, i) => (
 				<NodeView key={nodeid(node, i)} node={node} fonts={fonts} width={width} />
@@ -607,14 +777,14 @@ function NodeView({ node, fonts, width }: { node: BlockNode; fonts: FontConfig; 
 		case "paragraph":
 			return (
 				<p>
-					<LinesView lines={node.lines} fonts={fonts} />
+					<LinesView lines={node.lines} fonts={fonts} width={width} />
 				</p>
 			);
 		case "heading":
 			return (
 				<p>
 					<strong>
-						<LinesView lines={node.lines} fonts={fonts} />
+						<LinesView lines={node.lines} fonts={fonts} width={width} />
 					</strong>
 				</p>
 			);

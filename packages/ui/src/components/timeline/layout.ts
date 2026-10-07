@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { clearCache } from "@chenglou/pretext";
 
 import {
 	call as callBlock,
@@ -74,6 +75,36 @@ const PARSE_MAX = 1000;
 let cache = new Map<string, Block[]>();
 let parsed = new Map<string, { blocks?: Block[]; promise?: Promise<Block[]>; failed?: boolean }>();
 let stream = new Map<string, Promise<Block[]>>();
+
+// Pretext keeps the glyph widths it measured with whichever font was loaded at the time, so text
+// measured while a web font is still loading keeps fallback widths until every cache drops them.
+let fontEpoch = 0;
+let fontStale = false;
+let fontListeners = new Set<() => void>();
+
+function refont() {
+	clearCache();
+	cache.clear();
+	parsed.clear();
+	stream.clear();
+	measureCache = new WeakMap();
+	fontEpoch++;
+	fontStale = false;
+	for (let listener of fontListeners) listener();
+}
+
+function onFonts(listener: () => void): () => void {
+	if (!fontListeners.size) document.fonts.addEventListener("loadingdone", refont);
+	fontListeners.add(listener);
+	// A font that the render requested can finish loading before this subscription sees its event.
+	void document.fonts.ready.then(() => {
+		if (fontStale && document.fonts.check(fonts().font)) refont();
+	});
+	return () => {
+		fontListeners.delete(listener);
+		if (!fontListeners.size) document.fonts.removeEventListener("loadingdone", refont);
+	};
+}
 
 type Payload = Exclude<Chunk, { kind: "text" }>;
 
@@ -347,8 +378,11 @@ function start(req: Request): Promise<Block[]> {
 	if (hit?.promise) return hit.promise;
 
 	let entry = hit || {};
+	let epoch = fontEpoch;
 	entry.promise = parse(req).then(
 		blocks => {
+			// Blocks prepared before fonts changed are stale; the next render parses again.
+			if (epoch !== fontEpoch) return blocks;
 			entry.blocks = blocks;
 			entry.promise = undefined;
 			bump(parsed, req.key, entry, PARSE_MAX);
@@ -594,6 +628,7 @@ function useBlockMap(
 	let prev = useRef(new Map<string, Slot>());
 	let sig = mentionsSig(mentions) + (plan ? "\0plan" : "");
 	let memo = useMemo(() => {
+		if (!document.fonts.check(fonts().font)) fontStale = true;
 		let map = new Map<string, Block[]>();
 		let next = new Map<string, Slot>();
 		let jobs: Request[] = [];
@@ -669,6 +704,12 @@ function useBlockMap(
 	useEffect(() => {
 		prev.current = memo.next;
 	}, [memo]);
+
+	useEffect(() =>
+		onFonts(() => {
+			prev.current = new Map();
+			setTick(tick => tick + 1);
+		}), []);
 
 	// Missing markdown parses finish outside React; tick once they settle so measurement rebuilds.
 	useEffect(() => {
