@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 import {
 	Button,
@@ -44,6 +44,8 @@ import {
 import { Settings } from "./settings";
 import { SetupProject } from "./setup-project";
 import { UpdateNotice } from "./updates";
+
+const Annotations = lazy(() => import("./annotations"));
 
 // Older versions saved an inline GitHub item per project; Ace now opens items on GitHub.
 localStorage.removeItem(`ace:github-targets:${host.url}`);
@@ -692,6 +694,11 @@ export function App() {
 					/>
 				)}
 				{desktop && <UpdateNotice onOpen={() => window.dispatchEvent(new Event("ace:updates"))} />}
+				{desktop && (
+					<Suspense fallback={null}>
+						<Annotations />
+					</Suspense>
+				)}
 				<Toaster />
 			</TooltipProvider>
 		</ThemeProvider>
