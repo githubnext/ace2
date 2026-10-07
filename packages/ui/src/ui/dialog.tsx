@@ -46,10 +46,9 @@ function DialogContent({
 			<DialogPrimitive.Popup
 				data-slot="dialog-content"
 				className={cn(
-					// Anchored to the top so async content grows downward instead of moving the dialog. The
-					// offset is 20dvh on comfortable screens and shrinks toward 1rem on short ones;
+					// Anchored to the top so async content grows downward instead of moving the dialog.
 					// --dialog-max is the room left below it, shared by consumers that size themselves.
-					"fixed top-(--dialog-top) left-1/2 z-50 grid max-h-(--dialog-max) w-full max-w-[calc(100%-2rem)] -translate-x-1/2 origin-top gap-4 overflow-y-auto overscroll-contain rounded-xl squircle bg-popover p-4 text-xs/relaxed text-popover-foreground shadow-modal duration-100 outline-none contain-layout [--dialog-max:calc(100dvh-var(--dialog-top)-1rem)] [--dialog-top:clamp(1rem,calc(40dvh-8rem),20dvh)] sm:max-w-sm motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-98 motion-safe:data-closed:animate-out motion-safe:data-closed:fade-out-0 motion-safe:data-closed:zoom-out-98",
+					"fixed top-(--dialog-top) left-1/2 z-50 grid max-h-(--dialog-max) w-full max-w-[calc(100%-2rem)] -translate-x-1/2 origin-top gap-4 overflow-y-auto overscroll-contain rounded-xl squircle bg-popover p-4 text-xs/relaxed text-popover-foreground shadow-modal duration-100 outline-none contain-layout [--dialog-max:calc(100dvh-var(--dialog-top)-1rem)] [--dialog-top:64px] sm:max-w-sm motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-98 motion-safe:data-closed:animate-out motion-safe:data-closed:fade-out-0 motion-safe:data-closed:zoom-out-98",
 					className,
 				)}
 				{...props}
