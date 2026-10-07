@@ -75,7 +75,7 @@ export function ChannelAccess({ channel, user }: { channel: Listing; user: strin
 		<div
 			role="group"
 			aria-label="Channel access"
-			className="flex shrink-0 items-center gap-0.5 electrobun-webkit-app-region-no-drag"
+			className="mr-2 flex shrink-0 items-center gap-0.5 electrobun-webkit-app-region-no-drag"
 		>
 			<AccessToggle
 				label="Collaborator agent access"

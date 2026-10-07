@@ -56,7 +56,7 @@ export type SessionDetailsViewProps = {
 
 const LINKS = 5;
 const ROW =
-	"-mx-2 flex min-w-0 items-center gap-2 rounded-md squircle px-2 py-1 text-left text-sm text-foreground outline-none transition-colors focus-visible:outline-2 focus-visible:outline-ring/50";
+	"-mx-2 flex min-w-0 items-center gap-2 rounded-md squircle px-2 py-1 text-left text-xs text-foreground outline-none transition-colors focus-visible:outline-2 focus-visible:outline-ring/50";
 const ACTIVE = "hover:bg-muted/60 focus-visible:bg-muted/60";
 const GLYPH = "size-4 shrink-0";
 
@@ -232,7 +232,7 @@ export function SessionDetailsView(
 						<IconX aria-hidden />
 					</Button>
 				</div>
-				<p className="text-sm leading-snug whitespace-pre-wrap break-words text-foreground">
+				<p className="line-clamp-4 text-xs leading-snug whitespace-pre-wrap break-words text-foreground">
 					{summary || "No summary yet."}
 				</p>
 			</section>
@@ -307,7 +307,7 @@ export function SessionDetailsView(
 
 			{facts && facts.length > 0 && (
 				<Section title="Channel">
-					<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-sm">
+					<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-xs">
 						{facts.map((fact) => (
 							<div key={fact.label} className="contents">
 								<dt className="text-muted-foreground">{fact.label}</dt>
