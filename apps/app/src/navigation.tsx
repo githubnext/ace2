@@ -56,7 +56,7 @@ export function Navigation({ page, user, github, onPage, onSettings }: {
 				</NavListLink>
 				<NavListLink
 					href="#issues"
-					icon={<IconIssue />}
+					icon={<IconIssue className="size-4" />}
 					active={page === "issues"}
 					shortcut="⌘3"
 					onClick={(event) => {
@@ -68,7 +68,7 @@ export function Navigation({ page, user, github, onPage, onSettings }: {
 				</NavListLink>
 				<NavListLink
 					href="#prs"
-					icon={<IconPullRequest />}
+					icon={<IconPullRequest className="size-4" />}
 					active={page === "prs"}
 					shortcut="⌘4"
 					onClick={(event) => {
