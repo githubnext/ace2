@@ -362,7 +362,9 @@ offline, and a call in flight when it drops is reported to the model as failed.
 
 - The workspace socket hibernates, so an idle hosted channel costs nothing while its host stays
   connected. Client sockets carry live pi event streams and keep the object awake.
-- An alarm re-wakes the object while a run is active, so an evicted object resumes the run.
+- While any chat is busy, a pending timer keeps the object resident: hibernating would drop
+  in-flight workspace calls whose processes keep running on the workspace. Idle objects hibernate.
+  An alarm still re-wakes an object the runtime resets during a run, so it resumes the run.
 - Hosts share the team's secret with the service (`ACE_SECRET` on hosts and Workers) and state each message's author. They verify their own users over the tailnet, so the
   service trusts hosts, not individual people.
 - Model keys are Worker secrets.
