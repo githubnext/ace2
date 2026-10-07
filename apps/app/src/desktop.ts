@@ -34,3 +34,6 @@ export function titlebar(event: MouseEvent<HTMLElement>) {
 	event.preventDefault();
 	void desktop.zoom();
 }
+
+/** The machine this app's host runs on: the desktop only runs on macOS. */
+export const here = desktop ? "this Mac" : "this host";

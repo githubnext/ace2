@@ -66,7 +66,7 @@ type File = {
 	patch?: string;
 };
 
-function repository(value: string): string {
+export function repository(value: string): string {
 	if (!REPO.test(value) || [".", ".."].includes(value.split("/")[1]!)) {
 		throw new Error("Choose a GitHub repository in owner/name format");
 	}
@@ -110,6 +110,46 @@ async function gh<T>(args: string[]): Promise<T> {
 	if (code === 4) throw new Error("Sign in to GitHub on this host with gh auth login.");
 	if (code !== 0) throw new Error(error.trim() || "GitHub did not respond. Try again.");
 	return JSON.parse(out) as T;
+}
+
+/**
+ * A plain Git clone, so public repositories need no GitHub account and organization SSO cannot
+ * block them. Private ones use this host's existing Git credential helpers, with the token gh
+ * would see. Git never prompts, since the helper has no terminal. Ace never removes anything at
+ * `path`; only Git cleans up what its own failed clone created.
+ */
+export async function clone(repo: string, path: string): Promise<void> {
+	const child = Bun.spawn([
+		"git",
+		"clone",
+		"--",
+		`https://github.com/${repository(repo)}.git`,
+		path,
+	], {
+		env: { ...process.env, ...githubEnv(), GIT_TERMINAL_PROMPT: "0" },
+		stdin: "ignore",
+		stdout: "ignore",
+		stderr: "pipe",
+		timeout: 30 * 60_000,
+	});
+	const [error, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
+	if (code === 0) return;
+	if (child.signalCode) throw new Error("Cloning took too long and was stopped. Try again.");
+	const detail = error.trim().split("\n").filter((line) => !line.startsWith("Cloning into"))
+		.slice(-4).join("\n");
+	if (/\bSAML\b|\bSSO\b|single sign-on/i.test(error)) {
+		throw new Error(
+			`${
+				repo.split("/")[0]
+			} requires single sign-on for this repository. Authorize this host's Git credentials for the organization on GitHub, then try again.\n${detail}`,
+		);
+	}
+	if (/terminal prompts disabled|could not read Username|Authentication failed/i.test(error)) {
+		throw new Error(
+			`GitHub needs credentials to clone ${repo}. Set up Git credentials on this host, for example with gh auth setup-git, then try again.`,
+		);
+	}
+	throw new Error(detail || `Could not clone ${repo}.`);
 }
 
 let owner: string | undefined;

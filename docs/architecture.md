@@ -36,9 +36,14 @@ keeps that grouped view; channel creation and GitHub pages retain a concrete pro
 
 The app identifies a project with a GitHub remote by its repository, compared case-insensitively,
 so checkouts of it on any host are one project; a folder without one is its host and main checkout.
-A project keeps every known checkout. Creating channels and archiving inactive ones use this host's
-checkout, so a project checked out only on teammates' hosts lists their channels but cannot start
-one here until a checkout is opened. Its Channels sidebar shows the person's own channels, then one
+A project keeps every known checkout. A GitHub project shows its name wherever it is checked out;
+a folder without one on another host is labeled with that host. Creating channels and archiving
+inactive ones use this host's checkout. A GitHub project checked out only on teammates' hosts lists
+their channels, and its channel creation entry points first offer to set it up on this machine:
+the person confirms or edits a destination, `~/code/<repo>` by default, before anything is cloned.
+A creation that led to setup continues here with its initial text once the project is added;
+standalone setup only adds the project. The dashboard draft belongs to the project, so it
+survives setup until a channel admits it. Channels never start on the other host. Its Channels sidebar shows the person's own channels, then one
 section per teammate across all of their hosts, with that teammate's archived channels in a folded
 section of their own. Saved host-and-checkout selections from earlier versions resolve to the
 merged project. This is client navigation only; channel records and listings are unchanged.
@@ -146,6 +151,12 @@ Opening a folder adds a project to the host's `projects.json`, independently of 
 or model credentials. This is a list of local folders, not channel history. Existing catalog
 channels also contribute their project paths. Only local owner connections can read or change
 the opened-project list; teammates see the project information already present in channel listings.
+Setting up a known GitHub project is a local-only operation on that list: the host validates the
+`owner/name`, expands `~`, and runs `git clone` of `https://github.com/<owner>/<name>.git` with
+argument arrays. Public repositories therefore need no GitHub account, and an organization's SSO
+policy on the gh token cannot block them; private ones use the host's existing Git credential
+helpers. A destination that already holds a complete checkout of that repository is opened instead;
+any other non-empty folder is refused, and Ace never removes what a failed clone leaves behind.
 
 A channel's project path is the checkout it works in: its agents' working directory and the base
 of its lanes. That checkout may be a Git worktree, such as a lane or another tool's worktree. The
