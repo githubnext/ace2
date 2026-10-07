@@ -300,7 +300,7 @@ function Appearance() {
 	return (
 		<Row
 			id="theme-label"
-			label="Appearance"
+			label="Theme"
 			description="Match your system appearance or keep Ace light or dark."
 		>
 			<Select
@@ -319,7 +319,8 @@ export function Settings(
 ) {
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
 	const [section, setSection] = useState<Section>(
-		initialSection || (status === "open" ? "general" : "host"),
+		// Updates exist only in the desktop app; browsers keep their usual first section.
+		(desktop && initialSection) || (status === "open" ? "general" : "host"),
 	);
 	// Sections stay mounted after their first visit so in-flight key, helper, and update actions
 	// keep their busy state and results; hidden sections stop their own polling.
@@ -336,6 +337,7 @@ export function Settings(
 	}
 
 	useEffect(() => {
+		if (!desktop) return;
 		const updates = () => show("updates");
 		window.addEventListener("ace:updates", updates);
 		return () => window.removeEventListener("ace:updates", updates);
