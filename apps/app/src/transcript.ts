@@ -150,6 +150,7 @@ export function useTranscript(
 	channel: string | undefined,
 	chat: number | undefined,
 	offline: boolean,
+	placement: string,
 ) {
 	const [state, setState] = useState<Transcript>(EMPTY);
 	const [info, setInfo] = useState<ChannelInfo>();
@@ -159,6 +160,13 @@ export function useTranscript(
 	if (offline !== wasOffline) {
 		setWasOffline(offline);
 		if (!offline && error) setAttempt((value) => value + 1);
+	}
+	// A move ends watches at the old placement, and rewatching fails until it finishes; the
+	// listing's new placement is the signal to watch again, for every client.
+	const [placed, setPlaced] = useState(placement);
+	if (placement !== placed) {
+		setPlaced(placement);
+		setAttempt((value) => value + 1);
 	}
 	useEffect(() => {
 		if (!channel) return;

@@ -21,6 +21,7 @@ import { preference } from "./preferences";
 import type { HostRequest, WindowInfo } from "./protocol";
 import { setModel } from "./settings";
 import { archive, host, isRunning, kill, models, parseModel, project, remove } from "./manage";
+import { move } from "./move";
 
 const HELP = `ace — channels on this host
 
@@ -37,6 +38,7 @@ const HELP = `ace — channels on this host
   ace chat <channel> [--model <provider/id>]     open another chat
   ace stop <channel> [--chat <id>]               stop the chat's current run
   ace kill <channel>                             stop all work in the channel now
+  ace move <channel> --hosted <url> | --local    move an idle channel to a hosting service or back
   ace share <channel> on|off                     let others invoke agents
   ace models
   ace model [provider/id|auto]                   show or set the model for a chat's first agent run
@@ -61,6 +63,7 @@ const { values: flags, positionals } = parseArgs({
 		name: { type: "string" },
 		model: { type: "string" },
 		hosted: { type: "string" },
+		local: { type: "boolean" },
 		chat: { type: "string" },
 		port: { type: "string" },
 		all: { type: "boolean" },
@@ -355,6 +358,16 @@ async function main() {
 			return;
 		case "kill":
 			return kill(record.id);
+		case "move": {
+			if (!!flags.hosted === !!flags.local) {
+				throw new Error("ace move <channel> --hosted <url> | --local");
+			}
+			await move(record.id, flags.local ? "local" : flags.hosted!);
+			const moved = catalog.read(record.id);
+			return console.log(
+				`${moved.name} now runs ${moved.hosted ? `at ${moved.hosted}` : "on this host"}`,
+			);
+		}
 		case "share":
 			await request(record.id, { op: "share", author: catalog.user, shared: rest[0] === "on" });
 			return;

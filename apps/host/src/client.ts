@@ -138,6 +138,7 @@ export class Connection {
 
 	static async open(id: string): Promise<Connection> {
 		const record = catalog.read(id);
+		if (record.moving) throw new Error("The channel is moving");
 		if (record.hosted) return Connection.hosted(record.hosted, id);
 		const { socket } = catalog.paths(id);
 		let started = false;

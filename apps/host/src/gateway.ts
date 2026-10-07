@@ -14,6 +14,7 @@ import { GatewayClient, type Watch } from "./gateway-client";
 import * as github from "./github";
 import { seal } from "./keys";
 import { failure, log, open as openLog } from "./log";
+import { move, targets } from "./move";
 import {
 	archive,
 	archiveInactive,
@@ -180,6 +181,7 @@ async function remote(client: Client, host: string): Promise<GatewayClient> {
 
 const owned = new Set<HostRequest["op"]>(["archive", "archive-inactive", "delete"]);
 const windowOps = new Set<HostRequest["op"]>(["window", "windows", "tab-rename", "tab-result"]);
+const moveOps = new Set<HostRequest["op"]>(["move-targets", "move"]);
 const localOps = new Set<HostRequest["op"]>([
 	"projects",
 	"project-open",
@@ -213,6 +215,9 @@ async function handle(
 	const client = socket.data;
 	if (windowOps.has(request.op) && (!client.local || client.user !== catalog.user)) {
 		throw new Error("Tabs are only available through this host's authenticated local gateway");
+	}
+	if (moveOps.has(request.op) && (!client.local || client.user !== catalog.user)) {
+		throw new Error("Only this host's owner can move channels, from its local app");
 	}
 	if (localOps.has(request.op) && (client.peer || client.user !== catalog.user)) {
 		throw new Error("This action is only available from this host's local app");
@@ -350,6 +355,14 @@ async function handle(
 			broadcast();
 			return archived.length;
 		}
+		case "move-targets":
+			return catalog.owns(request.channel) ? targets(request.channel) : [];
+		case "move":
+			if (!catalog.owns(request.channel)) {
+				throw new Error("Move channels from the host that runs them");
+			}
+			await move(request.channel, request.target);
+			return broadcast();
 		case "delete":
 			terminals.closeChannel(request.channel);
 			deleting.add(request.channel);

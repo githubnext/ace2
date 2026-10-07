@@ -8,7 +8,7 @@ import { AnimatePresence, m as motion, useReducedMotion } from "motion/react";
 
 import { SessionItem } from "../session-item/session-item";
 import { SessionItemLoading } from "../session-item/session-item-loading";
-import type { SidebarRow } from "../session-item/session-item.types";
+import type { MoveTarget, SidebarRow } from "../session-item/session-item.types";
 import { middle } from "../../lib/truncate";
 import { cn } from "../../lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/avatar";
@@ -83,6 +83,9 @@ export type SessionSidebarProps = Omit<ComponentPropsWithRef<"aside">, "children
 	onDelete?: (row: SidebarRow) => void;
 	onRebuildLobby?: (row: SidebarRow) => void;
 	onRename?: (row: SidebarRow) => void;
+	/** Rows whose capabilities allow moving list these destinations under "Move to:". */
+	onMoveTargets?: (row: SidebarRow) => Promise<MoveTarget[]>;
+	onMove?: (row: SidebarRow, target: MoveTarget) => Promise<void>;
 	onToggleGroup?: (id: SessionSidebarGroupId) => void;
 	onNewSession?: () => void;
 	/** When provided, a "…" menu button appears offering "Continue a pull request…". */
@@ -382,6 +385,8 @@ function GroupRows({
 	onLeave,
 	onDelete,
 	onRename,
+	onMoveTargets,
+	onMove,
 }: {
 	rows: SidebarRow[];
 	pinned: boolean;
@@ -396,6 +401,8 @@ function GroupRows({
 	onLeave?: (row: SidebarRow) => void;
 	onDelete?: (row: SidebarRow) => void;
 	onRename?: (row: SidebarRow) => void;
+	onMoveTargets?: (row: SidebarRow) => Promise<MoveTarget[]>;
+	onMove?: (row: SidebarRow, target: MoveTarget) => Promise<void>;
 }) {
 	let selected = (row: SidebarRow) => isSidebarRowSelected(row, selectedUid);
 
@@ -428,6 +435,8 @@ function GroupRows({
 							onLeave={onLeave}
 							onDelete={onDelete}
 							onRename={onRename}
+							onMoveTargets={onMoveTargets}
+							onMove={onMove}
 							// SessionItem is not memoized, and selecting still needs row identity.
 							// Keep this local until SessionItem grows a dedicated onSelect prop.
 							onClick={() => onSelect?.(row)}
@@ -458,6 +467,8 @@ function Group({
 	showHeader = true,
 	full = false,
 	onRename,
+	onMoveTargets,
+	onMove,
 }: {
 	group: SessionSidebarGroup;
 	selectedUid?: SidebarRow["uid"];
@@ -470,6 +481,8 @@ function Group({
 	onLeave?: (row: SidebarRow) => void;
 	onDelete?: (row: SidebarRow) => void;
 	onRename?: (row: SidebarRow) => void;
+	onMoveTargets?: (row: SidebarRow) => Promise<MoveTarget[]>;
+	onMove?: (row: SidebarRow, target: MoveTarget) => Promise<void>;
 	onArchiveInactive?: () => void;
 	onToggleGroup?: (id: SessionSidebarGroupId) => void;
 	onNewSession?: () => void;
@@ -544,6 +557,8 @@ function Group({
 			onLeave={onLeave}
 			onDelete={onDelete}
 			onRename={onRename}
+			onMoveTargets={onMoveTargets}
+			onMove={onMove}
 		/>
 	);
 	let panelClassName = cn(
@@ -861,6 +876,8 @@ export function SessionSidebar(
 		onDelete,
 		onRebuildLobby,
 		onRename,
+		onMoveTargets,
+		onMove,
 		onToggleGroup,
 		onNewSession,
 		onContinuePr,
@@ -934,6 +951,8 @@ export function SessionSidebar(
 		onLeave,
 		onDelete,
 		onRename,
+		onMoveTargets,
+		onMove,
 		onToggleGroup,
 		onNewSession,
 		onContinuePr,
