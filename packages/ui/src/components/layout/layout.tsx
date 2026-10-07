@@ -345,6 +345,13 @@ function Layout({
 				className="layout:shell p-2 relative h-full"
 				style={{ "--panel-left-width": `${width}px` } as CSSProperties}
 			>
+				{appearance === "native" && (
+					// Keep the top gutter outside panel no-drag regions, including the full-height sidebar.
+					<div
+						aria-hidden="true"
+						className="absolute inset-x-0 top-0 z-30 h-2 electrobun-webkit-app-region-drag"
+					/>
+				)}
 				<AppearanceProvider value={appearance}>
 					<NavContext value={layout.nav}>
 						<LeftContext value={layout.left}>
