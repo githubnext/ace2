@@ -36,6 +36,12 @@ if (!existsSync(paths.record)) {
 	process.exit(0);
 }
 const record = catalog.read(id);
+// A hosted or moving channel's local storage is parked; waking it would fork the channel's history.
+if (record.hosted || record.moving) {
+	rmSync(paths.pid, { force: true });
+	log("info", "worker.parked", { hosted: record.hosted, moving: record.moving?.to });
+	process.exit(0);
+}
 log("info", "worker.start", { bun: Bun.version });
 rmSync(paths.socket, { force: true });
 catalog.busy(id, false);
@@ -84,6 +90,19 @@ const channel = await Channel.open({
 const clients = new Set<Socket>();
 let quiet = Date.now();
 let exiting = false;
+/** Requests between admission and reply; a move waits for them so none lands after its snapshot. */
+let admitting = 0;
+let drained = Promise.withResolvers<void>();
+let frozen = false;
+
+/** Stop admitting requests, let admitted ones finish, then exit if no work remains for the move. */
+async function freeze(): Promise<void> {
+	frozen = true;
+	if (admitting) await drained.promise;
+	if (await channel.isIdle()) return;
+	frozen = false;
+	throw new Error("The channel is busy; stop its work before moving it");
+}
 
 async function exit(kill: boolean, reason: string) {
 	if (exiting) return;
@@ -125,12 +144,29 @@ function serve(socket: Socket) {
 				return send({ id: frame, ok: true, value: { id, pid: process.pid } satisfies WorkerInfo });
 			}
 			if (exiting) throw new Error("The channel worker is shutting down");
+			if (frozen) throw new Error("The channel is moving");
+			if (body.op === "freeze") {
+				await freeze();
+				send({ id: frame, ok: true, value: null });
+				return exit(false, "move");
+			}
 			if (
 				catalog.read(id).archived && (body.op === "say" || body.op === "ask" || body.op === "chat")
 			) {
 				throw new Error("The channel is archived");
 			}
-			const value = await channel.handle(body, (event) => send({ id: frame, event }), trace);
+			// `wait` lasts as long as a run, which the move's busy check already refuses.
+			const admitted = body.op !== "wait";
+			if (admitted) admitting++;
+			let value: unknown;
+			try {
+				value = await channel.handle(body, (event) => send({ id: frame, event }), trace);
+			} finally {
+				if (admitted && !--admitting) {
+					drained.resolve();
+					drained = Promise.withResolvers<void>();
+				}
+			}
 			if (body.op === "watch") {
 				watches.push(value as { stop(): Promise<unknown> });
 				return send({ id: frame, ok: true, value: null });

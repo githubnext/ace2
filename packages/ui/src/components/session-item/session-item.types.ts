@@ -70,3 +70,6 @@ export type SidebarRow = {
 	hasSummary?: boolean;
 	openTodos?: number;
 };
+
+/** A place a channel can move to; `target` is opaque to the sidebar. */
+export type MoveTarget = { target: string; label: string };

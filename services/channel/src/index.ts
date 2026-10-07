@@ -2,7 +2,7 @@ import type { Env } from "./object";
 
 export { HostedChannel } from "./object";
 
-const ROUTE = /^\/channels\/([a-z0-9-]{1,64})(\/workspace)?$/;
+const ROUTE = /^\/channels\/([a-z0-9-]{1,64})(\/workspace|\/transfer)?$/;
 
 /**
  * Hosts are trusted to state who wrote each message: they verify their own users over the tailnet

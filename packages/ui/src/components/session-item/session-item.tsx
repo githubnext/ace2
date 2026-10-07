@@ -8,7 +8,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../../ui/tooltip";
 import { RowMenu, SessionActions } from "./session-item-actions";
 import { hasVisibleActions } from "./actions";
 import { RowGlyph } from "./session-item-glyph";
-import type { SidebarRow } from "./session-item.types";
+import type { MoveTarget, SidebarRow } from "./session-item.types";
 import {
 	IconArrowUpRight as ArrowUpRight,
 	IconCircleCheck as CircleCheck,
@@ -41,6 +41,8 @@ export type SessionItemProps = ComponentPropsWithRef<"button"> & {
 	onDelete?: (data: SidebarRow) => void;
 	onRebuild?: (data: SidebarRow) => void;
 	onRename?: (data: SidebarRow) => void;
+	onMoveTargets?: (data: SidebarRow) => Promise<MoveTarget[]>;
+	onMove?: (data: SidebarRow, target: MoveTarget) => Promise<void>;
 };
 
 function avatar(member: SidebarRow["online"][number]) {
@@ -189,6 +191,8 @@ type RowActions = Pick<
 	| "onArchive"
 	| "onRename"
 	| "onRebuild"
+	| "onMoveTargets"
+	| "onMove"
 >;
 
 function actions(data: SidebarRow, props: RowActions): RowActions {
@@ -204,6 +208,9 @@ function actions(data: SidebarRow, props: RowActions): RowActions {
 		onLeave: props.onLeave,
 		onArchive: data.capabilities?.archive === false ? undefined : props.onArchive,
 		onRename: data.capabilities?.rename === false ? undefined : props.onRename,
+		...(data.capabilities?.move
+			? { onMoveTargets: props.onMoveTargets, onMove: props.onMove }
+			: {}),
 	};
 }
 
@@ -259,6 +266,8 @@ export function SessionItem(
 		onDelete,
 		onRebuild,
 		onRename,
+		onMoveTargets,
+		onMove,
 		className,
 		ref,
 		onMouseEnter,
@@ -276,6 +285,8 @@ export function SessionItem(
 		onArchive,
 		onRename,
 		onRebuild,
+		onMoveTargets,
+		onMove,
 	});
 	let hasActions = hasVisibleActions({ pinned, onPin: actionPin, onUnpin: actionUnpin });
 	let [hovered, setHovered] = useState(false);

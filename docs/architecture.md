@@ -375,6 +375,27 @@ offline, and a call in flight when it drops is reported to the model as failed.
   hosted channel can still run model-only work. It adds no client transcript subscriptions or
   keepalive timers to dormant hosted objects.
 
+### Moving channels
+
+The owner moves an idle channel between its host and a hosting service with `ace move` or the
+channel's Move to menu. The channel keeps its ID, lanes, and workspace; only where pi runs changes.
+The pi store travels as one snapshot (`@ace/channel/transfer`): an allowlist of pi's tables at the
+current schema, at most 32 MiB, with a SHA-256 digest that import verifies before it commits.
+Export refuses unfinished tasks or queued submissions, so a move never carries an active run.
+
+The host fences the channel's record with `moving` first: no worker starts and no client connects
+through this host. A hosted channel keeps its workspace link until the service freezes it, so a run
+admitted before the freeze is refused rather than interrupted. A running worker stops admitting requests, lets admitted ones finish, and
+exits only if the channel is idle. The service's `POST /channels/:id/transfer` takes `import`
+(stored inactive), `activate` (only for the imported digest), `freeze`, `export` (only while frozen),
+and `thaw`. Inactive and frozen objects persist that state and answer every other request with 409.
+
+Moving out exports the parked local store, imports it, then activates it; the local file stays in
+place. Moving back freezes the hosted object, exports it, and verifies it into a new local file that
+atomically replaces the parked one; the frozen object remains. A later move out re-imports into it.
+A failed step before activation lifts the fence. An unanswered activation keeps it, and repeating
+the same move retries activation. Watches on the old placement end and clients reattach.
+
 ## Shared services
 
 Shared state that must outlive any one machine lives in cells: Durable Objects deployed to

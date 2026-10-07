@@ -18,8 +18,12 @@ export type HostInfo = {
 	helper: boolean;
 };
 
+/** A place a channel can move to: "local" for this host, or a hosting service's base URL. */
+export type MoveTarget = { target: string; label: string };
+
 export type WorkerInfo = { id: string; pid: number };
-export type WorkerRequest = { op: "worker" };
+/** `freeze` drains admitted requests and exits the worker for a move, or fails if work remains. */
+export type WorkerRequest = { op: "worker" } | { op: "freeze" };
 
 export type Diagnostics = {
 	tools: { name: string; path?: string; version?: string; error?: string }[];
@@ -158,6 +162,10 @@ export type HostRequest =
 	/** Archive the project's channels on this host that have no work in progress. */
 	| { op: "archive-inactive"; project: string }
 	| { op: "delete"; channel: string }
+	/** Where the owner can move one of this host's idle channels: "local" or a hosting service URL. */
+	| { op: "move-targets"; channel: string }
+	/** Resolves once the channel runs at `target`; its watches end and reattach there. */
+	| { op: "move"; channel: string; target: string }
 	/**
 	 * Forward a request to a channel on this host or a peer, starting its worker if dormant. The
 	 * channel's host sets every author field to the participant it verified. A `watch` streams

@@ -38,6 +38,11 @@ export type Listing = {
 	archived?: boolean;
 	/** Base URL of the service hosting the channel; this host serves its workspace. */
 	hosted?: string;
+	/**
+	 * A move in progress fences the channel: no worker starts and no client connects until the
+	 * move finishes or is resolved. `digest` names the snapshot an outbound move tried to activate.
+	 */
+	moving?: { to: string; digest?: string };
 };
 
 export const home = config.home;

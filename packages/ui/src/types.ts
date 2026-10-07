@@ -15,7 +15,7 @@ export type AgentSelection = {
 };
 
 /** Session actions the viewer may perform. */
-export type Capabilities = { rename: boolean; archive: boolean; delete?: boolean };
+export type Capabilities = { rename: boolean; archive: boolean; delete?: boolean; move?: boolean };
 
 /** A tool call from an agent. */
 export type Tool = {

@@ -21,7 +21,7 @@ import {
 	useMedia,
 } from "@ace/ui";
 import { IconHash, IconPlus } from "@ace/ui/icons";
-import type { Hello, HostRequest, Listing, People, Project } from "@ace/host/protocol";
+import type { Hello, HostRequest, Listing, MoveTarget, People, Project } from "@ace/host/protocol";
 
 import { chosen, deployed, remember } from "./address";
 import { Channel, ChannelDetails, type ChannelDraft } from "./channel";
@@ -114,6 +114,7 @@ function row(channel: Listing, user: string, host: string): SidebarRow {
 			rename: channel.owner === user && channel.state !== "offline",
 			archive: channel.host === host,
 			delete: channel.host === host,
+			move: channel.owner === user && channel.host === host && channel.state !== "archived",
 		},
 		connection: channel.state === "running"
 			? "connected"
@@ -403,6 +404,20 @@ export function App() {
 		}
 	}
 
+	function moveTargets(item: SidebarRow) {
+		return host.request<MoveTarget[]>({ op: "move-targets", channel: item.uid });
+	}
+
+	async function move(item: SidebarRow, target: MoveTarget) {
+		const id = toast.loading(`Moving ${item.name} to ${target.label}…`);
+		try {
+			await host.request({ op: "move", channel: item.uid, target: target.target });
+			toast.success(`Moved ${item.name} to ${target.label}`, { id });
+		} catch (error) {
+			toast.error("Could not move channel", { id, description: (error as Error).message });
+		}
+	}
+
 	async function rename(name: string) {
 		if (!renaming) return;
 		await host.channel(renaming.id, { op: "rename", author: hello.user, name: name.trim() });
@@ -466,6 +481,8 @@ export function App() {
 										onRename={connected
 											? (item) => setRenaming({ id: item.uid, name: item.name })
 											: undefined}
+										onMoveTargets={connected && !deployed ? moveTargets : undefined}
+										onMove={connected && !deployed ? move : undefined}
 										onToggleGroup={(id) =>
 											setCollapsed((value) => ({ ...value, [id]: !folded(value, id) }))}
 										onArchive={(allProjects || local) && connected

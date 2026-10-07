@@ -58,6 +58,22 @@ export function isWorkerAlive(id: string): boolean {
 	}
 }
 
+/** What the hosting service stores for a channel whose workspace is this host. */
+export function hostedConfig(record: catalog.Listing) {
+	return {
+		version: 2,
+		id: record.id,
+		name: record.name,
+		prefix: record.prefix,
+		named: record.named,
+		owner: record.owner,
+		project: record.project,
+		lanes: catalog.paths(record.id).lanes,
+		model: record.model,
+		workspace: `host:${hostname()}`,
+	};
+}
+
 /** Create a channel on a hosting service, with this host as its workspace. */
 export async function host(
 	dir: string,
@@ -70,18 +86,7 @@ export async function host(
 	const response = await fetch(`${record.hosted}/channels/${record.id}`, {
 		method: "POST",
 		headers: await hostedAuth(),
-		body: JSON.stringify({
-			version: 2,
-			id: record.id,
-			name: record.name,
-			prefix: record.prefix,
-			named: record.named,
-			owner: record.owner,
-			project: record.project,
-			lanes: catalog.paths(record.id).lanes,
-			model,
-			workspace: `host:${hostname()}`,
-		}),
+		body: JSON.stringify(hostedConfig(record)),
 	}).catch((error: Error) => new Response(error.message, { status: 502 }));
 	if (!response.ok) {
 		throw new Error(`The hosting service refused the channel: ${await response.text()}`);
