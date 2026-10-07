@@ -10,7 +10,7 @@ on:
         options: [canary, stable]
         default: canary
       publish:
-        description: Publish the verified release to the public download bucket
+        description: Publish the verified release to GitHub and the public download bucket
         type: boolean
         default: false
       revision:
@@ -26,6 +26,8 @@ concurrency:
 
 jobs:
   release:
+    permissions:
+      contents: write
     runs-on: macos-15
     timeout-minutes: 60
     environment: desktop-${{ inputs.channel }}
@@ -68,10 +70,11 @@ jobs:
           name: ace-${{ inputs.channel }}-macos-arm64
           path: apps/desktop/artifacts/sparkle/
           if-no-files-found: error
-      - name: Publish downloads, then the feed
+      - name: Publish downloads and GitHub release, then the feed
         if: inputs.publish
         run: bun desktop publish
         env:
+          GH_TOKEN: ${{ github.token }}
           ACE_SPARKLE_PRIVATE_KEY: ${{ secrets.ACE_SPARKLE_PRIVATE_KEY }}
           ACE_UPDATE_BUCKET: ${{ vars.ACE_UPDATE_BUCKET }}
           CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
