@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import type { Image } from "@ace/channel/protocol";
+import type { Image, QueuedMessage } from "@ace/channel/protocol";
 import type { ChannelInfo, Event } from "@ace/host/protocol";
 
 import { host, onOpen } from "./host";
@@ -35,6 +35,7 @@ export type Item =
 
 export type Transcript = {
 	items: Item[];
+	queue: QueuedMessage[];
 	/** Text streamed for the reply being generated. */
 	draft: string;
 	busy: boolean;
@@ -44,11 +45,13 @@ export type Transcript = {
 	desktop?: boolean;
 };
 
-const EMPTY: Transcript = { items: [], draft: "", busy: false, live: false };
+const EMPTY: Transcript = { items: [], queue: [], draft: "", busy: false, live: false };
 
 /** Folds channel events into timeline items: tool calls attach to the reply that made them. */
 export function apply(state: Transcript, event: Event): Transcript {
 	switch (event.kind) {
+		case "queue":
+			return { ...state, queue: event.messages };
 		case "message":
 			return {
 				...state,
@@ -186,7 +189,7 @@ export function useTranscript(
 					if (current()) setInfo(value);
 				}, () => {});
 			void refresh();
-			host.channel(channel, { op: "watch", ...(chat === undefined ? {} : { chat }) }, {
+			host.channel(channel, { op: "watch", queue: true, ...(chat === undefined ? {} : { chat }) }, {
 				event(event) {
 					if (!current()) return;
 					setState((state) => apply(state, event));
