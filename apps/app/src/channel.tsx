@@ -11,6 +11,7 @@ import {
 	useLayoutRight,
 } from "@ace/ui";
 
+import { ChannelAccess } from "./channel-access";
 import { Conversation } from "./conversation";
 import { forget, publish, useDetails } from "./details";
 import { host } from "./host";
@@ -220,6 +221,7 @@ export function Channel({ channel, user, remote, draft, onDraftLoaded, onSetting
 			chat={chat}
 			changed={changed}
 			opener={opener}
+			actions={<ChannelAccess channel={channel} user={user} />}
 			render={(data, uid, active, update) => {
 				if (uid === CHAT) {
 					return (

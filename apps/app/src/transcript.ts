@@ -39,6 +39,9 @@ export type Transcript = {
 	draft: string;
 	busy: boolean;
 	live: boolean;
+	/** Whether teammates may invoke agents, from the newest metadata event that reported it. */
+	shared?: boolean;
+	desktop?: boolean;
 };
 
 const EMPTY: Transcript = { items: [], draft: "", busy: false, live: false };
@@ -119,8 +122,13 @@ export function apply(state: Transcript, event: Event): Transcript {
 			return { ...state, busy: event.state === "start", draft: "" };
 		case "live":
 			return { ...state, live: true };
-		case "metadata":
-			return state;
+		case "metadata": {
+			const shared = event.shared ?? state.shared;
+			const desktop = event.desktop ?? state.desktop;
+			return shared === state.shared && desktop === state.desktop
+				? state
+				: { ...state, shared, desktop };
+		}
 	}
 }
 
@@ -201,5 +209,18 @@ export function useTranscript(
 			host.request({ op: "release", channel }).catch(() => {});
 		};
 	}, [channel, chat, attempt]);
-	return { ...state, info, error, retry: () => setAttempt((value) => value + 1) };
+	// Hosts that predate sharing in metadata events report it only through `info`, which is not
+	// read again after a share; `sharedLive` says whether changes will arrive.
+	const shared = state.shared ?? info?.shared;
+	const sharedLive = state.shared !== undefined;
+	return {
+		...state,
+		shared,
+		sharedLive,
+		desktop: state.desktop ?? info?.desktop,
+		desktopLive: state.desktop !== undefined,
+		info,
+		error,
+		retry: () => setAttempt((value) => value + 1),
+	};
 }

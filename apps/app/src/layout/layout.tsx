@@ -91,6 +91,8 @@ type Props = {
 	/** Whether the chat's lane has changes, once known. */
 	changed?: boolean;
 	render: Render;
+	/** Channel controls immediately before the header's new-tab button. */
+	actions?: ReactNode;
 	/** Notified when a tab is closed, so owners can release its resources. */
 	onTabClose?: (uid: string, data: Content) => void;
 	/** Receives the function that shows the chat's Diff tab, opening one beside the chat if needed. */
@@ -490,6 +492,7 @@ function Tab({
 }
 
 type BarProps = {
+	actions?: ReactNode;
 	pane: Split.Pane;
 	items: Map<string, Item>;
 	flat: boolean;
@@ -511,6 +514,7 @@ type BarProps = {
 };
 
 function Bar({
+	actions,
 	pane,
 	items,
 	flat,
@@ -575,6 +579,7 @@ function Bar({
 					/>
 				)}
 			</div>
+			{actions}
 			<Add onAdd={onAdd} />
 			{!flat && <Tools split={onFork} can={can} />}
 		</div>
@@ -896,6 +901,7 @@ export function Layout(props: Props) {
 	function bar(pane: Split.Pane) {
 		return {
 			pane,
+			actions: pane.uid === heads.at(-1)?.uid ? props.actions : undefined,
 			items,
 			flat,
 			drag: ghost,

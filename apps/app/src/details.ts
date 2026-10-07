@@ -10,6 +10,12 @@ export type Details = {
 	info?: ChannelInfo;
 	changes?: Changes;
 	items?: Item[];
+	/** Whether teammates may invoke agents, as the chat's watch reports it. */
+	shared?: boolean;
+	/** Whether the watch follows sharing changes; older hosts report only a snapshot. */
+	sharedLive?: boolean;
+	desktop?: boolean;
+	desktopLive?: boolean;
 	/** Shows the chat's Diff tab, opening one when none is open. */
 	diff?: () => void;
 };

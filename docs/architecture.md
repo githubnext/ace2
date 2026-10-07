@@ -106,7 +106,8 @@ Process per channel gives isolation and instant kill, and lets thousands of chan
 files: a dormant channel is a closed SQLite file with no process. It is process isolation, not a
 security boundary: every worker runs as the host's user and can read the others' files. Agents
 have full access to that user's execution environment by design. Collaborator invocation is
-controlled by one switch for all available tools.
+controlled separately from the channel-wide native desktop tools gate. Neither switch is a shell
+security sandbox.
 
 ## Host
 
@@ -149,7 +150,7 @@ records. Opening a worktree adds its main checkout.
 
 Model credentials come from `ACE_<NAME>`, `<NAME>`, then the OS keychain, for each name pi-ai asks
 for, such as `OPENAI_API_KEY`. Agent shells inherit the process environment. Participants allowed
-to invoke an agent can use all of its tools, so processes that run tools first move credential-like
+to invoke an agent can use its shell tools, so processes that run tools first move credential-like
 variables out of the environment; only the key lookup can read them.
 
 Workers resolve Keychain credentials on each model request, so adding, replacing, or removing a
@@ -310,8 +311,8 @@ only coordinate input in that exact window; failed observations retain their
 error and report later target availability when it can be read. Quitting Ace stops desktop tools;
 Ace Helper can keep channels running. Hosted channels forward the capability to their workspace.
 Pi stores the result; channel clients project its images into the existing tool output. Peekaboo
-coordinates concurrent native operations. The collaborator-agent
-switch applies to desktop tools with the rest of the agent's tools. See
+coordinates concurrent native operations. An independent owner-controlled channel setting gates
+native desktop tool dispatch for every chat, including the owner's agents and subagents. See
 [native desktop tools](desktop-tools.md) for setup, supported actions, and interruption behavior.
 
 Agents list, navigate, and inspect web pages through an injected browser capability. The host talks
@@ -394,10 +395,26 @@ Its identities and access rules decide which people and machines can reach each 
 no separate accounts, invitations, roles, or team access controls. Every human author is a
 Tailscale login, so a person is the same participant on every host.
 
-The channel owner can turn collaborator agent invocation on or off with `ace share <channel> on|off`.
-This is one switch for all of the agent's available tools, including native desktop tools when
-supported. It prevents new collaborator invocations; active work continues until stopped or
-killed. There are no separate per-tool grants or approval policies within a channel.
+The channel owner can turn collaborator agent invocation on or off with `ace share <channel> on|off`
+or the channel header's agent-access toggle; channels start shared. It prevents new collaborator
+invocations; active work continues until stopped or killed, and teammates keep reading and posting
+human messages. The teammate composer holds an invoking draft instead of sending it while sharing
+is off.
+
+A separate owner-controlled desktop-tools toggle gates native desktop tool dispatch for the entire
+channel: owner and collaborator runs, all chats, and subagents. It starts enabled, including for
+existing channels. Disabling it refuses subsequent native desktop calls, even within active runs;
+it does not cancel or undo calls already dispatched. Agent invocation and non-desktop tools remain
+available according to the sharing setting. This is a native tools gate, not a shell security
+sandbox: agents still run as the host's user and shell commands can access that user's environment.
+There are no per-participant desktop grants or per-call approval policies.
+
+Both settings live in pi's `ace.settings` session document. Watch metadata events carry their
+current values on every watch and committed change; name/summary revisions do not version these
+settings. Clients send owner-only `{ op: "desktop", author, enabled: boolean }` to change the desktop
+gate; `info` and metadata watch events expose it as `desktop: boolean`. Older hosts omit it and
+continue their existing desktop behavior; the header shows an unknown, disabled control until a
+host reports the setting.
 
 Local owner tokens and browser-origin checks authenticate local connections. Team-deployed
 services use `ACE_SECRET` to authenticate hosts and trust the participant identities those hosts

@@ -96,6 +96,14 @@ written on the next lane change. Version 1 lanes have no base, so their Diff com
 locally known `origin/HEAD`, or the project's HEAD in a repository without origin, until a lane
 switch names a base.
 
+Channel access settings live in pi's version 2 `ace.settings` session document. `shared` controls
+new collaborator agent invocations; `desktop` independently gates native desktop tools for every
+chat and participant in the channel. A missing document defaults both to enabled. pi migrates
+version 1 documents on read, preserving `shared` (including `false`) and adding `desktop: true`
+for compatibility. The version 2 form is written on the next settings change. Neither migration
+nor changing a setting rewrites chats, entries, or name/summary revisions; these gates are not a
+shell security sandbox.
+
 The October 3, 2026 credential-deferral check opened a backed-up version 0 channel with no keys:
 its pi entries and selected model were unchanged. Fresh channels accepted human messages before
 provider setup and retained their history through a worker restart. Adding a real Anthropic key
@@ -113,3 +121,12 @@ The October 6, 2026 lanes check opened an isolated copy of an archived Canary ch
 version 1 `ace.lanes` data. All three chats and their lanes resolved, and every original pi entry
 stayed byte-for-byte equivalent. A lane switch stored version 2 without a base, and after a worker
 restart the channel continued with a real model. The source backup's checksums remained unchanged.
+
+The October 6, 2026 desktop-gate check reopened two isolated backups: an archived Canary channel
+without settings, and a real-model channel whose version 1 sharing setting was turned off using
+the old worker. They reopened with desktop tools enabled and their sharing choices preserved.
+Changing desktop access persisted version 2 and survived a worker restart. Real Anthropic runs
+confirmed desktop refusals in the owner's chat, a subagent, and an active collaborator run in a
+second chat; re-enabling allowed a real native application inventory while sharing remained off.
+All 175 original entries across both backups stayed byte-for-byte equivalent, both databases
+passed integrity checks, and the source backup checksums stayed unchanged.

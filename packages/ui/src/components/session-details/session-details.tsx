@@ -200,8 +200,17 @@ function Pull({ pull }: { pull: DetailsPull }) {
  * shows only what exists.
  */
 export function SessionDetailsView(
-	{ summary, changes, branch, pull, subagents, links, facts, onDiff, onClose }:
-		SessionDetailsViewProps,
+	{
+		summary,
+		changes,
+		branch,
+		pull,
+		subagents,
+		links,
+		facts,
+		onDiff,
+		onClose,
+	}: SessionDetailsViewProps,
 ) {
 	const [all, setAll] = useState(false);
 	const shown = all ? links : links?.slice(0, LINKS);
