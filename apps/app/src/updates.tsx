@@ -1,9 +1,10 @@
 import { useEffect, useEffectEvent, useState, useSyncExternalStore } from "react";
 
-import { Button, toast } from "@ace/ui";
+import { Button, Switch, toast } from "@ace/ui";
 import type { UpdateAction, UpdateState } from "@ace/desktop/protocol";
 
 import { desktop } from "./desktop";
+import { Disclosure, Group, Problem, Row, Status } from "./settings-layout";
 
 let state: UpdateState | undefined;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -86,93 +87,104 @@ export function UpdateSettings() {
 		}
 	}
 
-	if (!update) return <p role="status">Reading update settings…</p>;
+	if (!update) return <Status>Reading update settings…</Status>;
 	const disabled = update.phase === "disabled";
+	const channel = update.channel === "stable"
+		? "Stable releases"
+		: update.channel === "canary"
+		? "Canary releases"
+		: "Development build";
 	return (
-		<section className="space-y-4 text-xs" aria-label="App updates">
-			<div>
-				<h3 className="font-medium">Ace {update.version}</h3>
-				<p className="text-muted-foreground">
-					{update.channel === "stable"
-						? "Stable releases"
-						: update.channel === "canary"
-						? "Canary releases"
-						: "Development build"}
-				</p>
-			</div>
-			<p role="status">
-				{update.phase === "available"
-					? `Ace ${update.available} is available.`
-					: update.phase === "idle" && !update.checked
-					? "Check for a new version of Ace."
-					: labels[update.phase]}
-			</p>
-			{update.phase === "downloading" && (
-				<progress
-					className="h-1 w-full"
-					max={1}
-					value={update.progress}
-					aria-label="Downloading update"
-				/>
-			)}
+		<div className="flex flex-col gap-6" aria-label="App updates">
+			<Group>
+				<Row
+					label={`Ace ${update.version}`}
+					description={
+						<>
+							<span role="status">
+								{update.phase === "available"
+									? `Ace ${update.available} is available.`
+									: update.phase === "idle" && !update.checked
+									? "Check for a new version of Ace."
+									: labels[update.phase]}
+							</span>{" "}
+							{channel}
+							{update.checked && ` · Last checked ${new Date(update.checked).toLocaleString()}`}
+						</>
+					}
+					footer={
+						<>
+							{update.phase === "downloading" && (
+								<progress
+									className="h-1 w-full accent-primary"
+									max={1}
+									value={update.progress}
+									aria-label="Downloading update"
+								/>
+							)}
+							{(error || update.error) && <Problem>{error || update.error}</Problem>}
+						</>
+					}
+				>
+					{!disabled && (
+						<>
+							{update.canCancel && (
+								<Button
+									variant="ghost"
+									disabled={acting}
+									onClick={() => void act({ op: "cancel" })}
+								>
+									Cancel
+								</Button>
+							)}
+							{update.needsRecovery
+								? (
+									<Button disabled={acting} onClick={() => void act({ op: "recover" })}>
+										Resume Ace Helper
+									</Button>
+								)
+								: update.phase === "available"
+								? (
+									<Button disabled={acting} onClick={() => void act({ op: "install" })}>
+										Install and Restart
+									</Button>
+								)
+								: (
+									<Button
+										variant="outline"
+										disabled={acting || !["idle", "error"].includes(update.phase)}
+										onClick={() => void act({ op: "check" })}
+									>
+										Check for Updates
+									</Button>
+								)}
+						</>
+					)}
+				</Row>
+				{!disabled && (
+					<Row
+						id="automatic-updates-label"
+						label="Check automatically"
+						description="Look for new versions in the background and show a notice when one is ready."
+					>
+						<Switch
+							aria-labelledby="automatic-updates-label"
+							checked={update.automatic}
+							disabled={acting || update.needsRecovery}
+							onCheckedChange={(value) => void act({ op: "automatic", value })}
+						/>
+					</Row>
+				)}
+			</Group>
 			{!disabled && (
-				<>
+				<Disclosure summary="What happens during an update">
 					<p className="text-muted-foreground">
 						Ace Helper pauses while an update downloads and installs. Unfinished runs resume after
 						restart; terminal shells close. Your projects, history, and provider keys stay on this
 						Mac.
 					</p>
-					<label className="flex items-center gap-2">
-						<input
-							type="checkbox"
-							checked={update.automatic}
-							disabled={acting || update.needsRecovery}
-							onChange={(event) => void act({ op: "automatic", value: event.target.checked })}
-						/>
-						Automatically check for updates
-					</label>
-					<div className="flex flex-wrap gap-2">
-						{update.needsRecovery
-							? (
-								<Button disabled={acting} onClick={() => void act({ op: "recover" })}>
-									Resume Ace Helper
-								</Button>
-							)
-							: update.phase === "available"
-							? (
-								<Button disabled={acting} onClick={() => void act({ op: "install" })}>
-									Install and Restart
-								</Button>
-							)
-							: (
-								<Button
-									variant="outline"
-									disabled={acting || !["idle", "error"].includes(update.phase)}
-									onClick={() => void act({ op: "check" })}
-								>
-									Check for Updates
-								</Button>
-							)}
-						{update.canCancel && (
-							<Button
-								variant="ghost"
-								disabled={acting}
-								onClick={() => void act({ op: "cancel" })}
-							>
-								Cancel
-							</Button>
-						)}
-					</div>
-					{update.checked && (
-						<p className="text-muted-foreground">
-							Last checked {new Date(update.checked).toLocaleString()}
-						</p>
-					)}
-				</>
+				</Disclosure>
 			)}
-			{(error || update.error) && (
-				<p role="alert" className="text-destructive">{error || update.error}</p>
-			)}
-		</section>
+		</div>
 	);
 }

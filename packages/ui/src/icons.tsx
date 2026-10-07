@@ -47,6 +47,8 @@ import {
 	Image,
 	Info,
 	Italic,
+	KeyRound,
+	Laptop,
 	Link,
 	List,
 	ListChecks,
@@ -64,6 +66,7 @@ import {
 	MessageSquareShare,
 	Mic,
 	Monitor,
+	MousePointer2,
 	Music,
 	PaintBucket,
 	PanelLeft,
@@ -76,6 +79,8 @@ import {
 	Rows2,
 	Search,
 	Send,
+	Server,
+	Settings2,
 	Sparkles,
 	Square,
 	SquareCode,
@@ -117,6 +122,7 @@ function micro(Icon: LucideIcon) {
 }
 
 export const IconArchive = outline(Archive);
+export const IconArrowDownToLine = outline(ArrowDownToLine);
 export const IconArrowUpRight = outline(ArrowUpRight);
 export const IconBolt = outline(Zap);
 export const IconBot = outline(Bot);
@@ -160,6 +166,8 @@ export const IconHome = outline(House);
 export const IconImage = outline(Image);
 export const IconInfo = outline(Info);
 export const IconIssue = outline(CircleDot);
+export const IconKey = outline(KeyRound);
+export const IconLaptop = outline(Laptop);
 export const IconListTree = outline(ListTree);
 export const IconLoader = outline(Loader);
 export const IconLock = outline(Lock);
@@ -173,6 +181,7 @@ export const IconPencil = outline(Pencil);
 export const IconPin = outline(Pin);
 export const IconPinOff = outline(PinOff);
 export const IconPlus = outline(Plus);
+export const IconPointer = outline(MousePointer2);
 export const IconPullRequest = outline(GitPullRequest);
 export const IconPullRequestClosed = outline(GitPullRequestClosed);
 export const IconReact = outline(FaceSlightlySmilingPlus);
@@ -180,6 +189,8 @@ export const IconRecord = outline(CircleDot);
 export const IconRotate = outline(RotateCw);
 export const IconRows = outline(Rows2);
 export const IconSearch = outline(Search);
+export const IconServer = outline(Server);
+export const IconSettings = outline(Settings2);
 export const IconSidebar = outline(PanelLeft);
 export const IconSplitView = outline(Columns2);
 export const IconStop = outline(Square);
