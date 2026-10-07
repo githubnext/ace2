@@ -27,9 +27,14 @@ export const projectId = (host: string, path: string, repo?: string) =>
 export const channelProject = (channel: Pick<Listing, "host" | "project" | "root" | "repo">) =>
 	projectId(channel.host, root(channel), channel.repo);
 
-/** Names a project without a checkout on this host by the hosts that have one. */
+/**
+ * A GitHub project is the same project wherever it is checked out. A folder without one is only
+ * its host's, so a folder elsewhere is named by the hosts that have it.
+ */
 export const label = (project: AppProject, host: string) =>
-	project.host === host ? project.name : `${project.name} · ${[...project.hosts].join(", ")}`;
+	project.repo || project.host === host
+		? project.name
+		: `${project.name} · ${[...project.hosts].join(", ")}`;
 
 export function projects(opened: Project[], channels: Listing[], host: string): AppProject[] {
 	const values = new Map<string, AppProject>();

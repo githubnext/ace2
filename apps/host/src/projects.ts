@@ -1,7 +1,9 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	realpathSync,
 	renameSync,
@@ -10,11 +12,11 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import * as catalog from "./catalog";
 import { config } from "./config";
-import { remote, REMOTES } from "./github";
+import { clone, remote, REMOTES, repository } from "./github";
 import type { Project } from "./protocol";
 
 type Checkout = { root: string; repo?: string };
@@ -70,14 +72,12 @@ export function list(): Project[] {
 	return [...values.values()];
 }
 
+const expand = (value: string) =>
+	value === "~" ? homedir() : value.startsWith("~/") ? homedir() + value.slice(1) : value;
+
 /** Opening a folder must not require model credentials or create a channel. */
 export function open(value: string): Project {
-	const expanded = value === "~"
-		? homedir()
-		: value.startsWith("~/")
-		? homedir() + value.slice(1)
-		: value;
-	let path = realpathSync(resolve(expanded));
+	let path = realpathSync(resolve(expand(value)));
 	if (!statSync(path).isDirectory()) throw new Error("Choose a folder to open as a project");
 	path = realpathSync(checkout(path).root);
 	const opened = paths();
@@ -94,4 +94,44 @@ export function open(value: string): Project {
 		}
 	}
 	return project(path);
+}
+
+const cloning = new Set<string>();
+
+/**
+ * Sets up a known GitHub project on this host: clones it into `value`, or opens the checkout of
+ * it already there. Anything else at `value` is left untouched.
+ */
+export async function setup(repo: string, value: string): Promise<Project> {
+	repository(repo);
+	const expanded = expand(value.trim());
+	if (!isAbsolute(expanded)) throw new Error("Enter a full folder path, such as ~/code/project");
+	const path = resolve(expanded);
+	if (cloning.has(path)) throw new Error("This folder is already being set up");
+	cloning.add(path);
+	try {
+		if (existsSync(path)) {
+			if (!statSync(path).isDirectory()) throw new Error(`${path} is a file. Choose a folder.`);
+			const real = realpathSync(path);
+			checkouts.delete(real);
+			const found = existsSync(join(real, ".git")) ? checkout(real).repo : undefined;
+			if (found?.toLowerCase() === repo.toLowerCase()) {
+				// An interrupted clone already names its remote but has no commit to work from.
+				const head = spawnSync("git", ["-C", real, "rev-parse", "--verify", "-q", "HEAD"]);
+				if (head.status === 0) return open(real);
+				throw new Error(
+					`${path} has an incomplete clone of ${repo}. Remove it or choose another folder.`,
+				);
+			}
+			if (found) throw new Error(`${path} is a checkout of ${found}. Choose another folder.`);
+			if (readdirSync(real).length) {
+				throw new Error(`${path} already has other files. Choose an empty or new folder.`);
+			}
+		}
+		await clone(repo, path);
+		checkouts.delete(realpathSync(path));
+		return open(path);
+	} finally {
+		cloning.delete(path);
+	}
 }

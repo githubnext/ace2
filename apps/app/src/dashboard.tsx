@@ -11,17 +11,48 @@ import {
 import { IconChevronDown, IconHash, IconPlus } from "@ace/ui/icons";
 import type { Listing } from "@ace/host/protocol";
 
-import { type AppProject, checkoutId } from "./projects";
+import { here } from "./desktop";
+import type { AppProject } from "./projects";
+
+/**
+ * A project's dashboard draft and history follow its identity, so setting up a GitHub project here
+ * keeps them. Earlier versions scoped each to one checkout; the first one found moves over once.
+ */
+function adopt(project: AppProject): string {
+	const scope = `/projects/${project.id}/dashboard`;
+	for (const kind of ["draft", "history"]) {
+		const key = `ace:${kind}:${scope}`;
+		// useDraft still moves drafts that earlier versions kept in sessionStorage.
+		const stores = kind === "draft" ? [localStorage, sessionStorage] : [localStorage];
+		try {
+			if (stores.some((store) => store.getItem(key) !== null)) continue;
+			for (const checkout of project.checkouts) {
+				const legacy = `ace:${kind}:/projects/${checkout}/dashboard`;
+				const store = legacy !== key && stores.find((store) => store.getItem(legacy) !== null);
+				if (!store) continue;
+				// A failed write throws before the legacy copy is removed.
+				store.setItem(key, store.getItem(legacy)!);
+				store.removeItem(legacy);
+				break;
+			}
+		} catch {
+			// Unavailable storage leaves both scopes as they were.
+		}
+	}
+	return scope;
+}
 
 const MODES = [{ id: "ace", name: "Ace", placeholder: "Start a new channel" }];
 
 export function Dashboard(
-	{ project, repos, channels, local, connected, onProject, onOpen, onChannel, onCreate }: {
+	{ project, repos, channels, local, connected, onSetup, onProject, onOpen, onChannel, onCreate }: {
 		project: AppProject;
 		repos: SessionSidebarRepo[];
 		channels: Listing[];
 		local: boolean;
 		connected: boolean;
+		/** Offered for a GitHub project with no checkout on this host. */
+		onSetup?: () => void;
 		onProject: (id: string) => void;
 		onOpen: () => void;
 		onChannel: (channel: Listing) => void;
@@ -30,6 +61,8 @@ export function Dashboard(
 ) {
 	const composer = useRef<ChatComposerHandle>(null);
 	const [busy, setBusy] = useState(false);
+	const [scope] = useState(() => adopt(project));
+	const creatable = local || !!onSetup;
 	const active = channels.filter((channel) => channel.state !== "archived")
 		.sort((a, b) => b.created - a.created);
 	const hour = new Date().getHours();
@@ -74,17 +107,23 @@ export function Dashboard(
 				<p className="max-w-[34rem] text-pretty text-sm leading-[1.55] text-foreground/65">
 					{local
 						? `What would you like to work on in ${project.name}?`
-						: `Catch up on ${project.name}’s channels on ${
-							[...project.hosts].join(", ")
-						}. Open a checkout on this host to start channels here.`}
+						: `Catch up on ${project.name}’s channels on ${[...project.hosts].join(", ")}. ${
+							onSetup
+								? `Set it up on ${here} to start channels here.`
+								: "Open a checkout on this host to start channels here."
+						}`}
 				</p>
+				{onSetup && (
+					<Button variant="outline" disabled={!connected} onClick={onSetup}>
+						Set up on {here}
+					</Button>
+				)}
 			</section>
-			{local && (
+			{creatable && (
 				<div className="mx-auto mt-9 max-w-[39rem]">
 					<ChatComposer
 						ref={composer}
-						// Drafts saved before repository projects are scoped to this checkout.
-						scope={`/projects/${checkoutId(project.host, project.path)}/dashboard`}
+						scope={scope}
 						modes={MODES}
 						mode="ace"
 						mic={false}
@@ -102,7 +141,7 @@ export function Dashboard(
 			<section className="mx-auto mt-10 max-w-[39rem]">
 				<div className="mb-3 flex items-center justify-between gap-3">
 					<h2 className="text-sm font-medium">{active.length ? "Pick back up" : "Channels"}</h2>
-					{local && (
+					{creatable && (
 						<Button
 							size="sm"
 							variant="ghost"

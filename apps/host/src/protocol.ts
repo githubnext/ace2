@@ -130,6 +130,11 @@ export type HostRequest =
 	| { op: "channels" }
 	| { op: "projects" }
 	| { op: "project-open"; path: string }
+	/**
+	 * Clone a known GitHub project into `path` on this host, or open the matching checkout already
+	 * there, then add it like `project-open`. The host expands `~`.
+	 */
+	| { op: "project-clone"; repo: string; path: string }
 	/** Resolve a known project's GitHub remote on the machine that holds its checkout. */
 	| { op: "project-repo"; project: string; host?: string }
 	/** GitHub reads use the local owner's GitHub CLI credentials, never a peer's account. */

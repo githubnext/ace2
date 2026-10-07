@@ -28,13 +28,21 @@ import { Channel, ChannelDetails, type ChannelDraft } from "./channel";
 import { Dashboard } from "./dashboard";
 import { Github, GithubSidebar } from "./github";
 import { useGithubRefresh } from "./github-cache";
-import { desktop, titlebar } from "./desktop";
+import { desktop, here, titlebar } from "./desktop";
 import { host } from "./host";
 import { Rename } from "./layout/rename";
 import { Navigation, type Page, WindowControls } from "./navigation";
 import { EmptyProjects, OpenProject } from "./open-project";
-import { type AppProject, channelProject, label, projectId, projects } from "./projects";
+import {
+	type AppProject,
+	channelProject,
+	checkoutId,
+	label,
+	projectId,
+	projects,
+} from "./projects";
 import { Settings } from "./settings";
+import { SetupProject } from "./setup-project";
 import { UpdateNotice } from "./updates";
 
 // Older versions saved an inline GitHub item per project; Ace now opens items on GitHub.
@@ -201,6 +209,11 @@ export function App() {
 		{},
 	);
 	const [adding, setAdding] = useState(false);
+	/** A project to clone here; `start` continues into channel creation with its initial text. */
+	const [setup, setSetup] = useState<{
+		project: AppProject & { repo: string };
+		start?: { text?: string; onCreated?: () => void };
+	}>();
 	const [settings, setSettings] = useState<boolean | "updates">(false);
 	const [draft, setDraft] = useState<ChannelDraft>();
 	const [renaming, setRenaming] = useState<{ id: string; name: string }>();
@@ -268,6 +281,8 @@ export function App() {
 	);
 	const connected = status === "open" && !!hello.host;
 	const local = current?.host === hello.host;
+	// GitHub projects can be cloned here; other folders exist only on the hosts that hold them.
+	const creatable = local || !!current?.repo;
 	const repos: SessionSidebarRepo[] = [
 		{
 			id: ALL_PROJECTS,
@@ -304,7 +319,7 @@ export function App() {
 				rows,
 				sort: "none",
 				collapsed: collapsed[id],
-				onNewSession: connected && value.host === hello.host
+				onNewSession: connected && (value.host === hello.host || value.repo)
 					? () => void create(undefined, undefined, value)
 					: undefined,
 			};
@@ -348,12 +363,38 @@ export function App() {
 		}
 	}
 
+	function startSetup(project: AppProject, start?: { text?: string; onCreated?: () => void }) {
+		if (project.repo) setSetup({ project: { ...project, repo: project.repo }, start });
+	}
+
+	/** Channels only start on this host; setup may clone here first, never on the other host. */
+	async function finishSetup(path: string) {
+		if (!setup) return;
+		const value = await host.request<Project>({
+			op: "project-clone",
+			repo: setup.project.repo,
+			path,
+		});
+		const id = projectId(hello.host, value.path, value.repo);
+		setSetup(undefined);
+		if (!setup.start) return chooseProject(id);
+		const target: AppProject = {
+			...value,
+			id,
+			host: hello.host,
+			hosts: new Set([hello.host]),
+			checkouts: new Set([checkoutId(hello.host, value.path)]),
+		};
+		await create(setup.start.text, setup.start.onCreated, target);
+	}
+
 	async function create(
 		text?: string,
 		onCreated?: () => void,
 		target = current,
 	): Promise<void> {
-		if (!target || target.host !== hello.host || !connected || creating.current) return;
+		if (!target || !connected || creating.current) return;
+		if (target.host !== hello.host) return startSetup(target, { text, onCreated });
 		creating.current = true;
 		try {
 			const value = await host.request<Pick<Listing, "id" | "project">>({
@@ -475,7 +516,7 @@ export function App() {
 											const value = listings.get(item.uid);
 											if (value) select(value);
 										}}
-										onNewSession={!allProjects && local && connected
+										onNewSession={!allProjects && creatable && connected
 											? () => void create()
 											: undefined}
 										onRename={connected
@@ -549,6 +590,7 @@ export function App() {
 									channels={visible}
 									local={local}
 									connected={connected}
+									onSetup={!local && current.repo ? () => startSetup(current) : undefined}
 									onProject={chooseProject}
 									onOpen={() => void choose()}
 									onChannel={select}
@@ -562,7 +604,7 @@ export function App() {
 									kind={page}
 									project={current}
 									connected={connected}
-									onCreate={local ? create : undefined}
+									onCreate={creatable ? create : undefined}
 								/>
 							)
 							: channel
@@ -590,20 +632,29 @@ export function App() {
 											Use + beside a project to start a new channel.
 										</p>
 									)}
-									{!allProjects && local && (
-										<Button
-											disabled={!connected}
-											onClick={() => void create()}
-										>
-											<IconPlus aria-hidden />New channel
-										</Button>
-									)}
 									{!allProjects && !local && (
-										<p className="text-sm text-muted-foreground">
-											{current.name} is checked out on{" "}
-											{[...current.hosts].join(", ")}. Open a checkout on this host to start
-											channels here.
+										<p className="max-w-[34rem] text-sm text-muted-foreground">
+											{current.name} is checked out on {[...current.hosts].join(", ")}.{" "}
+											{current.repo
+												? `Set it up on ${here} to start channels here.`
+												: "Open a checkout on this host to start channels here."}
 										</p>
+									)}
+									{!allProjects && creatable && (
+										<div className="flex gap-2">
+											{!local && (
+												<Button
+													variant="outline"
+													disabled={!connected}
+													onClick={() => startSetup(current)}
+												>
+													Set up on {here}
+												</Button>
+											)}
+											<Button disabled={!connected} onClick={() => void create()}>
+												<IconPlus aria-hidden />New channel
+											</Button>
+										</div>
 									)}
 								</div>
 							)}
@@ -611,6 +662,14 @@ export function App() {
 					{page === "channels" && channel && <ChannelDetails channel={channel} />}
 				</Layout>
 				{adding && <OpenProject onOpen={open} onClose={() => setAdding(false)} />}
+				{setup && (
+					<SetupProject
+						project={setup.project}
+						starting={!!setup.start}
+						onSetup={finishSetup}
+						onClose={() => setSetup(undefined)}
+					/>
+				)}
 				{renaming && (
 					<Rename
 						open
