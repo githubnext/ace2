@@ -104,17 +104,34 @@ function listed(seen: Set<string>): Listing[] {
 		);
 }
 
-function listings(client: Client): Listing[] {
-	if (client.peer) return local();
-	const reachable = [...local(), ...peers.listings()];
+function listings(client: Client, own = local()): Listing[] {
+	if (client.peer) return own;
+	const reachable = [...own, ...peers.listings()];
 	return [...reachable, ...listed(new Set(reachable.map((value) => value.id)))];
 }
 
 const sockets = new Set<ServerWebSocket<Client>>();
 
+/**
+ * This host's channels changed. Peers receive only that, so their own broadcasts never echo back:
+ * two hosts relaying each other's frames would loop forever, starving both event loops.
+ */
 function broadcast() {
+	const own = local();
+	const frame = JSON.stringify({ channels: own } satisfies HostFrame);
+	for (const socket of sockets) if (socket.data.peer) socket.send(frame);
+	ownersChanged(own);
+}
+
+/** Peer and directory listings reach only the owner's app; peers never see them. */
+function ownersChanged(own?: Listing[]) {
+	let frame: string | undefined;
 	for (const socket of sockets) {
-		socket.send(JSON.stringify({ channels: listings(socket.data) } satisfies HostFrame));
+		if (socket.data.peer) continue;
+		frame ??= JSON.stringify(
+			{ channels: listings(socket.data, own || local()) } satisfies HostFrame,
+		);
+		socket.send(frame);
 	}
 	peopleChanged();
 }
@@ -652,7 +669,7 @@ export async function serve(port: number): Promise<never> {
 	const publish = directory.watch(
 		() => ({ name, login: catalog.user, github: github.login(peopleChanged), ...address }),
 		local,
-		broadcast,
+		() => ownersChanged(),
 	);
 	log("info", "host.tailnet", machine ? { name, address: machine.address } : { tailscale: false });
 	cleanup.push(publish.stop);
@@ -660,7 +677,7 @@ export async function serve(port: number): Promise<never> {
 		servers.push(team(machine, { port, secure: false }));
 		console.log(`Sharing with the tailnet on ${machine.address}:${port} as ${machine.login}`);
 		console.log(`Your devices can open http://${machine.dns}:${port}`);
-		cleanup.push(peers.watch(broadcast));
+		cleanup.push(peers.watch(() => ownersChanged()));
 		const tls = await web.tls(machine);
 		if (tls && !closing) {
 			const listener = { port: config.webPort ?? port + 1000, secure: true };
