@@ -157,6 +157,16 @@ the native Ace process itself refuse before input; its menu inventory remains av
 intermediate presses, separate activation request, fallback, automatic screenshot, or command retry
 is added. The target app or macOS may still bring the app forward in response.
 
+`peekaboo-stale-click.patch` reports exact-window clicks whose window already changed as refused for
+[moved-window clicks](https://github.com/githubnext/ace2/issues/155). Click preparation runs before
+any strategy route. It now checks the captured window identity and bounds there and throws a typed
+pre-dispatch `target_unavailable` refusal with the `SNAPSHOT_STALE` code, a refresh hint, and the
+captured exact-window target. Previously the first such check ran inside a route and its untyped
+error reached the bridge's generic mapping, which conservatively reported possible dispatch.
+Later route checks are unchanged: a route can follow an earlier Accessibility attempt that may have
+dispatched, so a window change detected there still reports uncertain input. Long press keeps its
+existing exact-window exemption, and process-generation checks are unchanged.
+
 The desktop build resolves only `Package.resolved` versions, checks the pin and checkout revision,
 and assembles the ordered patch stack in a private Git index. A build compares the checkout
 with each complete ordered prefix, since later patches can change earlier patch contexts.
