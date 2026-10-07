@@ -65,12 +65,8 @@ export const CommandPalette = memo(function CommandPalette({
 		<Dialog open={open} onOpenChange={onOpenChange}>
 			<DialogContent
 				showCloseButton={false}
-				style={{
-					blockSize: "min(34rem, calc(100vh - 4rem))",
-					maxBlockSize: "calc(100vh - 4rem)",
-				}}
 				className={cn(
-					"grid grid-rows-[auto_minmax(0,1fr)] inline-size-[min(44rem,calc(100vw-2rem))] max-inline-none gap-0 overflow-hidden rounded-2xl border border-border/70 bg-popover/95 p-0 shadow-modal supports-backdrop-filter:backdrop-blur-xl",
+					"grid h-[min(34rem,var(--dialog-max))] w-[min(44rem,calc(100vw-2rem))] max-w-none grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden sm:max-w-none rounded-2xl border border-border/70 bg-popover/95 p-0 shadow-modal supports-backdrop-filter:backdrop-blur-xl",
 					className,
 				)}
 			>

@@ -1,18 +1,33 @@
 import { useEffect, useState } from "react";
 
 import { Button } from "@ace/ui";
+import { IconCheck } from "@ace/ui/icons";
 import type { NativeAction, NativeState } from "@ace/desktop/protocol";
+
+import { Disclosure, Group, Problem, Row } from "./settings-layout";
 
 type Permission = Extract<NativeAction, { op: "permission" }>["permission"];
 
 const permissions = [
-	{ key: "accessibility", label: "Accessibility" },
-	{ key: "screenRecording", label: "Screen Recording" },
-	{ key: "eventSynthesizing", label: "Keyboard input" },
+	{
+		key: "accessibility",
+		label: "Accessibility",
+		description: "Read and operate controls in other apps.",
+	},
+	{
+		key: "screenRecording",
+		label: "Screen Recording",
+		description: "See window contents in screenshots.",
+	},
+	{
+		key: "eventSynthesizing",
+		label: "Keyboard input",
+		description: "Type and press shortcuts in other apps.",
+	},
 ] as const;
 
 const clipboardPolicies: Record<NativeState["clipboardRead"]["policy"], string> = {
-	default: "Use macOS default",
+	default: "macOS default",
 	ask: "Ask",
 	always_allow: "Always allow",
 	always_deny: "Always deny",
@@ -29,40 +44,42 @@ const states: Record<NativeState["state"], string> = {
 };
 
 export function NativeStatus(
-	{ native, refresh }: { native: (action: NativeAction) => Promise<NativeState>; refresh: number },
+	{ native, active }: { native: (action: NativeAction) => Promise<NativeState>; active: boolean },
 ) {
 	const [result, setResult] = useState<{ value?: NativeState; error?: string }>({});
 	const [action, setAction] = useState<{ busy?: Permission; error?: string }>({});
 	const [retry, setRetry] = useState(0);
 
 	useEffect(() => {
-		let active = true;
+		if (!active) return;
+		let live = true;
 		let pending = false;
 		const check = () => {
 			if (document.visibilityState !== "visible" || pending) return;
 			pending = true;
 			native({ op: "status" }).then(
 				(value) => {
-					if (active) setResult({ value });
+					if (live) setResult({ value });
 				},
 				(error: Error) => {
-					if (active) setResult({ error: error.message });
+					if (live) setResult({ error: error.message });
 				},
 			).finally(() => {
 				pending = false;
 			});
 		};
 		check();
+		// macOS grants change in System Settings, so refresh while this section is on screen.
 		const timer = window.setInterval(check, 3000);
 		window.addEventListener("focus", check);
 		document.addEventListener("visibilitychange", check);
 		return () => {
-			active = false;
+			live = false;
 			window.clearInterval(timer);
 			window.removeEventListener("focus", check);
 			document.removeEventListener("visibilitychange", check);
 		};
-	}, [native, refresh, retry]);
+	}, [native, active, retry]);
 
 	async function grant(permission: Permission) {
 		setAction({ busy: permission });
@@ -82,51 +99,66 @@ export function NativeStatus(
 	const error = action.error || result.error || value?.error;
 
 	return (
-		<section className="space-y-2" aria-label="Computer use">
-			<h3 className="font-medium">Computer use</h3>
-			<p role="status">
-				{needsPermission
-					? "Permissions needed"
-					: value
-					? states[value.state]
-					: result.error
-					? "Could not check computer use"
-					: "Checking computer use…"}
-			</p>
-			<p className="text-muted-foreground">
-				Keep Ace open on the host running the channel's tools. For a hosted channel, that is its
-				workspace. The channel's collaborator agent setting also applies to computer use.
-			</p>
-			<div className="space-y-2">
-				{permissions.map(({ key, label }) => (
-					<div key={key} className="flex items-center justify-between gap-3">
-						<p>{label}: {value ? value[key] ? "Granted" : "Not granted" : "Not checked"}</p>
-						{!value?.[key] && (
-							<Button
-								variant="outline"
-								disabled={!!action.busy}
-								onClick={() => void grant(key)}
-							>
-								Enable {label}
-							</Button>
-						)}
-					</div>
+		<div className="flex flex-col gap-6">
+			<Group>
+				<Row
+					label="Status"
+					description="Keep Ace open on the host running the channel's tools."
+					footer={error && <Problem>{error}</Problem>}
+				>
+					<span role="status" className="text-xs text-muted-foreground">
+						{needsPermission
+							? "Permissions needed"
+							: value
+							? states[value.state]
+							: result.error
+							? "Could not check computer use"
+							: "Checking…"}
+					</span>
+				</Row>
+			</Group>
+			<Group title="macOS permissions">
+				{permissions.map(({ key, label, description }) => (
+					<Row key={key} label={label} description={description}>
+						{!value
+							? <span className="text-xs text-muted-foreground">Not checked</span>
+							: value[key]
+							? (
+								<span className="flex items-center gap-1 text-xs text-muted-foreground">
+									<IconCheck className="size-3.5" aria-hidden />
+									Granted
+								</span>
+							)
+							: (
+								<Button
+									variant="outline"
+									aria-label={`Enable ${label}`}
+									disabled={!!action.busy}
+									onClick={() => void grant(key)}
+								>
+									{action.busy === key ? "Requesting…" : "Enable…"}
+								</Button>
+							)}
+					</Row>
 				))}
-				<div className="space-y-1">
-					<p>
-						Clipboard reading:{" "}
+				<Row
+					label="Clipboard reading"
+					description={value && !value.clipboardRead.readAdmitted
+						? "Allow Ace to read the clipboard in macOS System Settings to insert text while preserving clipboard contents."
+						: "Lets agents insert text while preserving clipboard contents."}
+				>
+					<span className="text-xs text-muted-foreground">
 						{value ? clipboardPolicies[value.clipboardRead.policy] : "Not checked"}
-					</p>
-					{value && !value.clipboardRead.readAdmitted && (
-						<p className="text-muted-foreground">
-							Allow Ace to read the clipboard in macOS System Settings to insert text while
-							preserving clipboard contents. Checking this status does not read the clipboard.
-						</p>
-					)}
-				</div>
-			</div>
-			{action.busy && <p role="status">Requesting permission…</p>}
-			{error && <p role="alert" className="text-destructive">{error}</p>}
-		</section>
+					</span>
+				</Row>
+			</Group>
+			<Disclosure summary="How computer use works">
+				<p className="text-muted-foreground">
+					Agents use these permissions on the host running the channel's tools. For a hosted
+					channel, that is its workspace. The channel's collaborator agent setting also applies to
+					computer use. Checking clipboard status does not read the clipboard.
+				</p>
+			</Disclosure>
+		</div>
 	);
 }

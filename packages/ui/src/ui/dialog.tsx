@@ -26,7 +26,7 @@ function DialogOverlay({ className, ...props }: DialogPrimitive.Backdrop.Props) 
 		<DialogPrimitive.Backdrop
 			data-slot="dialog-overlay"
 			className={cn(
-				"fixed inset-0 isolate z-50 contain-strict bg-black/10 dark:bg-black/30 border border-transparent dark:border-black/20 ring-1 ring-inset ring-transparent dark:ring-edge duration-100 supports-backdrop-filter:backdrop-blur-[2px] data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+				"fixed inset-0 isolate z-50 contain-strict bg-black/10 dark:bg-black/30 border border-transparent dark:border-black/20 ring-1 ring-inset ring-transparent dark:ring-edge duration-100 supports-backdrop-filter:backdrop-blur-[2px] motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-closed:animate-out motion-safe:data-closed:fade-out-0",
 				className,
 			)}
 			{...props}
@@ -46,7 +46,10 @@ function DialogContent({
 			<DialogPrimitive.Popup
 				data-slot="dialog-content"
 				className={cn(
-					"fixed top-1/2 left-1/2 z-50 grid inline-full max-inline-[calc(100%-2rem)] -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl squircle bg-popover p-4 text-xs/relaxed text-popover-foreground shadow-modal duration-100 outline-none contain-layout sm:max-inline-sm data-open:animate-in data-open:fade-in-0 data-open:zoom-in-95 data-closed:animate-out data-closed:fade-out-0 data-closed:zoom-out-95",
+					// Anchored to the top so async content grows downward instead of moving the dialog. The
+					// offset is 20dvh on comfortable screens and shrinks toward 1rem on short ones;
+					// --dialog-max is the room left below it, shared by consumers that size themselves.
+					"fixed top-(--dialog-top) left-1/2 z-50 grid max-h-(--dialog-max) w-full max-w-[calc(100%-2rem)] -translate-x-1/2 origin-top gap-4 overflow-y-auto overscroll-contain rounded-xl squircle bg-popover p-4 text-xs/relaxed text-popover-foreground shadow-modal duration-100 outline-none contain-layout [--dialog-max:calc(100dvh-var(--dialog-top)-1rem)] [--dialog-top:clamp(1rem,calc(40dvh-8rem),20dvh)] sm:max-w-sm motion-safe:data-open:animate-in motion-safe:data-open:fade-in-0 motion-safe:data-open:zoom-in-98 motion-safe:data-closed:animate-out motion-safe:data-closed:fade-out-0 motion-safe:data-closed:zoom-out-98",
 					className,
 				)}
 				{...props}

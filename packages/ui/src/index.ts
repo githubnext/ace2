@@ -188,6 +188,7 @@ export {
 export { Skeleton } from "./ui/skeleton";
 export { Toaster, type ToasterProps } from "./ui/sonner";
 export { SplitButton, type SplitButtonProps } from "./ui/split-button";
+export { Switch } from "./ui/switch";
 export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 // Hooks

@@ -6,7 +6,7 @@ import type { Diagnostics } from "@ace/host/protocol";
 
 import { desktop } from "./desktop";
 import { host } from "./host";
-import { NativeStatus } from "./native-settings";
+import { Disclosure, Group, Problem, Row, Status } from "./settings-layout";
 
 const tailnet = {
 	missing: "Tailscale is not installed",
@@ -15,7 +15,7 @@ const tailnet = {
 	error: "Tailscale could not be checked",
 };
 
-export function HostStatus() {
+export function HostStatus({ active }: { active: boolean }) {
 	const status = useSyncExternalStore(host.subscribe, () => host.status);
 	const [retry, setRetry] = useState(0);
 	const [checks, setChecks] = useState<{ value?: Diagnostics; error?: string }>({});
@@ -23,32 +23,34 @@ export function HostStatus() {
 	const [action, setAction] = useState<{ busy?: HelperAction; error?: string }>({});
 	const [confirm, setConfirm] = useState(false);
 
+	// Re-read when the section is shown again; results from an action in flight still land here.
 	useEffect(() => {
-		let active = true;
+		if (!active) return;
+		let live = true;
 		if (desktop) {
 			desktop.helper("status").then(
 				(value) => {
-					if (active) setHelper({ value });
+					if (live) setHelper({ value });
 				},
 				(error: Error) => {
-					if (active) setHelper({ error: error.message });
+					if (live) setHelper({ error: error.message });
 				},
 			);
 		}
 		if (status === "open") {
 			host.request<Diagnostics>({ op: "diagnostics" }).then(
 				(value) => {
-					if (active) setChecks({ value });
+					if (live) setChecks({ value });
 				},
 				(error: Error) => {
-					if (active) setChecks({ error: error.message });
+					if (live) setChecks({ error: error.message });
 				},
 			);
 		}
 		return () => {
-			active = false;
+			live = false;
 		};
-	}, [status, retry]);
+	}, [active, status, retry]);
 
 	async function control(command: HelperAction) {
 		if (!desktop) return;
@@ -66,33 +68,63 @@ export function HostStatus() {
 	const current = helper.value;
 	const terminal = current?.running && !current.managed;
 	const available = !!current && !terminal && !action.busy;
+	const checked = checks.value;
 
 	return (
-		<div className="space-y-5 text-xs">
+		<div className="flex flex-col gap-6">
 			{desktop && (
-				<section className="space-y-2" aria-label="Ace Helper">
-					<h3 className="font-medium">Ace Helper</h3>
-					<p role="status">
-						{terminal
-							? "Using a command-line host"
-							: current?.running
-							? "Running in the background"
-							: current?.service === "approval"
-							? "macOS approval required"
-							: current
-							? "Stopped"
-							: "Checking Ace Helper…"}
-					</p>
-					<p className="text-muted-foreground">
-						{terminal
-							? "Stop ace serve before managing Ace Helper here."
-							: "Ace Helper starts at login and keeps channels available after you quit Ace."}
-					</p>
-					<div className="flex flex-wrap gap-2">
+				<Group>
+					<Row
+						label="Ace Helper"
+						description={
+							<span role="status">
+								{terminal
+									? "Using a command-line host. Stop ace serve before managing Ace Helper here."
+									: current?.running
+									? "Running in the background. It starts at login and keeps channels available after you quit Ace."
+									: current?.service === "approval"
+									? "macOS approval required. Allow Ace in Login Items to run Ace Helper in the background."
+									: current
+									? "Stopped. Ace Helper starts at login and keeps channels available after you quit Ace."
+									: "Checking Ace Helper…"}
+							</span>
+						}
+						footer={
+							<>
+								{confirm && (
+									<div className="flex flex-col gap-2 rounded-md bg-muted/50 p-3 @md:flex-row @md:items-center @md:justify-between">
+										<p>
+											This host's channels and tools will go offline. Work resumes when you start
+											Ace Helper. Background hosting will stay off until you enable it again.
+										</p>
+										<div className="flex shrink-0 gap-2">
+											<Button variant="destructive" onClick={() => void control("stop")}>
+												Stop Ace Helper
+											</Button>
+											<Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
+										</div>
+									</div>
+								)}
+								{action.busy && <Status>Updating Ace Helper…</Status>}
+								{(action.error || helper.error) && (
+									<Problem>{action.error || helper.error}</Problem>
+								)}
+							</>
+						}
+					>
+						{current?.service === "approval" && !current.running && (
+							<Button
+								variant="outline"
+								disabled={!!action.busy}
+								onClick={() => void control("settings")}
+							>
+								Open Login Items
+							</Button>
+						)}
 						{!current?.running
 							? (
 								<Button disabled={!available} onClick={() => void control("start")}>
-									Start Ace Helper
+									Start
 								</Button>
 							)
 							: (
@@ -102,107 +134,103 @@ export function HostStatus() {
 										disabled={!available}
 										onClick={() => void control("restart")}
 									>
-										Restart Ace Helper
+										Restart
 									</Button>
 									<Button
 										variant="outline"
-										disabled={!available}
+										disabled={!available || confirm}
 										onClick={() => setConfirm(true)}
 									>
-										Stop Ace Helper…
+										Stop…
 									</Button>
 								</>
 							)}
-					</div>
-					{confirm && (
-						<div className="space-y-2 rounded-md border p-3">
-							<p>
-								This host's channels and tools will go offline. Work resumes when you start Ace
-								Helper. Background hosting will stay off until you enable it again.
-							</p>
-							<div className="flex gap-2">
-								<Button variant="destructive" onClick={() => void control("stop")}>
-									Stop Ace Helper
-								</Button>
-								<Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
-							</div>
-						</div>
-					)}
-					{action.busy && <p role="status">Updating Ace Helper…</p>}
-					{(action.error || helper.error) && (
-						<p role="alert" className="text-destructive">{action.error || helper.error}</p>
-					)}
-					<div className="flex flex-wrap gap-2">
-						<Button
-							variant="ghost"
-							disabled={!!action.busy}
-							onClick={() => void control("settings")}
-						>
-							macOS Login Items
-						</Button>
-						<Button variant="ghost" disabled={!!action.busy} onClick={() => void control("log")}>
-							Show helper log
-						</Button>
-					</div>
-				</section>
+					</Row>
+				</Group>
 			)}
-			{desktop && <NativeStatus native={desktop.native} refresh={retry} />}
 			{status !== "open"
-				? <p role="status">Connect to Ace Helper to check tools and team connectivity.</p>
-				: checks.value
+				? <Status>Connect to Ace Helper to check tools and team connectivity.</Status>
+				: checked
 				? (
 					<>
-						<section className="space-y-2" aria-label="Tools">
-							<h3 className="font-medium">Tools</h3>
-							{checks.value.tools.map((tool) => (
-								<div key={tool.name}>
-									<p>{tool.name}: {tool.error ? "Needs attention" : tool.version || "Available"}</p>
-									{tool.path && <p className="break-all text-muted-foreground">{tool.path}</p>}
-									{tool.error && <p className="text-destructive">{tool.error}</p>}
-								</div>
+						<Group title="Team">
+							<Row
+								label="Tailscale"
+								description={`${tailnet[checked.tailscale.state]}${
+									checked.tailscale.name ? ` as ${checked.tailscale.name}` : ""
+								}. Teammates reach this host over Tailscale; restart Ace Helper after connecting or changing it.`}
+								footer={checked.tailscale.error && <Problem>{checked.tailscale.error}</Problem>}
+							/>
+							<Row
+								label="Team directory"
+								description={checked.directory.url
+									? checked.directory.synced
+										? `Last synced ${new Date(checked.directory.synced).toLocaleTimeString()}`
+										: "Waiting for the first sync…"
+									: "Not configured"}
+								footer={checked.directory.error && <Problem>{checked.directory.error}</Problem>}
+							/>
+						</Group>
+						<Group title="Tools">
+							{checked.tools.map((tool) => (
+								<Row
+									key={tool.name}
+									label={tool.name}
+									footer={tool.error && <Problem>{tool.error}</Problem>}
+								>
+									<span className="text-xs text-muted-foreground">
+										{tool.error ? "Needs attention" : "Available"}
+									</span>
+								</Row>
 							))}
-						</section>
-						<section className="space-y-2" aria-label="Team connectivity">
-							<h3 className="font-medium">Team connectivity</h3>
-							<p>
-								{tailnet[checks.value.tailscale.state]}
-								{checks.value.tailscale.name && ` as ${checks.value.tailscale.name}`}
-							</p>
-							{checks.value.tailscale.error && (
-								<p className="text-destructive">{checks.value.tailscale.error}</p>
-							)}
-							<p className="text-muted-foreground">
-								Tailscale lets teammates reach this host. Restart Ace Helper after connecting or
-								changing Tailscale.
-							</p>
-							<p>Team directory: {checks.value.directory.url || "Not configured"}</p>
-							{checks.value.directory.error
-								? <p className="text-destructive">{checks.value.directory.error}</p>
-								: checks.value.directory.url && (
-									<p className="text-muted-foreground">
-										{checks.value.directory.synced
-											? `Last synced ${
-												new Date(checks.value.directory.synced).toLocaleTimeString()
-											}`
-											: "Waiting for the first sync…"}
-									</p>
-								)}
-						</section>
+						</Group>
 					</>
 				)
-				: !checks.error && <p role="status">Checking this host…</p>}
-			{checks.error && status === "open" && (
-				<p role="alert" className="text-destructive">{checks.error}</p>
-			)}
-			<div className="flex justify-end">
-				<Button
-					variant="ghost"
-					disabled={!!action.busy}
-					onClick={() => setRetry((value) => value + 1)}
-				>
-					Refresh status
-				</Button>
-			</div>
+				: !checks.error && <Status>Checking this host…</Status>}
+			{checks.error && status === "open" && <Problem>{checks.error}</Problem>}
+			<Disclosure summary="Troubleshooting">
+				{checked && (
+					<dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-1.5">
+						{checked.tools.map((tool) => (
+							<div key={tool.name} className="contents">
+								<dt className="text-muted-foreground">{tool.name}</dt>
+								<dd className="break-all">
+									{[tool.version, tool.path].filter(Boolean).join(" · ") || "Not found"}
+								</dd>
+							</div>
+						))}
+						<dt className="text-muted-foreground">Directory</dt>
+						<dd className="break-all">{checked.directory.url || "Not configured"}</dd>
+					</dl>
+				)}
+				<div className="flex flex-wrap gap-2">
+					<Button
+						variant="outline"
+						disabled={!!action.busy}
+						onClick={() => setRetry((value) => value + 1)}
+					>
+						Refresh status
+					</Button>
+					{desktop && (
+						<>
+							<Button
+								variant="outline"
+								disabled={!!action.busy}
+								onClick={() => void control("log")}
+							>
+								Show helper log
+							</Button>
+							<Button
+								variant="outline"
+								disabled={!!action.busy}
+								onClick={() => void control("settings")}
+							>
+								macOS Login Items
+							</Button>
+						</>
+					)}
+				</div>
+			</Disclosure>
 		</div>
 	);
 }
