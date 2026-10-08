@@ -249,7 +249,9 @@ boundary as provider settings. The project picker selects a local Git checkout; 
 errors remain in the form so the person can fix the path or provider setup.
 
 Agents inspect and operate native windows through an injected desktop capability. The desktop embeds
-Peekaboo's native bridge inside Ace's UI process, which owns macOS Accessibility, Screen
+[desktop-tools](https://github.com/githubnext/desktop-tools), a standalone package carrying a pinned,
+patched Peekaboo bridge, its signed client, and the request/result contract, inside Ace's UI process,
+which owns macOS Accessibility, Screen
 Recording, and Event Synthesizing permissions. The host invokes a bundled client over a local Unix socket. The bridge
 accepts only the client's exact identifier signed by Ace's team; the client verifies the host's
 signing team. Tools expose application and window inventories, observation, element or screenshot

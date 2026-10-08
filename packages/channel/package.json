@@ -16,6 +16,7 @@
 		"types": "tsgo --noEmit"
 	},
 	"dependencies": {
+		"@githubnext/desktop-tools": "catalog:desktop",
 		"@earendil-works/chord": "catalog:pi",
 		"@earendil-works/pi-ai": "catalog:pi",
 		"@earendil-works/pi-durable": "catalog:pi"

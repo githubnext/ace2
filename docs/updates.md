@@ -63,13 +63,16 @@ application from Electrobun's build archive; its self-extracting wrapper and `Up
 are unused.
 
 The Sparkle SDK and Electrobun CLI downloads are pinned by version and SHA-256. Native desktop
-inspection builds the Swift package in `apps/desktop/native` with Swift 6.2 or newer; CI selects
-Xcode 26.2. `Package.resolved` pins Peekaboo 4.8.0 and its dependencies, and ordinary builds require
-those resolved versions. To intentionally update the lockfile, run
-`xcrun swift package --package-path apps/desktop/native resolve` and commit the resulting file.
+inspection comes from [desktop-tools](https://github.com/githubnext/desktop-tools), pinned to one
+commit in the root `desktop` catalog. Its build tool resolves Peekaboo 4.8.0 and its dependencies
+from the package's `Package.resolved`, applies its pinned patch stack, and builds with Swift 6.2 or
+newer in `apps/desktop/native/.build/desktop-tools`; CI selects Xcode 26.2. Ace builds only its
+project picker, `libAceProject.dylib`, from `apps/desktop/native/project.swift`. Update the native
+code in that repository, then move the catalog pin.
 
-The bundle contains `libAceDesktop.dylib` and `ace-desktop-client`, with needed Swift runtime
-libraries discovered from their compiled dependencies. It does not ship Peekaboo's standalone app
+The bundle contains `libDesktopTools.dylib`, `ace-desktop-client` (the package's
+`desktop-tools-client`), and `libAceProject.dylib`, with needed Swift runtime libraries discovered
+from their compiled dependencies. It does not ship Peekaboo's standalone app
 or CLI. Sparkle's license and the native dependencies' licenses and notices are included in
 Resources. Code is signed inside out, including the Swift runtimes, Ace Helper, and Sparkle's nested
 installers. The desktop client uses the app's actual bundle identifier followed by `.desktop-client`;

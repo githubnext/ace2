@@ -1,14 +1,5 @@
 import { createHash } from "node:crypto";
-import {
-	copyFileSync,
-	mkdirSync,
-	mkdtempSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
-import { tmpdir } from "node:os";
+import { copyFileSync, cpSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -120,105 +111,42 @@ writeFileSync(
 );
 const frameworks = join(contents, "Frameworks");
 mkdirSync(frameworks, { recursive: true });
+// The standalone package owns the pinned, patched native build; Ace signs and stages its outputs.
+const tools = join(native, ".build", "desktop-tools");
+const pkg = fileURLToPath(import.meta.resolve("@githubnext/desktop-tools/package.json"));
+run([
+	compiler,
+	join(dirname(pkg), "dist", "build.js"),
+	"--out",
+	join(tools, "out"),
+	"--scratch",
+	join(tools, "scratch"),
+]);
+copyFileSync(join(tools, "out", "libDesktopTools.dylib"), join(bin, "libDesktopTools.dylib"));
+copyFileSync(join(tools, "out", "desktop-tools-client"), join(bin, "ace-desktop-client"));
+cpSync(join(tools, "out", "Licenses"), join(contents, "Resources", "Licenses"), {
+	recursive: true,
+});
 run([
 	"xcrun",
-	"swift",
-	"package",
-	"--package-path",
-	native,
-	"--force-resolved-versions",
-	"resolve",
-]);
-const resolved = JSON.parse(readFileSync(join(native, "Package.resolved"), "utf8")) as {
-	pins: { identity: string; state: { version: string; revision: string } }[];
-};
-const checkouts = join(native, ".build", "checkouts");
-const dependencies = new Map(readdirSync(checkouts).map((name) => [name.toLowerCase(), name]));
-const peekaboo = resolved.pins.find(({ identity }) => identity === "peekaboo");
-const revision = "4d43dc9d80cd2aa3787a27f54b76d692db1dcf8f";
-if (peekaboo?.state.version !== "4.8.0" || peekaboo.state.revision !== revision) {
-	throw new Error("The native patches require Peekaboo 4.8.0 at its pinned revision");
-}
-const checkout = dependencies.get("peekaboo");
-if (!checkout) throw new Error("The resolved Peekaboo checkout is missing");
-const git = ["git", "-C", join(checkouts, checkout)];
-const head = Bun.spawnSync([...git, "rev-parse", "HEAD"]);
-if (!head.success || head.stdout.toString().trim() !== revision) {
-	throw new Error(
-		`The Peekaboo checkout must be at ${revision} before applying the native patches`,
-	);
-}
-// Build the expected patch stack in a private index: later patches may change earlier patch contexts.
-const patches = [
-	"peekaboo-click.patch",
-	"peekaboo-insert.patch",
-	"peekaboo-pointer-window.patch",
-	"peekaboo-quit.patch",
-	"peekaboo-clipboard-text.patch",
-	"peekaboo-close.patch",
-	"peekaboo-clipboard-image.patch",
-	"peekaboo-launch.patch",
-	"peekaboo-clipboard-files.patch",
-	"peekaboo-point-focus.patch",
-	"peekaboo-clipboard-image-write.patch",
-	"peekaboo-open.patch",
-	"peekaboo-menu.patch",
-	"peekaboo-clipboard-files-write.patch",
-	"peekaboo-stale-click.patch",
-]
-	.map((name) => join(native, "patches", name));
-const temporary = mkdtempSync(join(tmpdir(), "ace-native-patches-"));
-try {
-	const env = { ...process.env, GIT_INDEX_FILE: join(temporary, "index") };
-	const initial = Bun.spawnSync([...git, "read-tree", "HEAD"], { env });
-	if (!initial.success) throw new Error("Cannot read the pinned native tree: " + initial.stderr);
-	const isExpected = () => {
-		const extra = Bun.spawnSync([...git, "ls-files", "--others", "--exclude-standard"], { env });
-		const diff = Bun.spawnSync([...git, "diff", "--quiet", "--"], { env });
-		if (!extra.success || (diff.exitCode !== 0 && diff.exitCode !== 1)) {
-			throw new Error("Cannot verify the native checkout: " + extra.stderr + "\n" + diff.stderr);
-		}
-		return !extra.stdout.toString().trim() && diff.success;
-	};
-	let applied = -1;
-	for (let index = 0; index <= patches.length; index++) {
-		if (isExpected()) applied = index;
-		if (index === patches.length) break;
-		const expected = Bun.spawnSync([...git, "apply", "--cached", patches[index]!], { env });
-		if (!expected.success) {
-			throw new Error("Cannot assemble the pinned native patch stack: " + expected.stderr);
-		}
-	}
-	if (applied < 0) {
-		throw new Error(
-			"The native checkout differs from every pinned patch prefix. Resolve source drift before building.",
-		);
-	}
-	for (const patch of patches.slice(applied)) run([...git, "apply", patch]);
-	if (!isExpected()) throw new Error("The native checkout differs from the pinned patch stack.");
-} finally {
-	rmSync(temporary, { recursive: true, force: true });
-}
-const swiftBuild = [
-	"xcrun",
-	"swift",
-	"build",
-	"--package-path",
-	native,
-	"--configuration",
-	"release",
-	"--force-resolved-versions",
+	"swiftc",
+	"-emit-library",
+	"-O",
+	"-swift-version",
+	"6",
+	"-module-name",
+	"AceProject",
+	"-target",
+	"arm64-apple-macos15.0",
 	"-Xlinker",
 	"-rpath",
 	"-Xlinker",
 	"@loader_path/../Frameworks",
-];
-run(swiftBuild);
-const location = Bun.spawnSync([...swiftBuild, "--show-bin-path"]);
-if (!location.success) throw new Error("Cannot locate the native desktop build products");
-const products = location.stdout.toString().trim();
-const binaries = ["libAceDesktop.dylib", "ace-desktop-client"];
-for (const name of binaries) copyFileSync(join(products, name), join(bin, name));
+	join(native, "project.swift"),
+	"-o",
+	join(bin, "libAceProject.dylib"),
+]);
+const binaries = ["libDesktopTools.dylib", "ace-desktop-client", "libAceProject.dylib"];
 // Discover the runtimes from Mach-O dependencies instead of assuming a Swift library list.
 run([
 	"xcrun",
@@ -230,18 +158,6 @@ run([
 	"--destination",
 	frameworks,
 ]);
-for (const { identity } of resolved.pins) {
-	const checkout = dependencies.get(identity);
-	if (!checkout) throw new Error(`The resolved native dependency ${identity} is missing`);
-	const source = join(checkouts, checkout);
-	const licenses = readdirSync(source).filter((name) =>
-		/^(LICENSE|LICENCE|NOTICE)([.-].*)?$/i.test(name)
-	);
-	if (!licenses.length) throw new Error(`The native dependency ${identity} has no license file`);
-	const destination = join(contents, "Resources", "Licenses", identity);
-	mkdirSync(destination, { recursive: true });
-	for (const name of licenses) copyFileSync(join(source, name), join(destination, name));
-}
 run(["/usr/bin/ditto", join(sdk, "Sparkle.framework"), join(frameworks, "Sparkle.framework")]);
 run([
 	"xcrun",
