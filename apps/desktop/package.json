@@ -16,6 +16,7 @@
 	},
 	"dependencies": {
 		"@ace/host": "workspace:*",
+		"@githubnext/desktop-tools": "catalog:desktop",
 		"electrobun": "catalog:desktop"
 	},
 	"devDependencies": {

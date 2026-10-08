@@ -100,24 +100,31 @@ private final class ProjectPicker {
 	}
 }
 
-func openProjectPicker() {
+@_cdecl("ace_project_open")
+public func projectOpen() {
 	project.open()
 }
 
-func closeProjectPicker() {
+@_cdecl("ace_project_close")
+public func projectClose() {
 	project.close()
 	DispatchQueue.main.async { ProjectPicker.shared.cancel() }
 }
 
-@_cdecl("ace_desktop_project_start")
+@_cdecl("ace_project_start")
 public func projectStart(_ path: UnsafePointer<CChar>) {
 	let path = String(cString: path)
 	guard project.begin() else { return }
 	DispatchQueue.main.async { ProjectPicker.shared.start(path: path) }
 }
 
-@_cdecl("ace_desktop_project_status")
+@_cdecl("ace_project_status")
 public func projectStatus() -> UnsafeMutablePointer<CChar>? {
 	let data = try! JSONEncoder().encode(project.read())
 	return strdup(String(decoding: data, as: UTF8.self))
+}
+
+@_cdecl("ace_project_free")
+public func projectFree(_ value: UnsafeMutableRawPointer?) {
+	free(value)
 }

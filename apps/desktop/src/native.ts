@@ -7,35 +7,42 @@ import { config } from "@ace/host/config";
 import type { NativeAction, NativeState } from "./protocol";
 
 export function native(identifier: string) {
-	const { symbols } = dlopen(join(dirname(process.execPath), "libAceDesktop.dylib"), {
-		ace_desktop_start: { args: ["cstring", "cstring"], returns: "void" },
-		ace_desktop_status: { args: [], returns: "ptr" },
-		ace_desktop_stop: { args: [], returns: "void" },
-		ace_desktop_free: { args: ["ptr"], returns: "void" },
-		ace_desktop_permission: { args: ["cstring"], returns: "void" },
-		ace_desktop_project_start: { args: ["cstring"], returns: "void" },
-		ace_desktop_project_status: { args: [], returns: "ptr" },
+	const bin = dirname(process.execPath);
+	const { symbols } = dlopen(join(bin, "libDesktopTools.dylib"), {
+		desktop_tools_start: { args: ["cstring", "cstring"], returns: "void" },
+		desktop_tools_status: { args: [], returns: "ptr" },
+		desktop_tools_stop: { args: [], returns: "void" },
+		desktop_tools_free: { args: ["ptr"], returns: "void" },
+		desktop_tools_permission: { args: ["cstring"], returns: "void" },
 	});
-	let picker: Promise<string | null> | undefined;
+	const { symbols: picker } = dlopen(join(bin, "libAceProject.dylib"), {
+		ace_project_open: { args: [], returns: "void" },
+		ace_project_close: { args: [], returns: "void" },
+		ace_project_start: { args: ["cstring"], returns: "void" },
+		ace_project_status: { args: [], returns: "ptr" },
+		ace_project_free: { args: ["ptr"], returns: "void" },
+	});
+	let pending: Promise<string | null> | undefined;
 
-	function read<T>(pointer: Pointer | null): T {
+	function read<T>(pointer: Pointer | null, free: (pointer: Pointer) => void): T {
 		if (!pointer) throw new Error("Could not read native desktop response");
 		try {
 			return JSON.parse(new CString(pointer).toString()) as T;
 		} finally {
-			symbols.ace_desktop_free(pointer);
+			free(pointer);
 		}
 	}
 
 	function status(): NativeState {
-		return read(symbols.ace_desktop_status());
+		return read(symbols.desktop_tools_status(), symbols.desktop_tools_free);
 	}
 
 	async function project(path: string): Promise<string | null> {
-		symbols.ace_desktop_project_start(Buffer.from(`${path}\0`));
+		picker.ace_project_start(Buffer.from(`${path}\0`));
 		while (true) {
 			const result = read<{ pending: boolean; path: string | null; error?: string }>(
-				symbols.ace_desktop_project_status(),
+				picker.ace_project_status(),
+				picker.ace_project_free,
 			);
 			if (result.error) throw new Error(result.error);
 			if (!result.pending) return result.path;
@@ -46,12 +53,13 @@ export function native(identifier: string) {
 	return {
 		status,
 		project(path: string): Promise<string | null> {
-			if (picker) return picker;
-			picker = project(path).finally(() => picker = undefined);
-			return picker;
+			if (pending) return pending;
+			pending = project(path).finally(() => pending = undefined);
+			return pending;
 		},
 		start() {
-			symbols.ace_desktop_start(
+			picker.ace_project_open();
+			symbols.desktop_tools_start(
 				Buffer.from(`${join(config.home, "desktop.sock")}\0`),
 				Buffer.from(`${identifier}.desktop-client\0`),
 			);
@@ -63,13 +71,14 @@ export function native(identifier: string) {
 				) {
 					throw new Error("Unknown native desktop permission");
 				}
-				symbols.ace_desktop_permission(Buffer.from(`${action.permission}\0`));
+				symbols.desktop_tools_permission(Buffer.from(`${action.permission}\0`));
 			}
 			return status();
 		},
 		async stop(): Promise<void> {
 			if (status().state === "stopped") return;
-			symbols.ace_desktop_stop();
+			picker.ace_project_close();
+			symbols.desktop_tools_stop();
 			// Keep the library loaded while its bridge drains outstanding native operations.
 			const deadline = Date.now() + 30_000;
 			while (status().state !== "stopped") {

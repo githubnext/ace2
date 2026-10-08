@@ -18,8 +18,9 @@ CGEvent programs bypass the tools' snapshot and exact-target checks even without
 
 ## Setup
 
-Native desktop tools require macOS 15 or later. Ace embeds Peekaboo's native library; there is no
-separate Peekaboo installation or permission grant. In Ace Settings, open This Mac and enable
+Native desktop tools require macOS 15 or later. Ace embeds the native library from
+[desktop-tools](https://github.com/githubnext/desktop-tools), which carries Peekaboo's bridge and
+Ace's patches; there is no separate Peekaboo installation or permission grant. In Ace Settings, open This Mac and enable
 Accessibility and Screen Recording. macOS grants those permissions to Ace on that machine.
 Keyboard and pointer event delivery also require Event Synthesizing, which Ace reports and requests separately.
 Clicking Accessibility controls, selecting text, and replacing field values use Accessibility permission.
